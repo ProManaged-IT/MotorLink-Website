@@ -3,6 +3,31 @@
 // Configuration is loaded from config.js (must be included before this file)
 // To switch between UAT and PRODUCTION modes, edit config.js
 
+// Fallback runtime config when config.js is missing (for example 404 on live deploy).
+// This keeps the site usable instead of crashing with "CONFIG is not defined".
+(function ensureRuntimeConfig() {
+    if (typeof window.CONFIG !== 'undefined' && window.CONFIG) {
+        return;
+    }
+
+    const path = (window.location.pathname || '/').toLowerCase();
+    const motorlinkIndex = path.indexOf('/motorlink/');
+    const basePath = motorlinkIndex >= 0 ? window.location.pathname.substring(0, motorlinkIndex + '/motorlink/'.length) : '/';
+
+    const normalizedBase = basePath.endsWith('/') ? basePath : `${basePath}/`;
+    const origin = window.location.origin || '';
+
+    window.CONFIG = {
+        MODE: 'FALLBACK',
+        DEBUG: false,
+        BASE_URL: normalizedBase,
+        API_URL: `${origin}${normalizedBase}api.php`,
+        USE_CREDENTIALS: true
+    };
+
+    console.warn('config.js missing - using runtime fallback CONFIG');
+})();
+
 // ============================================================================
 // MAIN MOTORLINK APPLICATION
 // ============================================================================
@@ -1017,18 +1042,21 @@ class MotorLink {
                 const response = await this.makeAPICall('stats');
                 
                 if (response.success && response.stats) {
-                    // Show stats instantly - no delay
-                    this.animateCounter('totalCars', response.stats.total_cars || 0);
-                    this.animateCounter('totalDealers', response.stats.total_dealers || 0);
-                    this.animateCounter('totalGarages', response.stats.total_garages || 0);
-                    this.animateCounter('totalCarHire', response.stats.total_car_hire || 0);
+                    // Update only when API actually provides a value.
+                    const updateIfPresent = (elementId, value) => {
+                        if (value === null || value === undefined || value === '') return;
+                        const num = Number(value);
+                        if (!Number.isFinite(num)) return;
+                        this.animateCounter(elementId, num);
+                    };
+
+                    updateIfPresent('totalCars', response.stats.total_cars);
+                    updateIfPresent('totalDealers', response.stats.total_dealers);
+                    updateIfPresent('totalGarages', response.stats.total_garages);
+                    updateIfPresent('totalCarHire', response.stats.total_car_hire);
                 }
             } catch (error) {
-                // Set defaults instantly
-                this.animateCounter('totalCars', 150);
-                this.animateCounter('totalDealers', 25);
-                this.animateCounter('totalGarages', 40);
-                this.animateCounter('totalCarHire', 15);
+                // Keep hero stats unchanged when stats API fails.
             }
         }
         
