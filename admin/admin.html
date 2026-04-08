@@ -42,12 +42,12 @@
             <div id="loginForm" class="form-section active">
                 <form onsubmit="adminLogin(event)">
                     <div class="form-group">
-                        <label><i class="fas fa-envelope"></i> Email</label>
+                        <label for="adminEmail"><i class="fas fa-envelope"></i> Email</label>
                         <input type="email" id="adminEmail" autocomplete="username" required placeholder="admin@motorlink.mw" value="admin@motorlink.mw">
                         <small>Use: admin@motorlink.mw / password</small>
                     </div>
                     <div class="form-group">
-                        <label><i class="fas fa-lock"></i> Password</label>
+                        <label for="adminPassword"><i class="fas fa-lock"></i> Password</label>
                         <input type="password" id="adminPassword" autocomplete="current-password" required placeholder="Enter password" value="password">
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">
@@ -63,23 +63,23 @@
                 </div>
                 <form onsubmit="adminRegister(event)">
                     <div class="form-group">
-                        <label><i class="fas fa-user"></i> Full Name</label>
+                        <label for="regFullName"><i class="fas fa-user"></i> Full Name</label>
                         <input type="text" id="regFullName" autocomplete="name" required placeholder="John Doe">
                     </div>
                     <div class="form-group">
-                        <label><i class="fas fa-envelope"></i> Email</label>
+                        <label for="regEmail"><i class="fas fa-envelope"></i> Email</label>
                         <input type="email" id="regEmail" autocomplete="email" required placeholder="admin@example.com">
                     </div>
                     <div class="form-group">
-                        <label><i class="fas fa-phone"></i> Phone</label>
+                        <label for="regPhone"><i class="fas fa-phone"></i> Phone</label>
                         <input type="tel" id="regPhone" autocomplete="tel" required placeholder="+265 991 123 456">
                     </div>
                     <div class="form-group">
-                        <label><i class="fas fa-lock"></i> Password</label>
+                        <label for="regPassword"><i class="fas fa-lock"></i> Password</label>
                         <input type="password" id="regPassword" autocomplete="new-password" required placeholder="Minimum 6 characters">
                     </div>
                     <div class="form-group">
-                        <label><i class="fas fa-key"></i> Admin Key</label>
+                        <label for="regAdminKey"><i class="fas fa-key"></i> Admin Key</label>
                         <input type="password" id="regAdminKey" autocomplete="off" required placeholder="MOTORLINK_ADMIN_KEY_2025">
                         <small>Use: MOTORLINK_ADMIN_KEY_2025</small>
                     </div>
@@ -93,7 +93,7 @@
             <div id="forgotForm" class="form-section">
                 <form onsubmit="forgotPassword(event)">
                     <div class="form-group">
-                        <label><i class="fas fa-envelope"></i> Email</label>
+                        <label for="forgotEmail"><i class="fas fa-envelope"></i> Email</label>
                         <input type="email" id="forgotEmail" autocomplete="email" required placeholder="admin@motorlink.mw">
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">
@@ -1376,27 +1376,27 @@
                             <h3><i class="fas fa-server"></i> System Information</h3>
                             <div class="info-grid">
                                 <div class="info-item">
-                                    <label>Version:</label>
+                                    <span class="info-label">Version:</span>
                                     <span id="system-version">4.1.0</span>
                                 </div>
                                 <div class="info-item">
-                                    <label>PHP Version:</label>
+                                    <span class="info-label">PHP Version:</span>
                                     <span id="php-version">Loading...</span>
                                 </div>
                                 <div class="info-item">
-                                    <label>Database:</label>
+                                    <span class="info-label">Database:</span>
                                     <span id="db-version">MySQL 8.0</span>
                                 </div>
                                 <div class="info-item">
-                                    <label>Server Time:</label>
+                                    <span class="info-label">Server Time:</span>
                                     <span id="server-time">Loading...</span>
                                 </div>
                                 <div class="info-item">
-                                    <label>Total Users:</label>
+                                    <span class="info-label">Total Users:</span>
                                     <span id="total-users-count">Loading...</span>
                                 </div>
                                 <div class="info-item">
-                                    <label>Total Listings:</label>
+                                    <span class="info-label">Total Listings:</span>
                                     <span id="total-listings-count">Loading...</span>
                                 </div>
                             </div>
@@ -1678,7 +1678,7 @@
                     <div class="filter-bar" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                         <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                             <div class="form-group">
-                                <label>Status</label>
+                                <label for="reportStatusFilter">Status</label>
                                 <select id="reportStatusFilter" class="form-control" onchange="admin.loadListingReports()">
                                     <option value="">All</option>
                                     <option value="pending">Pending</option>
@@ -1687,7 +1687,7 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Reason</label>
+                                <label for="reportReasonFilter">Reason</label>
                                 <select id="reportReasonFilter" class="form-control" onchange="admin.loadListingReports()">
                                     <option value="">All</option>
                                     <option value="spam">Spam</option>
@@ -1700,7 +1700,7 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Search</label>
+                                <label for="reportSearch">Search</label>
                                 <input type="text" id="reportSearch" class="form-control" placeholder="Search listing/reporter/details" onkeyup="admin.loadListingReports()">
                             </div>
                         </div>
@@ -1748,7 +1748,7 @@
                     <div class="filter-bar" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                         <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                             <div class="form-group">
-                                <label>Action Type</label>
+                                <label for="logActionTypeFilter">Action Type</label>
                                 <select id="logActionTypeFilter" class="form-control" onchange="admin.loadActivityLogs()">
                                     <option value="">All Actions</option>
                                     <option value="user_updated">User Updated</option>
@@ -1761,15 +1761,15 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Date From</label>
+                                <label for="logDateFrom">Date From</label>
                                 <input type="date" id="logDateFrom" class="form-control" onchange="admin.loadActivityLogs()">
                             </div>
                             <div class="form-group">
-                                <label>Date To</label>
+                                <label for="logDateTo">Date To</label>
                                 <input type="date" id="logDateTo" class="form-control" onchange="admin.loadActivityLogs()">
                             </div>
                             <div class="form-group">
-                                <label>Search</label>
+                                <label for="logSearch">Search</label>
                                 <input type="text" id="logSearch" class="form-control" placeholder="Search logs..." onkeyup="admin.loadActivityLogs()">
                             </div>
                         </div>
@@ -1843,18 +1843,18 @@
                     <div class="filters-container">
                         <div class="filter-group">
                             <div class="form-group">
-                                <label>User</label>
+                                <label for="ai-usage-user-select">User</label>
                                 <select id="ai-usage-user-select" class="form-control" onchange="loadAIChatUsage()">
                                     <option value="">All Users</option>
                                 </select>
                                 <small>Select a user to view their usage</small>
                             </div>
                             <div class="form-group">
-                                <label>Date From</label>
+                                <label for="ai-usage-date-from">Date From</label>
                                 <input type="date" id="ai-usage-date-from" class="form-control" onchange="loadAIChatUsage()">
                             </div>
                             <div class="form-group">
-                                <label>Date To</label>
+                                <label for="ai-usage-date-to">Date To</label>
                                 <input type="date" id="ai-usage-date-to" class="form-control" onchange="loadAIChatUsage()">
                             </div>
                             <div class="form-group">
