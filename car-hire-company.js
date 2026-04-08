@@ -296,7 +296,15 @@ function renderFleet(data) {
                                 <strong>${capitalize(vehicle.exterior_color)}</strong>
                             </div>
                         </div>
-                        ` : ''}
+                        ` : `
+                        <div class="spec-item placeholder" aria-hidden="true">
+                            <i class="fas fa-palette"></i>
+                            <div>
+                                <small>Color</small>
+                                <strong>&nbsp;</strong>
+                            </div>
+                        </div>
+                        `}
                     </div>
                     
                     ${features.length > 0 ? `
@@ -306,7 +314,12 @@ function renderFleet(data) {
                                 ${features.slice(0, 6).map(f => `<span class="feature-badge"><i class="fas fa-check"></i> ${f}</span>`).join('')}
                             </div>
                         </div>
-                    ` : ''}
+                    ` : `
+                        <div class="fleet-features fleet-features-placeholder" aria-hidden="true">
+                            <h4>Features</h4>
+                            <div class="features-list"></div>
+                        </div>
+                    `}
                     
                     <div class="fleet-pricing">
                         <div class="pricing-row main-price">
@@ -321,13 +334,23 @@ function renderFleet(data) {
                                 <span class="price-label">Weekly Rate</span>
                                 <span class="price-value">MWK ${formatNumber(vehicle.weekly_rate)}</span>
                             </div>
-                        ` : ''}
+                        ` : `
+                            <div class="pricing-row placeholder" aria-hidden="true">
+                                <span class="price-label">Weekly Rate</span>
+                                <span class="price-value">&nbsp;</span>
+                            </div>
+                        `}
                         ${vehicle.monthly_rate ? `
                             <div class="pricing-row">
                                 <span class="price-label">Monthly Rate</span>
                                 <span class="price-value">MWK ${formatNumber(vehicle.monthly_rate)}</span>
                             </div>
-                        ` : ''}
+                        ` : `
+                            <div class="pricing-row placeholder" aria-hidden="true">
+                                <span class="price-label">Monthly Rate</span>
+                                <span class="price-value">&nbsp;</span>
+                            </div>
+                        `}
                     </div>
                 </div>
             </div>

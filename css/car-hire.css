@@ -61,10 +61,11 @@
 }
 
 .filter-select {
-  flex: 1;
-  height: 40px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
   max-width: 100%;
-  padding: 0 12px;
+    padding-bottom: 3px;
+    min-height: 50px;
   border: 1px solid var(--border-light);
   border-radius: 6px;
   background: var(--bg-white);
@@ -72,11 +73,11 @@
   font-weight: 500;
   color: var(--text-primary);
   transition: all 0.2s ease;
-  cursor: pointer;
+    min-width: 0;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23757575' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 10px center;
+    font-size: 0.82rem;
   padding-right: 32px;
   box-sizing: border-box;
 }
@@ -1813,8 +1814,8 @@
 
 .fleet-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
 }
 
 .no-vehicles {
@@ -1840,6 +1841,7 @@
     display: flex;
     flex-direction: column;
     border: 1px solid #e0e0e0;
+    min-height: 350px;
 }
 
 .fleet-card:hover {
@@ -1864,26 +1866,30 @@
 
 .fleet-image {
     position: relative;
-    height: 140px;
+  height: 122px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
     overflow: hidden;
 }
 
 .fleet-image img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
     object-position: center;
-    transition: transform 0.3s ease;
+  transition: transform 0.25s ease;
 }
 
 /* Mobile fleet image adjustments for better display */
 @media (max-width: 768px) {
     .fleet-image {
-        height: 140px;
+    height: 124px;
     }
 
     .fleet-image img {
-        object-fit: cover;
+      object-fit: contain;
         width: 100%;
     }
     
@@ -1894,7 +1900,7 @@
 
 @media (max-width: 480px) {
     .fleet-image {
-        height: 130px;
+    height: 116px;
     }
     
     .fleet-info {
@@ -1903,7 +1909,7 @@
 }
 
 .fleet-card:hover .fleet-image img {
-    transform: scale(1.05);
+  transform: scale(1.02);
 }
 
 .unavailable-badge {
@@ -1984,10 +1990,11 @@
 }
 
 .fleet-info {
-    padding: 14px;
+  padding: 11px;
     flex: 1;
     display: flex;
     flex-direction: column;
+  gap: 6px;
 }
 
 .fleet-title {
@@ -2001,28 +2008,36 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    min-height: 2.45em;
 }
 
 /* Fleet Specs Grid - Compact */
 .fleet-specs {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-    margin-bottom: 10px;
-    padding-bottom: 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    margin-bottom: 5px;
+    padding-bottom: 5px;
     border-bottom: 1px solid #e8e8e8;
+    min-height: 52px;
+    align-content: start;
 }
 
 .spec-item {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 3px;
+    min-width: 0;
+}
+
+.spec-item.placeholder {
+    visibility: hidden;
 }
 
 .spec-item i {
-    font-size: 0.9rem;
+    font-size: 0.75rem;
     color: #00a843;
-    min-width: 16px;
+    min-width: 12px;
 }
 
 .spec-item div {
@@ -2030,30 +2045,38 @@
 }
 
 .spec-item small {
-    display: block;
-    font-size: 0.6rem;
+  display: none;
+  font-size: 0.55rem;
     color: #999;
-    margin-bottom: 1px;
+  margin-bottom: 0;
 }
 
 .spec-item strong {
     display: block;
-    font-size: 0.75rem;
+  font-size: 0.66rem;
+  line-height: 1.15;
     color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Fleet Features - Compact with Consistent Sizing */
 .fleet-features {
-    margin-bottom: 10px;
-    min-height: 60px;
-    max-height: 60px;
+  margin-bottom: 8px;
+  min-height: 48px;
+  max-height: 48px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
 }
 
+  .fleet-features-placeholder {
+    visibility: hidden;
+  }
+
 .fleet-features h4 {
-    font-size: 0.75rem;
+  font-size: 0.68rem;
     font-weight: 600;
     color: #333;
     margin: 0 0 6px 0;
@@ -2066,7 +2089,7 @@
 .features-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+  gap: 4px;
     align-content: flex-start; /* Align features to top */
     flex: 1; /* Take remaining space */
 }
@@ -2079,10 +2102,10 @@
     background: #e8f5e9;
     color: #2e7d32;
     border-radius: 8px;
-    font-size: 0.6rem;
+    font-size: 0.56rem;
     font-weight: 500;
     white-space: nowrap;
-    height: 20px;
+    height: 17px;
 }
 
 .feature-badge i {
@@ -2148,32 +2171,37 @@
 .fleet-pricing {
     background: linear-gradient(135deg, #f8f9fa 0%, #e8f5e9 100%);
     border-radius: 8px;
-    padding: 10px;
+  padding: 8px;
     margin-top: auto;
+  min-height: 74px;
 }
 
 .pricing-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 0;
+    padding: 3px 0;
 }
+
+  .pricing-row.placeholder {
+    visibility: hidden;
+  }
 
 .pricing-row:not(:last-child) {
     border-bottom: 1px solid #e0e0e0;
 }
 
 .pricing-row.main-price {
-    padding: 0 0 6px 0;
+  padding: 0 0 4px 0;
 }
 
 .price-label {
-    font-size: 0.65rem;
+  font-size: 0.6rem;
     color: #666;
 }
 
 .price-value {
-    font-size: 0.75rem;
+  font-size: 0.7rem;
     color: #333;
     font-weight: 600;
     display: flex;
@@ -2187,7 +2215,7 @@
 }
 
 .pricing-row.main-price .price-value strong {
-    font-size: 0.95rem;
+  font-size: 0.85rem;
     color: #00a843;
 }
 
@@ -2591,7 +2619,7 @@
 /* Responsive Design */
 @media (max-width: 1024px) {
     .fleet-grid {
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     }
 }
 
@@ -2778,20 +2806,22 @@
     /* Make fleet specs horizontal 2-column grid on mobile to fit more items */
     .fleet-specs {
         grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
+      gap: 4px;
         overflow-x: visible;
-        padding-bottom: 4px;
+      padding-bottom: 3px;
+      min-height: 56px;
     }
     
     .spec-item {
-        flex-direction: column;
-        text-align: center;
-        gap: 4px;
-        min-width: 70px;
+      flex-direction: row;
+      align-items: center;
+      text-align: left;
+      gap: 4px;
+      min-width: 0;
     }
     
     .spec-item i {
-        font-size: 1rem;
+      font-size: 0.82rem;
     }
     
     .spec-item small {
@@ -2999,7 +3029,7 @@
     }
     
     .fleet-image {
-        height: 180px;
+      height: 126px;
     }
     
     /* Make fleet specs 2-column on small mobile for better readability */
