@@ -555,7 +555,7 @@ function initMap(address) {
 
 // Promise-based Google Maps loader
 function loadGoogleMaps() {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         if (typeof google !== 'undefined' && google.maps) {
             resolve();
             return;

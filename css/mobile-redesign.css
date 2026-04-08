@@ -453,12 +453,26 @@
     .garage-service-card {
         border-radius: 16px !important;
         margin-bottom: 16px !important;
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06) !important;
+        background: #ffffff !important;
+        border: 1px solid #dde4ec !important;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08) !important;
+        position: relative !important;
+        overflow: hidden !important;
+    }
+
+    .garage-service-card::before {
+        content: '' !important;
+        position: absolute !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: 0 !important;
+        height: 3px !important;
+        background: linear-gradient(90deg, #00c853 0%, #06b6d4 100%) !important;
     }
 
     .garage-card-header {
         padding: 14px 16px !important;
-        background: #fafafa !important;
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%) !important;
     }
 
     .garage-service-name {
@@ -491,6 +505,44 @@
         gap: 8px !important;
     }
 
+    .garage-social-section {
+        margin-top: 10px !important;
+        padding: 10px 12px !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 10px !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 1px 4px rgba(15, 23, 42, 0.05) !important;
+    }
+
+    .garage-social-title {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #334155 !important;
+        letter-spacing: 0.04em !important;
+        text-transform: uppercase !important;
+        margin-right: 0 !important;
+        white-space: nowrap !important;
+    }
+
+    .garage-social-links {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        flex-wrap: nowrap !important;
+    }
+
+    .garage-social-link {
+        width: 30px !important;
+        height: 30px !important;
+        font-size: 12px !important;
+        border: 2px solid rgba(255, 255, 255, 0.9) !important;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.16) !important;
+    }
+
     .garage-action-btn {
         min-height: 38px !important;
         height: 38px !important;
@@ -502,6 +554,25 @@
     .garage-action-btn.primary {
         background: var(--mobile-green-primary) !important;
         box-shadow: var(--mobile-shadow) !important;
+    }
+}
+
+@media (max-width: 360px) {
+    .garage-social-section {
+        flex-direction: row !important;
+        padding: 9px 10px !important;
+    }
+
+    .garage-social-title {
+        border: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .garage-social-link {
+        width: 28px !important;
+        height: 28px !important;
+        font-size: 11px !important;
     }
 }
 

@@ -6,15 +6,21 @@
 // Function to highlight active page in navigation
 function highlightActivePage(nav) {
     const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+    const parentNavByPage = {
+        'showroom.html': 'dealers.html',
+        'car-hire-company.html': 'car-hire.html'
+    };
+    const activePage = parentNavByPage[currentPage] || currentPage;
     const navLinks = nav.querySelectorAll('a[href]');
 
     navLinks.forEach(link => {
-        const linkHref = link.getAttribute('href');
+        const rawHref = link.getAttribute('href') || '';
+        const linkHref = rawHref.split('?')[0].split('#')[0];
 
         // Check if this link matches the current page
-        if (linkHref === currentPage ||
-            (currentPage === '' && linkHref === 'index.html') ||
-            (currentPage === '/' && linkHref === 'index.html')) {
+        if (linkHref === activePage ||
+            (activePage === '' && linkHref === 'index.html') ||
+            (activePage === '/' && linkHref === 'index.html')) {
             link.classList.add('active');
         } else {
             link.classList.remove('active');

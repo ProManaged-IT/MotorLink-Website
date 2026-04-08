@@ -196,7 +196,7 @@
 
 .company-card.featured-company {
   border-top: 4px solid #f59e0b;
-  background: linear-gradient(to bottom, #fffbf5 0%, #ffffff 100%);
+  background: #fff;
 }
 
 /* Header Section - Uniform Height */
@@ -462,6 +462,19 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.company-card .stat-item-inline.price-item {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.company-card .company-rate-text {
+  color: #111827;
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }
 
 .company-card .stat-item-inline i {
@@ -1064,20 +1077,24 @@
 
 .price-main {
   font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--primary-green);
+  font-weight: 800;
+  color: #065f46;
   line-height: 1;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .price-period {
   font-size: 0.9rem;
-  color: var(--text-tertiary);
+  color: #374151;
+  font-weight: 700;
   margin-left: var(--space-xs);
 }
 
 .price-additional {
   font-size: 0.8rem;
-  color: var(--text-muted);
+  color: #1f2937;
+  font-weight: 600;
   margin-top: var(--space-xs);
 }
 
@@ -1421,21 +1438,13 @@
 }
 
 .featured-company {
-    border: 2px solid var(--primary-green);
+  border: 2px solid var(--primary-green);
+  background: #fff;
     position: relative;
 }
 
 .featured-company::before {
-    content: 'Featured';
-    position: absolute;
-    top: -1px;
-    right: -1px;
-    background: var(--primary-green);
-    color: white;
-    padding: 4px 12px;
-    border-radius: 0 var(--border-radius-lg) 0 var(--border-radius-lg);
-    font-size: 0.75rem;
-    font-weight: 600;
+  content: none;
 }
 
 .results-count {

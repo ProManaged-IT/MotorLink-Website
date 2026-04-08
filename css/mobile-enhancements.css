@@ -3105,7 +3105,7 @@
     /* Social media sections */
     .social-section,
     .dealer-social-section,
-    [class*="social"] {
+    [class*="social"]:not(.garage-social-section):not(.garage-social-links):not(.garage-social-link):not(.garage-social-title) {
         padding-top: 16px !important;
         margin-top: 16px !important;
         border-top: 1px solid #e5e7eb !important;
