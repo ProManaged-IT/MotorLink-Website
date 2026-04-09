@@ -165,6 +165,50 @@ function isAIChatProviderEnabled($settings, $provider) {
 }
 
 /**
+ * Schedule non-blocking learning for automotive user queries.
+ * Uses shutdown callback so chat response is never delayed.
+ */
+function scheduleContinuousLearningForQuery($db, $message) {
+    $normalizedMessage = trim((string)$message);
+    if ($normalizedMessage === '' || strlen($normalizedMessage) < 4) {
+        return;
+    }
+
+    static $scheduled = [];
+    $scheduleKey = hash('sha256', strtolower($normalizedMessage));
+    if (isset($scheduled[$scheduleKey])) {
+        return;
+    }
+    $scheduled[$scheduleKey] = true;
+
+    register_shutdown_function(function() use ($db, $normalizedMessage) {
+        try {
+            require_once __DIR__ . '/ai-learning-api.php';
+
+            $isPartsQuery = false;
+            if (function_exists('detectPartsQuery')) {
+                $isPartsQuery = detectPartsQuery($normalizedMessage);
+            } else {
+                $messageLower = strtolower($normalizedMessage);
+                $partsKeywords = ['part number', 'oem number', 'compatibility', 'part for', 'parts for', 'spare part'];
+                foreach ($partsKeywords as $keyword) {
+                    if (strpos($messageLower, $keyword) !== false) {
+                        $isPartsQuery = true;
+                        break;
+                    }
+                }
+            }
+
+            @learnFromUserQuery($db, $normalizedMessage, $isPartsQuery, 'auto');
+        } catch (Exception $e) {
+            // Learning must never block or fail the main chat response.
+        } catch (Error $e) {
+            // Learning must never block or fail the main chat response.
+        }
+    });
+}
+
+/**
  * Handle AI Car Chat requests
  * Provides AI-powered assistance for car-related questions only
  * REQUIRES AUTHENTICATION - users must be logged in to use this feature
@@ -211,6 +255,17 @@ function handleAICarChat($db) {
             return;
         }
 
+        // Always handle simple greetings deterministically so users get an immediate reply.
+        if (preg_match('/^(hi|hello|hey|yo|good morning|good afternoon|good evening)[!. ]*$/i', $message)) {
+            sendSuccess([
+                'response' => "Hi! I can help you with car listings, car hire, dealers, garages, fuel prices, and vehicle specs. What would you like to find?"
+            ]);
+            return;
+        }
+
+        // Keep learning always on for valid automotive conversations.
+        scheduleContinuousLearningForQuery($db, $message);
+
         // Load AI settings and select active provider
         $settings = getAIChatSettings($db);
         $provider = normalizeAIChatProvider($settings['ai_provider'] ?? 'openai');
@@ -254,6 +309,171 @@ function handleAICarChat($db) {
         if ($actionResult !== false) {
             $logDeterministicUsage();
             sendSuccess($actionResult);
+            return;
+        }
+
+        // Resolve contextual location follow-ups like "What about Salima"
+        // by reusing the previous car-search intent.
+        $locationFollowUpMessage = buildLocationFollowUpSearchMessage($db, $message, $conversationHistory);
+        if ($locationFollowUpMessage !== false) {
+            $logDeterministicUsage();
+            handleSearchQuery($db, $locationFollowUpMessage, $conversationHistory);
+            return;
+        }
+
+        // Resolve contextual car-hire location follow-ups like
+        // previous: "Looking for an SUV to hire in Lilongwe"
+        // current: "What about Salima"
+        $carHireFollowUpMessage = buildLocationFollowUpCarHireMessage($db, $message, $conversationHistory);
+        if ($carHireFollowUpMessage !== false) {
+            $logDeterministicUsage();
+            handleCarHireQuery($db, $carHireFollowUpMessage, $conversationHistory);
+            return;
+        }
+
+        // Resolve contextual car-hire comparative follow-ups like
+        // previous: "Looking for a car hire in Blantyre"
+        // current: "What is the cheapest"
+        $carHireComparativeFollowUpMessage = buildCarHireComparativeFollowUpMessage($db, $message, $conversationHistory);
+        if ($carHireComparativeFollowUpMessage !== false) {
+            $logDeterministicUsage();
+            handleCarHireQuery($db, $carHireComparativeFollowUpMessage, $conversationHistory);
+            return;
+        }
+
+        // Resolve contextual contact follow-ups like
+        // "Give me their contact number" after car-hire/dealer/garage results.
+        $contactFollowUpMessage = buildContactFollowUpMessage($db, $message, $conversationHistory);
+        if ($contactFollowUpMessage !== false) {
+            $message = $contactFollowUpMessage;
+        }
+
+        // Resolve contextual garage location follow-ups like
+        // previous: "Find a garage in Lilongwe"
+        // current: "What about Salima"
+        $garageFollowUpMessage = buildLocationFollowUpGarageMessage($db, $message, $conversationHistory);
+        if ($garageFollowUpMessage !== false) {
+            $logDeterministicUsage();
+            handleGarageQuery($db, $garageFollowUpMessage, $conversationHistory);
+            return;
+        }
+
+        // Resolve contextual dealer location follow-ups like
+        // previous: "Find a dealer in Lilongwe"
+        // current: "What about Salima"
+        $dealerFollowUpMessage = buildLocationFollowUpDealerMessage($db, $message, $conversationHistory);
+        if ($dealerFollowUpMessage !== false) {
+            $logDeterministicUsage();
+            handleDealerQuery($db, $dealerFollowUpMessage, $conversationHistory);
+            return;
+        }
+
+        // Resolve short contextual automotive follow-ups (general car info)
+        // so prompts like "What about Toyota Hilux" stay in automotive scope.
+        $generalAutomotiveFollowUpMessage = buildGeneralAutomotiveFollowUpMessage($message, $conversationHistory);
+        if ($generalAutomotiveFollowUpMessage !== false) {
+            $message = $generalAutomotiveFollowUpMessage;
+        }
+
+        // AI-powered fallback intent resolution for natural language follow-ups that
+        // deterministic keyword rules may miss. This uses configured provider tokens.
+        $aiIntentMarkedInScope = false;
+        $hasDeterministicIntent =
+            detectCarHireQuery($message) ||
+            detectDealerQuery($message) ||
+            detectGarageQuery($message) ||
+            detectFuelPriceQuery($message) ||
+            detectSearchQuery($message) ||
+            detectCarSpecQuery($message) ||
+            detectCarRecommendationQuery($message) ||
+            detectPartsQuery($message);
+
+        $shouldUseAIIntent = !$hasDeterministicIntent && (
+            isOutOfScopeQuery($message) ||
+            detectFollowUpQuestion($message, $conversationHistory) ||
+            str_word_count((string)$message) <= 10
+        );
+
+        if ($shouldUseAIIntent) {
+            $aiIntent = resolveConversationalIntentWithAI(
+                $db,
+                $message,
+                $conversationHistory,
+                $settings,
+                $provider,
+                $providerConfig,
+                $modelName
+            );
+
+            if (!empty($aiIntent)) {
+                $rewrittenQuery = trim((string)($aiIntent['rewritten_query'] ?? ''));
+                if ($rewrittenQuery !== '' && strlen($rewrittenQuery) <= 500) {
+                    $message = $rewrittenQuery;
+                }
+
+                $resolvedIntent = strtolower(trim((string)($aiIntent['intent'] ?? '')));
+                if (!empty($aiIntent['out_of_scope']) || $resolvedIntent === 'out_of_scope') {
+                    $logDeterministicUsage();
+                    sendSuccess([
+                        'response' => buildOutOfScopeResponse()
+                    ]);
+                    return;
+                }
+
+                if ($resolvedIntent === 'car_hire') {
+                    $logDeterministicUsage();
+                    handleCarHireQuery($db, $message, $conversationHistory);
+                    return;
+                }
+
+                if ($resolvedIntent === 'dealer') {
+                    $logDeterministicUsage();
+                    handleDealerQuery($db, $message, $conversationHistory);
+                    return;
+                }
+
+                if ($resolvedIntent === 'garage') {
+                    $logDeterministicUsage();
+                    handleGarageQuery($db, $message, $conversationHistory);
+                    return;
+                }
+
+                if ($resolvedIntent === 'listings') {
+                    $logDeterministicUsage();
+                    handleSearchQuery($db, $message, $conversationHistory);
+                    return;
+                }
+
+                if ($resolvedIntent === 'fuel') {
+                    $logDeterministicUsage();
+                    handleFuelPriceQuery($db, $message, $conversationHistory);
+                    return;
+                }
+
+                if ($resolvedIntent === 'spec') {
+                    $logDeterministicUsage();
+                    handleCarSpecQuery($db, $message, $conversationHistory, $userContext);
+                    return;
+                }
+
+                if ($resolvedIntent === 'recommendation') {
+                    $logDeterministicUsage();
+                    handleCarRecommendationQuery($db, $message, $conversationHistory, $userContext);
+                    return;
+                }
+
+                if ($resolvedIntent === 'general_automotive') {
+                    $aiIntentMarkedInScope = true;
+                }
+            }
+        }
+
+        // Hard scope gate: do not answer non-automotive / non-MotorLink requests.
+        if (!$aiIntentMarkedInScope && isOutOfScopeQuery($message)) {
+            $logDeterministicUsage();
+            sendSuccess([
+                'response' => buildOutOfScopeResponse()
+            ]);
             return;
         }
         
@@ -366,37 +586,6 @@ function handleAICarChat($db) {
             }
         } else {
             $databaseContext = "\n\nDATABASE CHECK: No matching data found in MotorLink database (including cache tables) for this query. Use your AI knowledge, research capabilities, and web searches to provide a comprehensive, summarized overview. Always offer alternatives and similar options when appropriate.";
-            
-            // CRITICAL: Trigger learning in background (after response is sent) for ALL queries that need internet research
-            // This ensures every new question gets cached for faster answers next time
-            register_shutdown_function(function() use ($db, $message) {
-                try {
-                    require_once __DIR__ . '/ai-learning-api.php';
-                    
-                    // Detect if it's a parts query
-                    $isPartsQuery = false;
-                    if (function_exists('detectPartsQuery')) {
-                        $isPartsQuery = detectPartsQuery($message);
-                    } else {
-                        // Simple detection if function not available
-                        $messageLower = strtolower($message);
-                        $partsKeywords = ['part number', 'oem number', 'compatibility', 'part for', 'parts for', 'spare part'];
-                        foreach ($partsKeywords as $keyword) {
-                            if (strpos($messageLower, $keyword) !== false) {
-                                $isPartsQuery = true;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    // Trigger learning to cache the response (silently fail if there's an error)
-                    @learnFromUserQuery($db, $message, $isPartsQuery, 'auto');
-                } catch (Exception $e) {
-                    // Silently fail - don't log to avoid spam
-                } catch (Error $e) {
-                    // Silently fail for fatal errors too
-                }
-            });
         }
 
         // Build context-aware system prompt
@@ -1174,6 +1363,13 @@ function detectSearchQuery($message) {
     }
     
     $messageLower = strtolower($message);
+
+    // Treat concise filter-only queries like "SUV in Lilongwe" as listing searches.
+    $hasLocationPhrase = preg_match('/\b(?:in|at|around|near)\s+[a-zA-Z][a-zA-Z\-\s]{2,30}\b/i', $message) === 1;
+    $hasBodyTypeToken = preg_match('/\b(suv|sucv|sedan|hatchback|pickup|truck|wagon|minivan|van|crossover)\b/i', $messageLower) === 1;
+    if ($hasLocationPhrase && $hasBodyTypeToken) {
+        return true;
+    }
     
     // FAST CHECK: Must have buying/selling intent for car listings
     // Car listings are ONLY for buying/selling, not for hire/rental
@@ -1288,6 +1484,698 @@ function buildSearchFollowUpMessage($message, $conversationHistory) {
 }
 
 /**
+ * Build a contextual listing-search follow-up when user only changes location.
+ * Example: previous "I am looking for an SUV in Lilongwe" + current "What about Salima"
+ * => "I am looking for an SUV in Salima"
+ */
+function buildLocationFollowUpSearchMessage($db, $message, $conversationHistory) {
+    $current = trim((string)$message);
+    if ($current === '') {
+        return false;
+    }
+
+    // If current message is already a full search query, no follow-up rewrite needed.
+    if (detectSearchQuery($current)) {
+        return false;
+    }
+
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return false;
+    }
+
+    $location = extractLocationMentionFromText($db, $current);
+    if (empty($location)) {
+        return false;
+    }
+
+    // Follow-up phrasing hints. Also allow very short location-only messages.
+    $isLikelyFollowUp = preg_match('/\b(what about|how about|about|instead|then|and|try)\b/i', $current) === 1
+        || str_word_count($current) <= 4;
+    if (!$isLikelyFollowUp) {
+        return false;
+    }
+
+    $priorSearchMessage = '';
+    for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
+        $item = $conversationHistory[$i];
+        if (!is_array($item) || ($item['role'] ?? '') !== 'user') {
+            continue;
+        }
+
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') {
+            continue;
+        }
+
+        if (detectSearchQuery($content)) {
+            $priorSearchMessage = $content;
+            break;
+        }
+    }
+
+    if ($priorSearchMessage === '') {
+        return false;
+    }
+
+    // Remove prior location from the old query, then inject new target location.
+    $priorParams = simpleExtractParams($db, $priorSearchMessage);
+    $base = $priorSearchMessage;
+
+    if (!empty($priorParams['location'])) {
+        $oldLoc = (string)$priorParams['location'];
+        $base = preg_replace('/\b(in|at|around|near)\s+' . preg_quote($oldLoc, '/') . '\b/i', '', $base);
+        $base = preg_replace('/\b' . preg_quote($oldLoc, '/') . '\b/i', '', $base);
+    }
+
+    $base = trim(preg_replace('/\s+/', ' ', (string)$base));
+    if ($base === '') {
+        $base = 'I am looking for a vehicle';
+    }
+
+    return trim($base . ' in ' . $location);
+}
+
+/**
+ * Build a contextual car-hire follow-up when user only changes location.
+ * Example: previous "Looking for an SUV to hire in Lilongwe" + current "What about Salima"
+ * => "Looking for an SUV to hire in Salima"
+ */
+function buildLocationFollowUpCarHireMessage($db, $message, $conversationHistory) {
+    $current = trim((string)$message);
+    if ($current === '') {
+        return false;
+    }
+
+    // If current message is already an explicit car-hire query, no rewrite needed.
+    if (detectCarHireQuery($current)) {
+        return false;
+    }
+
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return false;
+    }
+
+    $location = extractLocationMentionFromText($db, $current);
+    if (empty($location)) {
+        return false;
+    }
+
+    $isLikelyFollowUp = preg_match('/\b(what about|how about|about|instead|then|and|try)\b/i', $current) === 1
+        || str_word_count($current) <= 4;
+    if (!$isLikelyFollowUp) {
+        return false;
+    }
+
+    $priorCarHireMessage = '';
+    for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
+        $item = $conversationHistory[$i];
+        if (!is_array($item) || ($item['role'] ?? '') !== 'user') {
+            continue;
+        }
+
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') {
+            continue;
+        }
+
+        if (detectCarHireQuery($content)) {
+            $priorCarHireMessage = $content;
+            break;
+        }
+    }
+
+    if ($priorCarHireMessage === '') {
+        return false;
+    }
+
+    $base = $priorCarHireMessage;
+    $priorParams = extractCarHireSearchParams($priorCarHireMessage);
+    if (!empty($priorParams['location'])) {
+        $oldLoc = (string)$priorParams['location'];
+        $base = preg_replace('/\b(in|at|around|near)\s+' . preg_quote($oldLoc, '/') . '\b/i', '', $base);
+        $base = preg_replace('/\b' . preg_quote($oldLoc, '/') . '\b/i', '', $base);
+    }
+
+    $base = trim(preg_replace('/\s+/', ' ', (string)$base));
+    if ($base === '') {
+        $base = 'I am looking for a vehicle to hire';
+    }
+
+    return trim($base . ' in ' . $location);
+}
+
+/**
+ * Build a contextual car-hire comparative follow-up.
+ * Example: previous "Looking for a car hire in Blantyre" + current "What is the cheapest"
+ * => "Looking for a car hire in Blantyre What is the cheapest"
+ */
+function buildCarHireComparativeFollowUpMessage($db, $message, $conversationHistory) {
+    $current = trim((string)$message);
+    if ($current === '') {
+        return false;
+    }
+
+    if (detectPriceComparativeQuery($current) === false) {
+        return false;
+    }
+
+    // If already explicit car-hire comparative query, no rewrite needed.
+    if (detectCarHireQuery($current)) {
+        return false;
+    }
+
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return false;
+    }
+
+    $priorCarHireMessage = '';
+    $latestUserMessage = '';
+    $sawCarHireAssistant = false;
+
+    for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
+        $item = $conversationHistory[$i];
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $role = (string)($item['role'] ?? '');
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') {
+            continue;
+        }
+
+        if ($role === 'assistant' && preg_match('/car\s+hire\s+compan/i', $content)) {
+            $sawCarHireAssistant = true;
+            continue;
+        }
+
+        if ($role !== 'user') {
+            continue;
+        }
+
+        if ($latestUserMessage === '') {
+            $latestUserMessage = $content;
+        }
+
+        if (detectCarHireQuery($content)) {
+            $priorCarHireMessage = $content;
+            break;
+        }
+    }
+
+    if ($priorCarHireMessage === '' && $sawCarHireAssistant) {
+        $location = extractLocationMentionFromText($db, $latestUserMessage);
+        if (!empty($location)) {
+            $priorCarHireMessage = 'Looking for a car hire in ' . $location;
+        } else {
+            $priorCarHireMessage = 'Looking for a car hire';
+        }
+    }
+
+    if ($priorCarHireMessage === '') {
+        return false;
+    }
+
+    return trim($priorCarHireMessage . ' ' . $current);
+}
+
+/**
+ * Detect short contact-detail follow-up requests.
+ */
+function isContactInfoFollowUpQuery($message) {
+    $text = strtolower(trim((string)$message));
+    if ($text === '') {
+        return false;
+    }
+
+    $hasContactWord = preg_match('/\b(contact|phone|number|call|whatsapp|reach)\b/i', $text) === 1;
+    if (!$hasContactWord) {
+        return false;
+    }
+
+    // Prefer short follow-ups or pronoun-based references like "their number".
+    $hasReferenceWord = preg_match('/\b(their|them|those|these|that|it|him|her)\b/i', $text) === 1;
+    return $hasReferenceWord || str_word_count($text) <= 8;
+}
+
+/**
+ * Build a contextual contact follow-up query from prior user intent.
+ * Example: previous "Looking for car hire in Lilongwe" + "Give me their contact number"
+ * => "Looking for car hire in Lilongwe contact number"
+ */
+function buildContactFollowUpMessage($db, $message, $conversationHistory) {
+    $current = trim((string)$message);
+    if (!isContactInfoFollowUpQuery($current)) {
+        return false;
+    }
+
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return false;
+    }
+
+    $latestUserMessage = '';
+    $sawCarHireAssistant = false;
+    $sawDealerAssistant = false;
+    $sawGarageAssistant = false;
+
+    for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
+        $item = $conversationHistory[$i];
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $role = (string)($item['role'] ?? '');
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') {
+            continue;
+        }
+
+        if ($role === 'assistant') {
+            if (preg_match('/car\s+hire\s+compan/i', $content)) {
+                $sawCarHireAssistant = true;
+            }
+            if (preg_match('/\bdealer\b|\bshowroom\b/i', $content)) {
+                $sawDealerAssistant = true;
+            }
+            if (preg_match('/\bgarage\b|\bworkshop\b/i', $content)) {
+                $sawGarageAssistant = true;
+            }
+            continue;
+        }
+
+        if ($role !== 'user') {
+            continue;
+        }
+
+        if ($latestUserMessage === '') {
+            $latestUserMessage = $content;
+        }
+
+        if (detectCarHireQuery($content)) {
+            return trim($content . ' contact number');
+        }
+
+        if (detectDealerQuery($content)) {
+            return trim($content . ' contact number');
+        }
+
+        if (detectGarageQuery($content)) {
+            return trim($content . ' contact number');
+        }
+
+        if (detectSearchQuery($content)) {
+            return trim($content . ' seller contact number');
+        }
+    }
+
+    // Fallback when assistant context exists but prior user intent message is noisy/misspelled.
+    $location = extractLocationMentionFromText($db, $latestUserMessage);
+    if ($sawCarHireAssistant) {
+        return trim('show contact numbers for car hire companies' . (!empty($location) ? ' in ' . $location : ''));
+    }
+    if ($sawDealerAssistant) {
+        return trim('show contact numbers for car dealers' . (!empty($location) ? ' in ' . $location : ''));
+    }
+    if ($sawGarageAssistant) {
+        return trim('show contact numbers for garages' . (!empty($location) ? ' in ' . $location : ''));
+    }
+
+    return false;
+}
+
+/**
+ * AI-assisted conversational intent resolver for ambiguous natural-language follow-ups.
+ * Returns: ['intent' => string, 'rewritten_query' => string, 'confidence' => float, 'out_of_scope' => bool]
+ */
+function resolveConversationalIntentWithAI($db, $message, $conversationHistory, $settings, $provider, $providerConfig, $modelName) {
+    if (!function_exists('curl_init')) {
+        return [];
+    }
+
+    $providerApiKey = getAIProviderApiKeyFromDB($provider, $db);
+    if (empty($providerApiKey)) {
+        return [];
+    }
+
+    $recentHistory = [];
+    if (is_array($conversationHistory) && !empty($conversationHistory)) {
+        $slice = array_slice($conversationHistory, -8);
+        foreach ($slice as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $role = strtolower(trim((string)($item['role'] ?? '')));
+            $content = trim((string)($item['content'] ?? ''));
+            if ($content === '' || ($role !== 'user' && $role !== 'assistant')) {
+                continue;
+            }
+            $recentHistory[] = [
+                'role' => $role,
+                'content' => mb_substr($content, 0, 280)
+            ];
+        }
+    }
+
+    $intentPrompt = "Classify the user's latest message into one intent for an automotive marketplace assistant and rewrite ambiguous follow-ups into a fully explicit query using conversation context.\n\n"
+        . "Allowed intents:\n"
+        . "- car_hire\n"
+        . "- dealer\n"
+        . "- garage\n"
+        . "- listings\n"
+        . "- fuel\n"
+        . "- spec\n"
+        . "- recommendation\n"
+        . "- general_automotive\n"
+        . "- out_of_scope\n\n"
+        . "Rules:\n"
+        . "1. Use conversation context heavily for pronouns and short follow-ups (their, them, that one, cheapest, contact number).\n"
+        . "2. Keep rewritten_query concise and faithful to user constraints (location, category, business type).\n"
+        . "3. If the user is still asking about automotive/MotorLink, do NOT classify as out_of_scope.\n"
+        . "4. Return STRICT JSON only with this schema:\n"
+        . "{\"intent\":\"...\",\"rewritten_query\":\"...\",\"confidence\":0.0,\"out_of_scope\":false}\n\n"
+        . "Conversation history JSON:\n"
+        . json_encode($recentHistory, JSON_UNESCAPED_UNICODE)
+        . "\n\nLatest user message:\n"
+        . $message;
+
+    $payload = [
+        'model' => $modelName,
+        'messages' => [
+            ['role' => 'system', 'content' => 'You are a strict JSON intent resolver for an automotive assistant. Return valid JSON only.'],
+            ['role' => 'user', 'content' => $intentPrompt]
+        ],
+        'temperature' => 0.1,
+        'max_tokens' => 220
+    ];
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $providerConfig['url']);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Authorization: Bearer ' . $providerApiKey
+    ]);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 18);
+
+    $isWindows = (PHP_OS_FAMILY === 'Windows');
+    $serverHost = $_SERVER['HTTP_HOST'] ?? '';
+    $isLocalDev = (strpos($serverHost, 'localhost') !== false || strpos($serverHost, '127.0.0.1') !== false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !($isLocalDev || $isWindows));
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, ($isLocalDev || $isWindows) ? 0 : 2);
+
+    $response = curl_exec($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode !== 200 || empty($response)) {
+        return [];
+    }
+
+    $apiData = json_decode($response, true);
+    $rawContent = trim((string)($apiData['choices'][0]['message']['content'] ?? ''));
+    if ($rawContent === '') {
+        return [];
+    }
+
+    $jsonStr = preg_replace('/```json\s*/i', '', $rawContent);
+    $jsonStr = preg_replace('/```\s*/', '', (string)$jsonStr);
+    $jsonStr = trim((string)$jsonStr);
+
+    if ($jsonStr === '' || $jsonStr[0] !== '{') {
+        if (preg_match('/\{.*\}/s', $jsonStr, $matches)) {
+            $jsonStr = $matches[0];
+        }
+    }
+
+    $parsed = json_decode($jsonStr, true);
+    if (!is_array($parsed)) {
+        return [];
+    }
+
+    $intent = strtolower(trim((string)($parsed['intent'] ?? '')));
+    $allowed = ['car_hire', 'dealer', 'garage', 'listings', 'fuel', 'spec', 'recommendation', 'general_automotive', 'out_of_scope'];
+    if (!in_array($intent, $allowed, true)) {
+        return [];
+    }
+
+    $confidence = (float)($parsed['confidence'] ?? 0);
+    if ($confidence > 0 && $confidence < 0.55) {
+        return [];
+    }
+
+    return [
+        'intent' => $intent,
+        'rewritten_query' => trim((string)($parsed['rewritten_query'] ?? '')),
+        'confidence' => $confidence,
+        'out_of_scope' => (bool)($parsed['out_of_scope'] ?? false)
+    ];
+}
+
+/**
+ * Build a contextual garage follow-up when user only changes location.
+ */
+function buildLocationFollowUpGarageMessage($db, $message, $conversationHistory) {
+    $current = trim((string)$message);
+    if ($current === '') {
+        return false;
+    }
+
+    if (detectGarageQuery($current)) {
+        return false;
+    }
+
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return false;
+    }
+
+    $location = extractLocationMentionFromText($db, $current);
+    if (empty($location)) {
+        return false;
+    }
+
+    $isLikelyFollowUp = preg_match('/\b(what about|how about|about|instead|then|and|try)\b/i', $current) === 1
+        || str_word_count($current) <= 4;
+    if (!$isLikelyFollowUp) {
+        return false;
+    }
+
+    $priorGarageMessage = '';
+    for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
+        $item = $conversationHistory[$i];
+        if (!is_array($item) || ($item['role'] ?? '') !== 'user') {
+            continue;
+        }
+
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') {
+            continue;
+        }
+
+        if (detectGarageQuery($content)) {
+            $priorGarageMessage = $content;
+            break;
+        }
+    }
+
+    if ($priorGarageMessage === '') {
+        return false;
+    }
+
+    $base = $priorGarageMessage;
+    $priorParams = extractGarageSearchParams($priorGarageMessage);
+    if (!empty($priorParams['location'])) {
+        $oldLoc = (string)$priorParams['location'];
+        $base = preg_replace('/\b(in|at|around|near)\s+' . preg_quote($oldLoc, '/') . '\b/i', '', $base);
+        $base = preg_replace('/\b' . preg_quote($oldLoc, '/') . '\b/i', '', $base);
+    }
+
+    $base = trim(preg_replace('/\s+/', ' ', (string)$base));
+    if ($base === '') {
+        $base = 'I am looking for a garage';
+    }
+
+    return trim($base . ' in ' . $location);
+}
+
+/**
+ * Build a contextual dealer follow-up when user only changes location.
+ */
+function buildLocationFollowUpDealerMessage($db, $message, $conversationHistory) {
+    $current = trim((string)$message);
+    if ($current === '') {
+        return false;
+    }
+
+    if (detectDealerQuery($current)) {
+        return false;
+    }
+
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return false;
+    }
+
+    $location = extractLocationMentionFromText($db, $current);
+    if (empty($location)) {
+        return false;
+    }
+
+    $isLikelyFollowUp = preg_match('/\b(what about|how about|about|instead|then|and|try)\b/i', $current) === 1
+        || str_word_count($current) <= 4;
+    if (!$isLikelyFollowUp) {
+        return false;
+    }
+
+    $priorDealerMessage = '';
+    for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
+        $item = $conversationHistory[$i];
+        if (!is_array($item) || ($item['role'] ?? '') !== 'user') {
+            continue;
+        }
+
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') {
+            continue;
+        }
+
+        if (detectDealerQuery($content)) {
+            $priorDealerMessage = $content;
+            break;
+        }
+    }
+
+    if ($priorDealerMessage === '') {
+        return false;
+    }
+
+    $base = $priorDealerMessage;
+    $priorParams = extractDealerSearchParams($db, $priorDealerMessage);
+    if (!empty($priorParams['location'])) {
+        $oldLoc = (string)$priorParams['location'];
+        $base = preg_replace('/\b(in|at|around|near)\s+' . preg_quote($oldLoc, '/') . '\b/i', '', $base);
+        $base = preg_replace('/\b' . preg_quote($oldLoc, '/') . '\b/i', '', $base);
+    }
+
+    $base = trim(preg_replace('/\s+/', ' ', (string)$base));
+    if ($base === '') {
+        $base = 'I am looking for a car dealer';
+    }
+
+    return trim($base . ' in ' . $location);
+}
+
+/**
+ * Build a contextual follow-up for general automotive intents.
+ * Example: previous "Tell me about Toyota Fortuner specs" + current "What about Toyota Hilux"
+ */
+function buildGeneralAutomotiveFollowUpMessage($message, $conversationHistory) {
+    $current = trim((string)$message);
+    if ($current === '') {
+        return false;
+    }
+
+    // If already clearly in automotive scope, no rewrite needed.
+    if (!isOutOfScopeQuery($current)) {
+        return false;
+    }
+
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return false;
+    }
+
+    $isLikelyFollowUp = preg_match('/\b(what about|how about|about|instead|then|and|try|that one|this one|other one)\b/i', $current) === 1
+        || str_word_count($current) <= 6;
+    if (!$isLikelyFollowUp) {
+        return false;
+    }
+
+    $priorAutomotiveMessage = '';
+    for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
+        $item = $conversationHistory[$i];
+        if (!is_array($item) || ($item['role'] ?? '') !== 'user') {
+            continue;
+        }
+
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') {
+            continue;
+        }
+
+        if (
+            detectCarHireQuery($content) ||
+            detectDealerQuery($content) ||
+            detectGarageQuery($content) ||
+            detectSearchQuery($content) ||
+            detectCarSpecQuery($content) ||
+            detectCarRecommendationQuery($content) ||
+            detectFuelPriceQuery($content) ||
+            detectPartsQuery($content)
+        ) {
+            $priorAutomotiveMessage = $content;
+            break;
+        }
+    }
+
+    if ($priorAutomotiveMessage === '') {
+        return false;
+    }
+
+    return trim($priorAutomotiveMessage . ' ' . $current);
+}
+
+/**
+ * Extract canonical location mention from free text (exact or fuzzy typo match).
+ */
+function extractLocationMentionFromText($db, $text) {
+    $msg = strtolower(trim((string)$text));
+    if ($msg === '') {
+        return null;
+    }
+
+    try {
+        $stmt = $db->query("SELECT name FROM locations ORDER BY name ASC");
+        $locations = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        foreach ($locations as $name) {
+            $nameLower = strtolower((string)$name);
+            if (preg_match('/\\b' . preg_quote($nameLower, '/') . '\\b/i', $msg)) {
+                return (string)$name;
+            }
+        }
+
+        // Fuzzy match for common misspellings in short follow-ups.
+        $tokens = preg_split('/[^a-z]+/', $msg);
+        if (!is_array($tokens)) {
+            return null;
+        }
+
+        $best = null;
+        $bestDistance = PHP_INT_MAX;
+        foreach ($tokens as $token) {
+            if ($token === '' || strlen($token) < 4) {
+                continue;
+            }
+            foreach ($locations as $name) {
+                $distance = levenshtein($token, strtolower((string)$name));
+                if ($distance < $bestDistance) {
+                    $bestDistance = $distance;
+                    $best = (string)$name;
+                }
+            }
+        }
+
+        if ($best !== null && $bestDistance <= 2) {
+            return $best;
+        }
+    } catch (Exception $e) {
+        error_log('extractLocationMentionFromText error: ' . $e->getMessage());
+    }
+
+    return null;
+}
+
+/**
  * Handle search query - extract parameters and search listings
  */
 function handleSearchQuery($db, $message, $conversationHistory) {
@@ -1302,6 +2190,9 @@ function handleSearchQuery($db, $message, $conversationHistory) {
                 $searchParams = $aiExtractedParams;
             }
         }
+
+        // Normalize fuzzy user input (typos, variants) into strict database-backed values.
+        $searchParams = normalizeSearchParams($db, $searchParams, $message);
         
         // Build search query for listings
         $searchQuery = [];
@@ -1454,6 +2345,21 @@ function handleSearchQuery($db, $message, $conversationHistory) {
             $hasMake = !empty($searchQuery['make_id']);
             $hasModel = !empty($searchQuery['model_id']);
             $hasLocation = !empty($searchQuery['location']);
+
+            // Strict location behavior: if the user asked for a location, never broaden to other locations.
+            if ($hasLocation) {
+                $locationName = !empty($searchQuery['location']) ? $searchQuery['location'] : (!empty($searchParams['location']) ? $searchParams['location'] : 'that location');
+                $response = "I couldn't find any vehicles matching your criteria in {$locationName}. ";
+                $response .= "I won't show vehicles from other locations unless you ask me to broaden the search. ";
+                $response .= "You can try a nearby location, adjust make/model, or remove one filter.";
+
+                sendSuccess([
+                    'response' => $response,
+                    'search_results' => [],
+                    'total_results' => 0
+                ]);
+                return;
+            }
             
             // Try alternatives: remove location first, then model, then make
             if ($hasLocation) {
@@ -1682,6 +2588,43 @@ function handleSearchQuery($db, $message, $conversationHistory) {
 }
 
 /**
+ * Determine if the message is out of chatbot scope.
+ * Scope: automotive + MotorLink features/services/data.
+ */
+function isOutOfScopeQuery($message) {
+    $msg = strtolower(trim((string)$message));
+    if ($msg === '') {
+        return false;
+    }
+
+    // Allow short greetings/thanks so the chatbot remains usable.
+    if (preg_match('/^(hi|hello|hey|thanks|thank you|ok|okay|yo|good morning|good afternoon|good evening)[!. ]*$/i', $msg)) {
+        return false;
+    }
+
+    $inScopeKeywords = [
+        'car', 'vehicle', 'motor', 'automotive', 'listing', 'listings', 'dealer', 'dealership',
+        'garage', 'repair', 'service', 'car hire', 'rental', 'rent', 'fuel', 'petrol', 'diesel',
+        'engine', 'transmission', 'mileage', 'oil', 'brake', 'tyre', 'tire', 'battery', 'maintenance',
+        'suv', 'sedan', 'pickup', 'hatchback', 'bmw', 'toyota',
+        'honda', 'nissan', 'mazda', 'mercedes', 'ford', 'subaru', 'mitsubishi', 'vw', 'volkswagen',
+        'lilongwe', 'blantyre', 'mzuzu', 'zomba', 'motorlink', 'buy', 'sell', 'price', 'spec', 'specification'
+    ];
+
+    foreach ($inScopeKeywords as $keyword) {
+        if (strpos($msg, $keyword) !== false) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function buildOutOfScopeResponse() {
+    return "I can only help with MotorLink and automotive topics (cars, listings, garages, dealers, car hire, fuel prices, and vehicle specs). Please ask a car-related question.";
+}
+
+/**
  * Handle car specification queries
  * Queries both database and internet for comprehensive answers
  */
@@ -1703,36 +2646,9 @@ function handleCarSpecQuery($db, $message, $conversationHistory, $userContext) {
         
         // Query internet for additional specs (using OpenAI's knowledge) if not in cache
         $internetSpecs = null;
-        $needsInternetResearch = empty($dbSpecs) || !$hasCacheData;
         
         if (!$hasCacheData) {
             $internetSpecs = queryCarSpecsFromInternet($message, $makeName, $modelName, $year);
-            
-            // CRITICAL: Trigger learning in background to cache this query for next time
-            // This ensures every new question that needs internet research gets cached
-            register_shutdown_function(function() use ($db, $message) {
-                try {
-                    require_once __DIR__ . '/ai-learning-api.php';
-                    $isPartsQuery = false;
-                    if (function_exists('detectPartsQuery')) {
-                        $isPartsQuery = detectPartsQuery($message);
-                    } else {
-                        $messageLower = strtolower($message);
-                        $partsKeywords = ['part number', 'oem number', 'compatibility', 'part for', 'parts for', 'spare part'];
-                        foreach ($partsKeywords as $keyword) {
-                            if (strpos($messageLower, $keyword) !== false) {
-                                $isPartsQuery = true;
-                                break;
-                            }
-                        }
-                    }
-                    @learnFromUserQuery($db, $message, $isPartsQuery, 'auto');
-                } catch (Exception $e) {
-                    // Silently fail
-                } catch (Error $e) {
-                    // Silently fail
-                }
-            });
         } else {
             // Use cached data
             $internetSpecs = $cacheResult['summary'];
@@ -2498,6 +3414,9 @@ function handleCarRecommendationQuery($db, $message, $conversationHistory, $user
         if (!empty($requirements['purpose'])) {
             $recommendationContext .= "- Purpose: {$requirements['purpose']}\n";
         }
+        if (!empty($requirements['location'])) {
+            $recommendationContext .= "- Location: {$requirements['location']}\n";
+        }
         if (!empty($requirements['features'])) {
             $recommendationContext .= "- Features: " . implode(", ", $requirements['features']) . "\n";
         }
@@ -2779,6 +3698,48 @@ function extractCarRequirements($db, $message) {
     if (strpos($messageLower, 'reliable') !== false) {
         $requirements['features'][] = 'reliable';
     }
+
+    // Extract location from canonical locations table for strict location filtering.
+    if (empty($requirements['location'])) {
+        try {
+            $locStmt = $db->query("SELECT id, name FROM locations ORDER BY name ASC");
+            $locations = $locStmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($locations as $loc) {
+                $locNameLower = strtolower((string)$loc['name']);
+                if (preg_match('/\\b' . preg_quote($locNameLower, '/') . '\\b/i', $messageLower)) {
+                    $requirements['location'] = $loc['name'];
+                    $requirements['location_id'] = (int)$loc['id'];
+                    break;
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Error extracting recommendation location: " . $e->getMessage());
+        }
+    }
+
+    // Fuzzy fallback for typos like "lilonwe".
+    if (empty($requirements['location'])) {
+        $inferredLocation = inferLocationFromMessage($message);
+        if (!empty($inferredLocation)) {
+            $resolvedLocation = resolveClosestLocationName($db, $inferredLocation);
+            if (!empty($resolvedLocation)) {
+                $requirements['location'] = $resolvedLocation;
+            }
+        }
+    }
+
+    if (!empty($requirements['location']) && empty($requirements['location_id'])) {
+        try {
+            $locIdStmt = $db->prepare("SELECT id FROM locations WHERE LOWER(name) = ? LIMIT 1");
+            $locIdStmt->execute([strtolower(trim((string)$requirements['location']))]);
+            $locId = $locIdStmt->fetch(PDO::FETCH_ASSOC);
+            if (!empty($locId['id'])) {
+                $requirements['location_id'] = (int)$locId['id'];
+            }
+        } catch (Exception $e) {
+            error_log("Error resolving recommendation location_id: " . $e->getMessage());
+        }
+    }
     
     return $requirements;
 }
@@ -2808,10 +3769,11 @@ function extractCarRequirementsWithAI($db, $message) {
   \"make\": \"brand name\" or null,
   \"model\": \"model name\" or null,
   \"max_price\": number or null,
-  \"fuel_type\": \"petrol, diesel, hybrid, electric\" or null,
-  \"transmission\": \"manual, automatic\" or null,
-  \"purpose\": \"family, business, city, off-road\" or null,
-  \"features\": [\"safety\", \"spacious\", \"fuel efficient\", \"reliable\"] or null
+    \"fuel_type\": \"petrol, diesel, hybrid, electric\" or null,
+    \"transmission\": \"manual, automatic\" or null,
+    \"purpose\": \"family, business, city, off-road\" or null,
+    \"location\": \"Exact Malawi location (e.g., Lilongwe, Blantyre, Mzuzu)\" or null,
+    \"features\": [\"safety\", \"spacious\", \"fuel efficient\", \"reliable\"] or null
 }
 
 THINK LOGICALLY:
@@ -2886,7 +3848,9 @@ function searchCarsByRequirements($db, $requirements) {
                             !empty($requirements['max_price']) || 
                             !empty($requirements['fuel_type']) || 
                             !empty($requirements['transmission']) ||
-                            !empty($requirements['purpose']);
+                            !empty($requirements['purpose']) ||
+                            !empty($requirements['location']) ||
+                            !empty($requirements['location_id']);
         
         if (!$hasAnyRequirement) {
             // No requirements = no results (don't show all cars)
@@ -2960,6 +3924,15 @@ function searchCarsByRequirements($db, $requirements) {
         if (!empty($requirements['transmission'])) {
             $conditions[] = "LOWER(l.transmission) = ?";
             $params[] = strtolower($requirements['transmission']);
+        }
+
+        // Location - STRICT exact filtering.
+        if (!empty($requirements['location_id'])) {
+            $conditions[] = "l.location_id = ?";
+            $params[] = (int)$requirements['location_id'];
+        } elseif (!empty($requirements['location'])) {
+            $conditions[] = "LOWER(loc.name) = ?";
+            $params[] = strtolower(trim((string)$requirements['location']));
         }
         
         // Purpose-based filtering
@@ -3334,6 +4307,193 @@ function simpleExtractParams($db, $message) {
     }
     
     return $params;
+}
+
+/**
+ * Normalize user search params using typo-tolerant matching for strict filters.
+ */
+function normalizeSearchParams($db, $searchParams, $message) {
+    if (!is_array($searchParams)) {
+        $searchParams = [];
+    }
+
+    $searchParams = normalizeBodyTypeParam($searchParams, $message);
+
+    // If location is missing from extraction, try to infer from phrasing like "in lilonwe".
+    if (empty($searchParams['location'])) {
+        $inferredLocation = inferLocationFromMessage($message);
+        if (!empty($inferredLocation)) {
+            $searchParams['location'] = $inferredLocation;
+        }
+    }
+
+    // Resolve fuzzy/typo location to canonical locations table value.
+    if (!empty($searchParams['location'])) {
+        $resolvedLocation = resolveClosestLocationName($db, $searchParams['location']);
+        if (!empty($resolvedLocation)) {
+            $searchParams['location'] = $resolvedLocation;
+        }
+    }
+
+    return $searchParams;
+}
+
+function normalizeBodyTypeParam($searchParams, $message) {
+    if (!is_array($searchParams)) {
+        $searchParams = [];
+    }
+
+    if (!empty($searchParams['body_type'])) {
+        $normalized = strtolower(trim((string)$searchParams['body_type']));
+        $searchParams['body_type'] = normalizeBodyTypeToken($normalized) ?: $normalized;
+        return $searchParams;
+    }
+
+    $msg = strtolower((string)$message);
+
+    // Prefer explicit body-type mentions in the raw text first.
+    if (preg_match('/\b(suv|sucv|crossover|sedan|hatchback|pickup|truck|wagon|coupe|convertible|minivan|van)\b/i', $msg, $exactMatch)) {
+        $direct = normalizeBodyTypeToken((string)$exactMatch[1]);
+        if (!empty($direct)) {
+            $searchParams['body_type'] = $direct;
+            return $searchParams;
+        }
+    }
+
+    $tokens = preg_split('/[^a-z0-9]+/', $msg);
+    if (!is_array($tokens)) {
+        return $searchParams;
+    }
+
+    foreach ($tokens as $token) {
+        if ($token === '') {
+            continue;
+        }
+
+        // Ignore very short tokens to avoid false positives like "an" -> "van".
+        if (strlen($token) < 3) {
+            continue;
+        }
+
+        $normalized = normalizeBodyTypeToken($token);
+        if (!empty($normalized)) {
+            $searchParams['body_type'] = $normalized;
+            break;
+        }
+    }
+
+    return $searchParams;
+}
+
+function normalizeBodyTypeToken($token) {
+    $token = strtolower(trim((string)$token));
+    if ($token === '') {
+        return null;
+    }
+
+    if (strlen($token) < 3) {
+        return null;
+    }
+
+    $map = [
+        'suv' => 'suv',
+        'sucv' => 'suv',
+        'suv\'s' => 'suv',
+        'crossover' => 'crossover',
+        'sedan' => 'sedan',
+        'hatchback' => 'hatchback',
+        'pickup' => 'pickup',
+        'truck' => 'truck',
+        'wagon' => 'wagon',
+        'coupe' => 'coupe',
+        'convertible' => 'convertible',
+        'minivan' => 'minivan',
+        'van' => 'van'
+    ];
+
+    if (isset($map[$token])) {
+        return $map[$token];
+    }
+
+    $known = ['suv', 'crossover', 'sedan', 'hatchback', 'pickup', 'truck', 'wagon', 'coupe', 'convertible', 'minivan', 'van'];
+    $best = null;
+    $bestDistance = PHP_INT_MAX;
+
+    foreach ($known as $candidate) {
+        $distance = levenshtein($token, $candidate);
+        if ($distance < $bestDistance) {
+            $bestDistance = $distance;
+            $best = $candidate;
+        }
+    }
+
+    // Fuzzy correction only for sufficiently long tokens.
+    if (strlen($token) < 4) {
+        return null;
+    }
+
+    return ($bestDistance <= 1) ? $best : null;
+}
+
+function inferLocationFromMessage($message) {
+    $msg = trim((string)$message);
+    if ($msg === '') {
+        return null;
+    }
+
+    if (preg_match('/\b(?:in|at|around|near)\s+([a-zA-Z][a-zA-Z\-]*(?:\s+[a-zA-Z][a-zA-Z\-]*){0,2})(?=\s+(?:for|with|under|below|but|and|or|that|which|who|where)\b|[?.!,]|$)/i', $msg, $matches)) {
+        return trim($matches[1]);
+    }
+
+    return null;
+}
+
+/**
+ * Resolve a free-text location (including common typos) to a canonical locations.name value.
+ */
+function resolveClosestLocationName($db, $rawLocation) {
+    $raw = strtolower(trim((string)$rawLocation));
+    if ($raw === '') {
+        return null;
+    }
+
+    try {
+        // First: exact match.
+        $stmt = $db->prepare("SELECT name FROM locations WHERE LOWER(name) = ? LIMIT 1");
+        $stmt->execute([$raw]);
+        $exact = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!empty($exact['name'])) {
+            return $exact['name'];
+        }
+
+        // Then: closest edit-distance match across known locations.
+        $allStmt = $db->query("SELECT name FROM locations ORDER BY name ASC");
+        $all = $allStmt->fetchAll(PDO::FETCH_COLUMN);
+        if (empty($all)) {
+            return null;
+        }
+
+        $best = null;
+        $bestDistance = PHP_INT_MAX;
+
+        foreach ($all as $name) {
+            $nameLower = strtolower((string)$name);
+            $distance = levenshtein($raw, $nameLower);
+            if ($distance < $bestDistance) {
+                $bestDistance = $distance;
+                $best = $name;
+            }
+        }
+
+        // Accept only close matches to avoid incorrect location mapping.
+        if ($best !== null && $bestDistance <= 2) {
+            return $best;
+        }
+    } catch (Exception $e) {
+        error_log("resolveClosestLocationName error: " . $e->getMessage());
+    }
+
+    return null;
 }
 
 function hasMeaningfulSearchParams($params) {
@@ -5353,11 +6513,17 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
         // Detect if this is a "most" query (e.g., "which car hire has most cars")
         $isComparativeQuery = detectComparativeQuery($message);
         $isMostQuery = ($isComparativeQuery === 'most' || $isComparativeQuery === 'largest' || $isComparativeQuery === 'biggest');
+        $priceComparison = detectPriceComparativeQuery($message);
+        $isPriceComparison = !empty($priceComparison);
         $isProximityQuery = !empty($searchParams['proximity']);
         
         // If it's a "most" query, sort by vehicle count
         if ($isMostQuery) {
             $searchParams['sort_by'] = 'vehicle_count';
+        }
+
+        if ($isPriceComparison) {
+            $searchParams['price_comparison'] = $priceComparison;
         }
         
         // If proximity query and user has location, add to search params
@@ -5442,6 +6608,26 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
                 if (!empty($company['daily_rate_from'])) {
                     $response .= "💰 Starting from: MWK " . number_format($company['daily_rate_from']) . "/day\n";
                 }
+            } elseif ($isPriceComparison && !empty($results['companies'])) {
+                $company = $results['companies'][0];
+                $companyUrl = $baseUrl . "car-hire-company.html?id=" . $company['id'];
+                $label = $priceComparison === 'most_expensive' ? 'most expensive' : 'cheapest';
+
+                $response = "The {$label} car hire option I found is [{$company['business_name']}]({$companyUrl})";
+                if (!empty($company['location_name'])) {
+                    $response .= " in {$company['location_name']}";
+                }
+                $response .= ".\n\n";
+
+                if (!empty($company['daily_rate_from'])) {
+                    $response .= "💰 From MWK " . number_format($company['daily_rate_from']) . "/day\n";
+                }
+                if (!empty($company['phone'])) {
+                    $response .= "📞 {$company['phone']}\n";
+                }
+                if (!empty($company['total_vehicles'])) {
+                    $response .= "🚗 {$company['total_vehicles']} vehicle" . ($company['total_vehicles'] != 1 ? 's' : '') . " available\n";
+                }
             } else {
                 // Regular query - show top 3 results (reduced from 5 for conciseness)
                 $count = count($results['companies']);
@@ -5453,6 +6639,10 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
                     
                     if (!empty($company['location_name'])) {
                         $response .= "  📍 {$company['location_name']}\n";
+                    }
+
+                    if (!empty($company['phone'])) {
+                        $response .= "  📞 {$company['phone']}\n";
                     }
                     
                     if (!empty($company['total_vehicles'])) {
@@ -5595,6 +6785,11 @@ function extractCarHireSearchParams($message) {
         $params['transmission'] = 'automatic';
     } elseif (strpos($messageLower, 'manual') !== false) {
         $params['transmission'] = 'manual';
+    }
+
+    $priceComparison = detectPriceComparativeQuery($message);
+    if (!empty($priceComparison)) {
+        $params['price_comparison'] = $priceComparison;
     }
     
     return $params;
@@ -5767,6 +6962,22 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
             return !empty($company['matching_vehicles']);
         });
         $companies = array_values($companies); // Re-index array
+    }
+
+    // Apply price-comparison ordering after calculating daily_rate_from values.
+    if (!empty($searchParams['price_comparison'])) {
+        $comparison = (string)$searchParams['price_comparison'];
+        usort($companies, function($a, $b) use ($comparison) {
+            $aRate = isset($a['daily_rate_from']) ? (float)$a['daily_rate_from'] : INF;
+            $bRate = isset($b['daily_rate_from']) ? (float)$b['daily_rate_from'] : INF;
+
+            if ($comparison === 'most_expensive') {
+                return $bRate <=> $aRate;
+            }
+
+            // Default to cheapest and best_value behaving like ascending price.
+            return $aRate <=> $bRate;
+        });
     }
     
     return ['companies' => $companies];

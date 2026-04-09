@@ -1,0 +1,482 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e4]:
+      - link " MotorLink":
+        - /url: index.html
+        - generic: 
+        - text: MotorLink
+      - navigation "Main navigation" [ref=e5]:
+        - link "Home" [ref=e6] [cursor=pointer]:
+          - /url: index.html
+        - link "Know Your Car" [ref=e7] [cursor=pointer]:
+          - /url: car-database.html
+        - link "Garages" [ref=e8] [cursor=pointer]:
+          - /url: garages.html
+        - link "Dealers" [ref=e9] [cursor=pointer]:
+          - /url: dealers.html
+        - link "Car Hire" [ref=e10] [cursor=pointer]:
+          - /url: car-hire.html
+        - link "Sell Car" [ref=e11] [cursor=pointer]:
+          - /url: sell.html
+      - generic [ref=e12]:
+        - text:  
+        - generic [ref=e13]:
+          - link " Login" [ref=e14] [cursor=pointer]:
+            - /url: login.html
+            - generic [ref=e15]: 
+            - text: Login
+          - link " Register" [ref=e16] [cursor=pointer]:
+            - /url: register.html
+            - generic [ref=e17]: 
+            - text: Register
+      - text: 
+  - text:  +            
+  - generic [ref=e19]:
+    - heading "Find Your Perfect Car in Malawi" [level=1] [ref=e20]
+    - paragraph [ref=e21]: Browse thousands of quality cars from trusted sellers across Malawi. Find the car that matches your needs and budget in Blantyre, Lilongwe, Mzuzu and beyond.
+    - generic [ref=e22]:
+      - link "Cars Available" [ref=e23] [cursor=pointer]:
+        - /url: index.html
+        - generic [ref=e24]: Cars Available
+      - link "Trusted Dealers" [ref=e25] [cursor=pointer]:
+        - /url: dealers.html
+        - generic [ref=e26]: Trusted Dealers
+      - link "Service Centers" [ref=e27] [cursor=pointer]:
+        - /url: garages.html
+        - generic [ref=e28]: Service Centers
+      - link "Car Hire Services" [ref=e29] [cursor=pointer]:
+        - /url: car-hire.html
+        - generic [ref=e30]: Car Hire Services
+  - generic [ref=e33]:
+    - link " Car Garages Professional automotive repair and maintenance services " [ref=e34] [cursor=pointer]:
+      - /url: garages.html
+      - generic [ref=e36]: 
+      - heading "Car Garages" [level=3] [ref=e37]
+      - paragraph [ref=e38]: Professional automotive repair and maintenance services
+      - generic [ref=e40]: 
+    - link " Car Dealers Certified dealers and trusted showrooms across Malawi " [ref=e41] [cursor=pointer]:
+      - /url: dealers.html
+      - generic [ref=e43]: 
+      - heading "Car Dealers" [level=3] [ref=e44]
+      - paragraph [ref=e45]: Certified dealers and trusted showrooms across Malawi
+      - generic [ref=e47]: 
+    - link " Car Hire Rent quality vehicles for business or leisure trips " [ref=e48] [cursor=pointer]:
+      - /url: car-hire.html
+      - generic [ref=e50]: 
+      - heading "Car Hire" [level=3] [ref=e51]
+      - paragraph [ref=e52]: Rent quality vehicles for business or leisure trips
+      - generic [ref=e54]: 
+    - link " Know Your Car Explore comprehensive car specifications and details " [ref=e55] [cursor=pointer]:
+      - /url: car-database.html
+      - generic [ref=e57]: 
+      - heading "Know Your Car" [level=3] [ref=e58]
+      - paragraph [ref=e59]: Explore comprehensive car specifications and details
+      - generic [ref=e61]: 
+    - link " Sell Your Car List your car and reach thousands of potential buyers " [ref=e62] [cursor=pointer]:
+      - /url: sell.html
+      - generic [ref=e64]: 
+      - heading "Sell Your Car" [level=3] [ref=e65]
+      - paragraph [ref=e66]: List your car and reach thousands of potential buyers
+      - generic [ref=e68]: 
+  - generic [ref=e71]:
+    - link "All cars" [ref=e72] [cursor=pointer]:
+      - /url: "#"
+      - generic [ref=e73]: 
+      - text: All Cars
+    - link "SUV cars" [ref=e74] [cursor=pointer]:
+      - /url: "#"
+      - generic [ref=e75]: 
+      - text: SUVs
+    - link "Sedan cars" [ref=e76] [cursor=pointer]:
+      - /url: "#"
+      - generic [ref=e77]: 
+      - text: Sedans
+    - link "Pickup trucks" [ref=e78] [cursor=pointer]:
+      - /url: "#"
+      - generic [ref=e79]: 
+      - text: Trucks
+    - link "Hatchback cars" [ref=e80] [cursor=pointer]:
+      - /url: "#"
+      - generic [ref=e81]: 
+      - text: Hatchbacks
+    - link "Commercial vehicles" [ref=e82] [cursor=pointer]:
+      - /url: "#"
+      - generic [ref=e83]: 
+      - text: Commercial
+  - text:     
+  - main [ref=e85]:
+    - complementary "Filter options" [ref=e86]:
+      - heading " Filter Results" [level=3] [ref=e87]:
+        - generic [ref=e88]: 
+        - text: Filter Results
+      - generic [ref=e89]:
+        - generic [ref=e90]:
+          - generic [ref=e91] [cursor=pointer]:
+            - generic [ref=e92]: 
+            - text: Search
+          - textbox "Search cars" [ref=e93] [cursor=pointer]:
+            - /placeholder: Search by make, model, or keyword...
+        - generic [ref=e94]:
+          - generic [ref=e95] [cursor=pointer]:
+            - generic [ref=e96]: 
+            - text: Location
+          - combobox " Location" [ref=e97] [cursor=pointer]:
+            - option "All Locations" [selected]
+        - generic [ref=e98]:
+          - generic [ref=e99] [cursor=pointer]:
+            - generic [ref=e100]: 
+            - text: Make
+          - combobox " Make" [ref=e101] [cursor=pointer]:
+            - option "All Makes" [selected]
+        - generic [ref=e102]:
+          - generic [ref=e103] [cursor=pointer]:
+            - generic [ref=e104]: 
+            - text: Model
+          - combobox " Model" [ref=e105] [cursor=pointer]:
+            - option "Select Make First" [selected]
+        - generic [ref=e106]:
+          - paragraph [ref=e107] [cursor=pointer]:
+            - generic [ref=e108]: 
+            - text: Price Range (MWK)
+          - generic [ref=e109]:
+            - spinbutton " Price Range (MWK)" [ref=e110] [cursor=pointer]
+            - spinbutton " Price Range (MWK)" [ref=e111] [cursor=pointer]
+        - generic [ref=e112]:
+          - paragraph [ref=e113] [cursor=pointer]:
+            - generic [ref=e114]: 
+            - text: Year Range
+          - generic [ref=e115]:
+            - combobox " Year Range" [ref=e116] [cursor=pointer]:
+              - option "From Year" [selected]
+              - option "1950"
+              - option "1951"
+              - option "1952"
+              - option "1953"
+              - option "1954"
+              - option "1955"
+              - option "1956"
+              - option "1957"
+              - option "1958"
+              - option "1959"
+              - option "1960"
+              - option "1961"
+              - option "1962"
+              - option "1963"
+              - option "1964"
+              - option "1965"
+              - option "1966"
+              - option "1967"
+              - option "1968"
+              - option "1969"
+              - option "1970"
+              - option "1971"
+              - option "1972"
+              - option "1973"
+              - option "1974"
+              - option "1975"
+              - option "1976"
+              - option "1977"
+              - option "1978"
+              - option "1979"
+              - option "1980"
+              - option "1981"
+              - option "1982"
+              - option "1983"
+              - option "1984"
+              - option "1985"
+              - option "1986"
+              - option "1987"
+              - option "1988"
+              - option "1989"
+              - option "1990"
+              - option "1991"
+              - option "1992"
+              - option "1993"
+              - option "1994"
+              - option "1995"
+              - option "1996"
+              - option "1997"
+              - option "1998"
+              - option "1999"
+              - option "2000"
+              - option "2001"
+              - option "2002"
+              - option "2003"
+              - option "2004"
+              - option "2005"
+              - option "2006"
+              - option "2007"
+              - option "2008"
+              - option "2009"
+              - option "2010"
+              - option "2011"
+              - option "2012"
+              - option "2013"
+              - option "2014"
+              - option "2015"
+              - option "2016"
+              - option "2017"
+              - option "2018"
+              - option "2019"
+              - option "2020"
+              - option "2021"
+              - option "2022"
+              - option "2023"
+              - option "2024"
+              - option "2025"
+              - option "2026"
+            - combobox " Year Range" [ref=e117] [cursor=pointer]:
+              - option "To Year" [selected]
+              - option "1950"
+              - option "1951"
+              - option "1952"
+              - option "1953"
+              - option "1954"
+              - option "1955"
+              - option "1956"
+              - option "1957"
+              - option "1958"
+              - option "1959"
+              - option "1960"
+              - option "1961"
+              - option "1962"
+              - option "1963"
+              - option "1964"
+              - option "1965"
+              - option "1966"
+              - option "1967"
+              - option "1968"
+              - option "1969"
+              - option "1970"
+              - option "1971"
+              - option "1972"
+              - option "1973"
+              - option "1974"
+              - option "1975"
+              - option "1976"
+              - option "1977"
+              - option "1978"
+              - option "1979"
+              - option "1980"
+              - option "1981"
+              - option "1982"
+              - option "1983"
+              - option "1984"
+              - option "1985"
+              - option "1986"
+              - option "1987"
+              - option "1988"
+              - option "1989"
+              - option "1990"
+              - option "1991"
+              - option "1992"
+              - option "1993"
+              - option "1994"
+              - option "1995"
+              - option "1996"
+              - option "1997"
+              - option "1998"
+              - option "1999"
+              - option "2000"
+              - option "2001"
+              - option "2002"
+              - option "2003"
+              - option "2004"
+              - option "2005"
+              - option "2006"
+              - option "2007"
+              - option "2008"
+              - option "2009"
+              - option "2010"
+              - option "2011"
+              - option "2012"
+              - option "2013"
+              - option "2014"
+              - option "2015"
+              - option "2016"
+              - option "2017"
+              - option "2018"
+              - option "2019"
+              - option "2020"
+              - option "2021"
+              - option "2022"
+              - option "2023"
+              - option "2024"
+              - option "2025"
+              - option "2026"
+        - generic [ref=e118]:
+          - generic [ref=e119] [cursor=pointer]:
+            - generic [ref=e120]: 
+            - text: Fuel Type
+          - combobox " Fuel Type" [ref=e121] [cursor=pointer]:
+            - option "Any Fuel Type" [selected]
+            - option "Petrol"
+            - option "Diesel"
+            - option "Hybrid"
+            - option "Electric"
+            - option "LPG"
+        - generic [ref=e122]:
+          - generic [ref=e123] [cursor=pointer]:
+            - generic [ref=e124]: 
+            - text: Transmission
+          - combobox " Transmission" [ref=e125] [cursor=pointer]:
+            - option "Any Transmission" [selected]
+            - option "Manual"
+            - option "Automatic"
+            - option "CVT"
+            - option "Semi-Automatic"
+        - generic [ref=e126]:
+          - generic [ref=e127] [cursor=pointer]:
+            - generic [ref=e128]: 
+            - text: Condition
+          - combobox " Condition" [ref=e129] [cursor=pointer]:
+            - option "Any Condition" [selected]
+            - option "Excellent"
+            - option "Very Good"
+            - option "Good"
+            - option "Fair"
+            - option "Poor"
+        - generic [ref=e130]:
+          - generic [ref=e131] [cursor=pointer]:
+            - generic [ref=e132]: 
+            - text: Seller Type
+          - combobox " Seller Type" [ref=e133] [cursor=pointer]:
+            - option "All Sellers" [selected]
+            - option "Private Seller"
+            - option "Dealer"
+        - generic [ref=e134]:
+          - button " Apply Filters" [ref=e135] [cursor=pointer]:
+            - generic [ref=e136]: 
+            - text: Apply Filters
+          - button " Clear All" [ref=e137] [cursor=pointer]:
+            - generic [ref=e138]: 
+            - text: Clear All
+    - main "Car listings" [ref=e139]:
+      - search "Search cars" [ref=e141]:
+        - textbox "Search cars by make, model or keyword" [ref=e142] [cursor=pointer]:
+          - /placeholder: Search by make, model, or keyword...
+        - button " Search" [ref=e143] [cursor=pointer]:
+          - generic [ref=e144]: 
+          - text: Search
+      - generic [ref=e145]:
+        - generic [ref=e146]:
+          - heading "Latest Cars for Sale in Malawi" [level=2] [ref=e147]
+          - paragraph [ref=e148]: Loading cars...
+        - generic [ref=e149]:
+          - generic [ref=e150]:
+            - generic [ref=e151]: 
+            - text: "Sort by:"
+          - combobox "Sort results" [ref=e152]:
+            - option "Newest First" [selected]
+            - option "Oldest First"
+            - 'option "Price: Low to High"'
+            - 'option "Price: High to Low"'
+            - 'option "Year: Newest First"'
+            - option "Most Viewed"
+            - option "Nearest First"
+          - text: 
+      - region "Car listings results" [ref=e153]:
+        - generic [ref=e160]: Loading awesome cars...
+      - text:  
+  - contentinfo [ref=e161]:
+    - generic [ref=e162]:
+      - generic [ref=e163]:
+        - generic [ref=e164]:
+          - heading " MotorLink Malawi" [level=4] [ref=e165]:
+            - generic [ref=e166]: 
+            - text: MotorLink Malawi
+          - paragraph [ref=e167]: MotorLink Malawi is your trusted partner for buying and selling cars in Malawi. We connect buyers with verified sellers, trusted dealers, professional garages, and reliable car hire services across all 28 districts of Malawi.
+          - generic [ref=e168]:
+            - link "Follow us on Facebook" [ref=e169] [cursor=pointer]:
+              - /url: https://facebook.com/motorlinkmalawi
+              - generic [ref=e170]: 
+            - link "Follow us on Twitter" [ref=e171] [cursor=pointer]:
+              - /url: https://twitter.com/motorlinkmw
+              - generic [ref=e172]: 
+            - link "Follow us on Instagram" [ref=e173] [cursor=pointer]:
+              - /url: https://instagram.com/motorlinkmalawi
+              - generic [ref=e174]: 
+            - link "Connect on LinkedIn" [ref=e175] [cursor=pointer]:
+              - /url: https://linkedin.com/company/motorlink-malawi
+              - generic [ref=e176]: 
+            - link "Contact us on WhatsApp" [ref=e177] [cursor=pointer]:
+              - /url: https://wa.me/265991234567
+              - generic [ref=e178]: 
+            - link "Subscribe on YouTube" [ref=e179] [cursor=pointer]:
+              - /url: https://youtube.com/@motorlinkmalawi
+              - generic [ref=e180]: 
+        - generic [ref=e181]:
+          - heading " Quick Links" [level=4] [ref=e182]:
+            - generic [ref=e183]: 
+            - text: Quick Links
+          - list [ref=e184]:
+            - listitem [ref=e185]:
+              - link "Browse Cars" [ref=e186] [cursor=pointer]:
+                - /url: index.html
+            - listitem [ref=e187]:
+              - link "Sell Your Car" [ref=e188] [cursor=pointer]:
+                - /url: sell.html
+            - listitem [ref=e189]:
+              - link "Find Garages" [ref=e190] [cursor=pointer]:
+                - /url: garages.html
+            - listitem [ref=e191]:
+              - link "Car Dealers" [ref=e192] [cursor=pointer]:
+                - /url: dealers.html
+            - listitem [ref=e193]:
+              - link "Car Hire" [ref=e194] [cursor=pointer]:
+                - /url: car-hire.html
+            - listitem [ref=e195]:
+              - link "Know Your Car" [ref=e196] [cursor=pointer]:
+                - /url: car-database.html
+        - generic [ref=e197]:
+          - heading " Support & Help" [level=4] [ref=e198]:
+            - generic [ref=e199]: 
+            - text: Support & Help
+          - list [ref=e200]:
+            - listitem [ref=e201]:
+              - link "Help Center" [ref=e202] [cursor=pointer]:
+                - /url: help.html
+            - listitem [ref=e203]:
+              - link "Safety Tips" [ref=e204] [cursor=pointer]:
+                - /url: safety.html
+            - listitem [ref=e205]:
+              - link "Contact Us" [ref=e206] [cursor=pointer]:
+                - /url: contact.html
+            - listitem [ref=e207]:
+              - link "Terms of Service" [ref=e208] [cursor=pointer]:
+                - /url: terms.html
+            - listitem [ref=e209]:
+              - link "Cookie Policy" [ref=e210] [cursor=pointer]:
+                - /url: cookie-policy.html
+        - generic [ref=e211]:
+          - heading " Contact Us" [level=4] [ref=e212]:
+            - generic [ref=e213]: 
+            - text: Contact Us
+          - paragraph [ref=e214]:
+            - generic [ref=e215]: 
+            - strong [ref=e216]: "Email:"
+            - link "motorlink@promanaged-it.com" [ref=e217] [cursor=pointer]:
+              - /url: mailto:motorlink@promanaged-it.com
+          - paragraph [ref=e218]:
+            - generic [ref=e219]: 
+            - strong [ref=e220]: "Phone:"
+            - link "+265 991 234 567" [ref=e221] [cursor=pointer]:
+              - /url: tel:+265991234567
+          - paragraph [ref=e222]:
+            - generic [ref=e223]: 
+            - strong [ref=e224]: "WhatsApp:"
+            - link "+265 991 234 567" [ref=e225] [cursor=pointer]:
+              - /url: https://wa.me/265991234567
+      - generic [ref=e226]:
+        - paragraph [ref=e227]: © 2025 MotorLink Malawi. All rights reserved.
+        - paragraph [ref=e228]:
+          - generic [ref=e229]: 
+          - text: Safe Trading •
+          - generic [ref=e230]: 
+          - text: Mobile Friendly •
+          - generic [ref=e231]: 
+          - text: Hosted by
+          - link "ProManaged IT" [ref=e232] [cursor=pointer]:
+            - /url: https://promanaged-it.com
+  - text:     
+  - paragraph [ref=e240]: Loading...

@@ -346,6 +346,286 @@ function getTopicsLearnedToday($db, $tableName) {
 }
 
 /**
+ * Fetch a site_settings value by key.
+ */
+function getLearningTelemetrySetting($db, $key, $defaultValue = null) {
+    try {
+        $stmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key = ? LIMIT 1");
+        $stmt->execute([$key]);
+        $value = $stmt->fetchColumn();
+        return $value !== false ? $value : $defaultValue;
+    } catch (Exception $e) {
+        error_log("getLearningTelemetrySetting error: " . $e->getMessage());
+        return $defaultValue;
+    }
+}
+
+/**
+ * Upsert a site_settings value by key.
+ */
+function setLearningTelemetrySetting($db, $key, $value, $description = null) {
+    try {
+        $stmt = $db->prepare("SELECT id FROM site_settings WHERE setting_key = ? LIMIT 1");
+        $stmt->execute([$key]);
+        $exists = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($exists) {
+            $update = $db->prepare("UPDATE site_settings SET setting_value = ?, updated_at = NOW() WHERE setting_key = ?");
+            $update->execute([(string)$value, $key]);
+            return;
+        }
+
+        $insert = $db->prepare("INSERT INTO site_settings (setting_key, setting_value, setting_group, setting_type, description, is_public, created_at, updated_at) VALUES (?, ?, 'ai_learning', 'string', ?, 0, NOW(), NOW())");
+        $insert->execute([$key, (string)$value, (string)($description ?? 'AI learning telemetry')]);
+    } catch (Exception $e) {
+        error_log("setLearningTelemetrySetting error: " . $e->getMessage());
+    }
+}
+
+/**
+ * Increment persistent AI learning telemetry counters.
+ * Tracks both total and per-day counters in site_settings.
+ */
+function incrementLearningTelemetry($db, $metric) {
+    $allowedMetrics = ['attempts', 'success', 'skipped_limit', 'errors'];
+    if (!in_array($metric, $allowedMetrics, true)) {
+        return;
+    }
+
+    try {
+        $today = date('Y-m-d');
+        $dateKey = 'ai_learning_telemetry_date';
+        $storedDate = (string)getLearningTelemetrySetting($db, $dateKey, '');
+
+        if ($storedDate !== $today) {
+            // Reset daily counters when date changes.
+            foreach ($allowedMetrics as $dailyMetric) {
+                setLearningTelemetrySetting(
+                    $db,
+                    'ai_learning_' . $dailyMetric . '_today',
+                    0,
+                    'AI learning telemetry daily counter'
+                );
+            }
+            setLearningTelemetrySetting($db, $dateKey, $today, 'AI learning telemetry date marker');
+        }
+
+        $totalKey = 'ai_learning_' . $metric . '_total';
+        $todayKey = 'ai_learning_' . $metric . '_today';
+
+        $totalValue = (int)getLearningTelemetrySetting($db, $totalKey, 0);
+        $todayValue = (int)getLearningTelemetrySetting($db, $todayKey, 0);
+
+        setLearningTelemetrySetting($db, $totalKey, $totalValue + 1, 'AI learning telemetry total counter');
+        setLearningTelemetrySetting($db, $todayKey, $todayValue + 1, 'AI learning telemetry daily counter');
+    } catch (Exception $e) {
+        error_log("incrementLearningTelemetry error: " . $e->getMessage());
+    }
+}
+
+/**
+ * Read AI learning telemetry counters from site_settings.
+ */
+function getLearningTelemetryCounters($db) {
+    $metrics = ['attempts', 'success', 'skipped_limit', 'errors'];
+    $counters = [
+        'date' => (string)getLearningTelemetrySetting($db, 'ai_learning_telemetry_date', date('Y-m-d')),
+        'total' => [],
+        'today' => []
+    ];
+
+    foreach ($metrics as $metric) {
+        $counters['total'][$metric] = (int)getLearningTelemetrySetting($db, 'ai_learning_' . $metric . '_total', 0);
+        $counters['today'][$metric] = (int)getLearningTelemetrySetting($db, 'ai_learning_' . $metric . '_today', 0);
+    }
+
+    return $counters;
+}
+
+/**
+ * Build a deterministic summary from MotorLink car model specs.
+ */
+function buildIntentionalDatabaseCarSummary(array $row) {
+    $make = trim((string)($row['make_name'] ?? 'Unknown Make'));
+    $model = trim((string)($row['model_name'] ?? 'Unknown Model'));
+
+    $lines = [];
+    $lines[] = "MotorLink database profile for {$make} {$model}:";
+
+    $yearStart = $row['year_start'] ?? null;
+    $yearEnd = $row['year_end'] ?? null;
+    if (!empty($yearStart) && !empty($yearEnd)) {
+        $lines[] = "- Production years: {$yearStart} to {$yearEnd}";
+    } elseif (!empty($yearStart)) {
+        $lines[] = "- Production started: {$yearStart}";
+    }
+
+    if (!empty($row['body_type'])) {
+        $lines[] = "- Body type: " . $row['body_type'];
+    }
+    if (!empty($row['engine_size_liters'])) {
+        $lines[] = "- Engine size: " . $row['engine_size_liters'] . "L";
+    }
+    if (!empty($row['engine_cylinders'])) {
+        $lines[] = "- Cylinders: " . $row['engine_cylinders'];
+    }
+    if (!empty($row['horsepower_hp'])) {
+        $lines[] = "- Power: " . $row['horsepower_hp'] . " hp";
+    }
+    if (!empty($row['torque_nm'])) {
+        $lines[] = "- Torque: " . $row['torque_nm'] . " Nm";
+    }
+    if (!empty($row['fuel_type'])) {
+        $lines[] = "- Fuel type: " . $row['fuel_type'];
+    }
+    if (!empty($row['fuel_tank_capacity_liters'])) {
+        $lines[] = "- Fuel tank capacity: " . $row['fuel_tank_capacity_liters'] . "L";
+    }
+    if (!empty($row['fuel_consumption_combined_l100km'])) {
+        $lines[] = "- Combined fuel consumption: " . $row['fuel_consumption_combined_l100km'] . " L/100km";
+    }
+    if (!empty($row['transmission_type'])) {
+        $lines[] = "- Transmission: " . $row['transmission_type'];
+    }
+    if (!empty($row['drive_type'])) {
+        $lines[] = "- Drivetrain: " . $row['drive_type'];
+    }
+    if (!empty($row['seating_capacity'])) {
+        $lines[] = "- Seating capacity: " . $row['seating_capacity'];
+    }
+
+    $lines[] = "Source: MotorLink internal car_models database.";
+
+    return implode("\n", $lines);
+}
+
+/**
+ * Build intentional query variants per model to improve retrieval coverage.
+ */
+function buildIntentionalDatabaseCarQueries(array $row) {
+    $make = trim((string)($row['make_name'] ?? ''));
+    $model = trim((string)($row['model_name'] ?? ''));
+    if ($make === '' || $model === '') {
+        return [];
+    }
+
+    return [
+        "{$make} {$model} specifications",
+        "{$make} {$model} fuel economy and engine details",
+        "{$make} {$model} transmission and drivetrain"
+    ];
+}
+
+/**
+ * Intentionally learn from models already in MotorLink DB.
+ * This seeds ai_web_cache with deterministic, database-sourced knowledge.
+ */
+function learnWebCacheFromDatabaseCars($db, $count = 300) {
+    try {
+        $target = max(1, min((int)$count, 5000));
+        $modelFetchLimit = max(50, (int)ceil($target / 2));
+
+        $sql = "
+            SELECT
+                mk.name AS make_name,
+                cm.name AS model_name,
+                cm.year_start,
+                cm.year_end,
+                cm.body_type,
+                cm.engine_size_liters,
+                cm.engine_cylinders,
+                cm.horsepower_hp,
+                cm.torque_nm,
+                cm.fuel_type,
+                cm.fuel_tank_capacity_liters,
+                cm.fuel_consumption_combined_l100km,
+                cm.transmission_type,
+                cm.drive_type,
+                cm.seating_capacity
+            FROM car_models cm
+            INNER JOIN car_makes mk ON cm.make_id = mk.id
+            WHERE cm.is_active = 1 AND mk.is_active = 1
+            ORDER BY mk.name ASC, cm.name ASC
+            LIMIT {$modelFetchLimit}
+        ";
+
+        $stmt = $db->query($sql);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($rows)) {
+            return [
+                'success' => false,
+                'message' => 'No active models found in database for intentional learning',
+                'learned' => 0,
+                'requested' => $target
+            ];
+        }
+
+        $learned = 0;
+        $skippedExisting = 0;
+        $errors = [];
+        $learnedTopics = [];
+
+        foreach ($rows as $row) {
+            if ($learned >= $target) {
+                break;
+            }
+
+            $summary = buildIntentionalDatabaseCarSummary($row);
+            $queries = buildIntentionalDatabaseCarQueries($row);
+
+            foreach ($queries as $queryText) {
+                if ($learned >= $target) {
+                    break 2;
+                }
+
+                incrementLearningTelemetry($db, 'attempts');
+
+                $queryHash = hash('sha256', strtolower(trim($queryText)));
+                if (queryExistsInCache($db, 'ai_web_cache', $queryHash)) {
+                    $skippedExisting++;
+                    continue;
+                }
+
+                try {
+                    $sourcesJson = json_encode([
+                        [
+                            'title' => 'MotorLink Database',
+                            'link' => null,
+                            'snippet' => 'Structured data from MotorLink car_models'
+                        ]
+                    ]);
+
+                    $insert = $db->prepare("INSERT INTO ai_web_cache (query_hash, query_text, summary, sources_json, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())");
+                    $insert->execute([$queryHash, $queryText, $summary, $sourcesJson]);
+
+                    incrementLearningTelemetry($db, 'success');
+                    $learned++;
+                    $learnedTopics[] = $queryText;
+                } catch (Exception $e) {
+                    incrementLearningTelemetry($db, 'errors');
+                    $errors[] = $e->getMessage();
+                }
+            }
+        }
+
+        return [
+            'success' => true,
+            'mode' => 'database_intentional',
+            'requested' => $target,
+            'learned' => $learned,
+            'skipped_existing' => $skippedExisting,
+            'errors' => $errors,
+            'learned_topics' => $learnedTopics
+        ];
+    } catch (Exception $e) {
+        incrementLearningTelemetry($db, 'errors');
+        error_log("learnWebCacheFromDatabaseCars error: " . $e->getMessage());
+        return ['success' => false, 'message' => $e->getMessage()];
+    }
+}
+
+/**
  * Learn topics for ai_web_cache (general car topics)
  */
 function learnWebCacheTopics($db, $count = 20, $provider = 'openai') {
@@ -979,6 +1259,8 @@ function learnSinglePartTopic($db, $query, $provider = 'openai') {
  */
 function learnFromUserQuery($db, $query, $isPartsQuery = false, $provider = 'auto') {
     try {
+        incrementLearningTelemetry($db, 'attempts');
+
         $settings = getAILearningSettings($db);
         $provider = $provider === 'auto' ? $settings['ai_provider'] : $provider;
         $provider = normalizeAIProvider($provider);
@@ -991,21 +1273,32 @@ function learnFromUserQuery($db, $query, $isPartsQuery = false, $provider = 'aut
             // Check daily limit
             $learnedToday = getTopicsLearnedToday($db, 'ai_parts_cache');
             if ($learnedToday >= $settings['parts_cache_limit']) {
+                incrementLearningTelemetry($db, 'skipped_limit');
                 return ['success' => false, 'message' => 'Daily parts learning limit reached'];
             }
-            
-            return learnSinglePartTopic($db, $query, $provider);
+
+            $result = learnSinglePartTopic($db, $query, $provider);
+            if (!empty($result['success'])) {
+                incrementLearningTelemetry($db, 'success');
+            }
+            return $result;
         } else {
             // Check daily limit
             $learnedToday = getTopicsLearnedToday($db, 'ai_web_cache');
             if ($learnedToday >= $settings['web_cache_limit']) {
+                incrementLearningTelemetry($db, 'skipped_limit');
                 return ['success' => false, 'message' => 'Daily web learning limit reached'];
             }
-            
-            return learnSingleWebTopic($db, $query, $provider);
+
+            $result = learnSingleWebTopic($db, $query, $provider);
+            if (!empty($result['success'])) {
+                incrementLearningTelemetry($db, 'success');
+            }
+            return $result;
         }
         
     } catch (Exception $e) {
+        incrementLearningTelemetry($db, 'errors');
         error_log("Error learning from user query: " . $e->getMessage());
         return ['success' => false, 'message' => $e->getMessage()];
     }

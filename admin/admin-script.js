@@ -5820,6 +5820,9 @@ async function loadAILearningSettings() {
         if (data.success) {
             const settings = data.settings || {};
             const stats = data.stats || {};
+            const telemetry = stats.telemetry || {};
+            const telemetryTotal = telemetry.total || {};
+            const telemetryToday = telemetry.today || {};
             
             // Update settings
             if (document.getElementById('openai-enabled')) {
@@ -5867,6 +5870,32 @@ async function loadAILearningSettings() {
                 if (document.getElementById('parts-cache-limit')) {
                     document.getElementById('parts-cache-limit').textContent = stats.parts_cache.limit || 500;
                 }
+            }
+
+            if (document.getElementById('learning-attempts-total')) {
+                document.getElementById('learning-attempts-total').textContent = telemetryTotal.attempts || 0;
+            }
+            if (document.getElementById('learning-success-total')) {
+                document.getElementById('learning-success-total').textContent = telemetryTotal.success || 0;
+            }
+            if (document.getElementById('learning-skipped-limit-total')) {
+                document.getElementById('learning-skipped-limit-total').textContent = telemetryTotal.skipped_limit || 0;
+            }
+            if (document.getElementById('learning-errors-total')) {
+                document.getElementById('learning-errors-total').textContent = telemetryTotal.errors || 0;
+            }
+
+            if (document.getElementById('learning-attempts-today')) {
+                document.getElementById('learning-attempts-today').textContent = telemetryToday.attempts || 0;
+            }
+            if (document.getElementById('learning-success-today')) {
+                document.getElementById('learning-success-today').textContent = telemetryToday.success || 0;
+            }
+            if (document.getElementById('learning-skipped-limit-today')) {
+                document.getElementById('learning-skipped-limit-today').textContent = telemetryToday.skipped_limit || 0;
+            }
+            if (document.getElementById('learning-errors-today')) {
+                document.getElementById('learning-errors-today').textContent = telemetryToday.errors || 0;
             }
         }
     } catch (error) {

@@ -16,6 +16,7 @@ class AICarChat {
         this.baseRetryDelay = 2000; // Start with 2 seconds
         this.maxRetryDelay = 30000; // Max 30 seconds between retries
         this.currentRetryTimeout = null;
+        this.pendingMessage = null;
         this.init();
     }
 
@@ -29,6 +30,9 @@ class AICarChat {
     async checkAuth() {
         try {
             const response = await fetch(`${CONFIG.API_URL}?action=check_auth`, {
+                headers: {
+                    'X-Skip-Global-Loader': '1'
+                },
                 credentials: 'include'
             });
             const data = await response.json();
@@ -114,6 +118,8 @@ class AICarChat {
                 this.autoResizeTextarea(e.target);
             });
         }
+
+        this.ensureInputStatusElement();
     }
 
     toggleChat() {
@@ -191,6 +197,67 @@ class AICarChat {
         textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
     }
 
+    ensureInputStatusElement() {
+        const inputContainer = document.querySelector('.ai-chat-input-container');
+        if (!inputContainer) return null;
+
+        let status = document.getElementById('aiChatInputStatus');
+        if (status) return status;
+
+        status = document.createElement('div');
+        status.id = 'aiChatInputStatus';
+        status.className = 'ai-chat-input-status';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        status.hidden = true;
+        status.innerHTML = `
+            <span class="ai-chat-input-status-dots" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+            </span>
+            <span class="ai-chat-input-status-text">Sending...</span>
+        `;
+
+        const charCount = inputContainer.querySelector('.ai-chat-char-count');
+        if (charCount) {
+            inputContainer.insertBefore(status, charCount);
+        } else {
+            inputContainer.appendChild(status);
+        }
+
+        return status;
+    }
+
+    setInputSendingState(isSending, retryAttempt = 0) {
+        const inputContainer = document.querySelector('.ai-chat-input-container');
+        const status = this.ensureInputStatusElement();
+        if (!inputContainer || !status) return;
+
+        if (isSending) {
+            inputContainer.classList.add('ai-chat-input-sending');
+            const label = retryAttempt > 0
+                ? `Reconnecting (${Math.min(retryAttempt, this.maxRetries)}/${this.maxRetries})...`
+                : 'Sending...';
+            const textNode = status.querySelector('.ai-chat-input-status-text');
+            if (textNode) {
+                textNode.textContent = label;
+            }
+            status.hidden = false;
+            return;
+        }
+
+        inputContainer.classList.remove('ai-chat-input-sending');
+        status.hidden = true;
+    }
+
+    resetInputSendState(input, sendBtn) {
+        this.isSending = false;
+        input.disabled = false;
+        if (sendBtn) sendBtn.disabled = false;
+        this.setInputSendingState(false);
+    }
+
     async sendMessage(retryAttempt = 0, triggerSource = 'button') {
         // Check authentication before sending
         if (!this.currentUser) {
@@ -207,7 +274,8 @@ class AICarChat {
 
         if (!input) return;
 
-        const message = input.value.trim();
+        const inputMessage = input.value.trim();
+        const message = retryAttempt > 0 ? (this.pendingMessage || inputMessage) : inputMessage;
 
         if (!message) return;
 
@@ -224,6 +292,7 @@ class AICarChat {
 
         // Only clear input and add to UI on first attempt
         if (retryAttempt === 0) {
+            this.pendingMessage = message;
             // Clear input
             input.value = '';
             this.updateCharCount(0);
@@ -240,6 +309,7 @@ class AICarChat {
         input.disabled = true;
         if (sendBtn) sendBtn.disabled = true;
         this.isSending = true;
+        this.setInputSendingState(true, retryAttempt);
 
         // Show compact in-chat typing indicator
         this.showTypingIndicator();
@@ -254,8 +324,8 @@ class AICarChat {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    // Prevent global page loader for Enter-triggered chatbot sends.
-                    ...(triggerSource === 'enter' ? { 'X-Skip-Global-Loader': '1' } : {})
+                    // Chatbot messages should never trigger the full-page transition loader.
+                    'X-Skip-Global-Loader': '1'
                 },
                 credentials: 'include',
                 signal: controller.signal,
@@ -270,15 +340,12 @@ class AICarChat {
             const data = await response.json();
 
             this.hideTypingIndicator();
-            // Only re-enable input if we're not retrying
-            if (retryAttempt === 0) {
-                this.isSending = false;
-                input.disabled = false;
-                if (sendBtn) sendBtn.disabled = false;
-            }
-            this.retryCount = 0;
 
             if (data.success && data.response) {
+                this.resetInputSendState(input, sendBtn);
+                this.retryCount = 0;
+                this.pendingMessage = null;
+
                 // Check if this is a search result
                 if (data.search_results && data.search_results.length > 0) {
                     // Car listings search results (for sale)
@@ -306,6 +373,8 @@ class AICarChat {
                 if (response.status === 401 || (data.message && data.message.includes('Authentication required'))) {
                     this.currentUser = null;
                     this.setupWidgetVisibility();
+                    this.resetInputSendState(input, sendBtn);
+                    this.pendingMessage = null;
                     this.showError('Your session has expired. Please log in again.');
                     setTimeout(() => {
                         window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.pathname);
@@ -314,16 +383,14 @@ class AICarChat {
                     // User's AI chat is disabled - show the reason
                     const reason = data.message || 'Your access to MotorLink AI Assistant has been temporarily disabled. Please contact support for assistance.';
                     this.showError(reason, true); // true = persistent error, don't auto-hide
-                    this.isSending = false;
-                    input.disabled = false;
-                    if (sendBtn) sendBtn.disabled = false;
+                    this.resetInputSendState(input, sendBtn);
+                    this.pendingMessage = null;
                 } else if (response.status === 429) {
                     // Rate limit exceeded - don't retry, show clear message
                     const rateLimitMessage = data.message || 'You\'ve reached your rate limit for AI chat requests. Please wait a bit before trying again.';
                     this.showError(rateLimitMessage, true); // true = persistent error, don't auto-hide
-                    this.isSending = false;
-                    input.disabled = false;
-                    if (sendBtn) sendBtn.disabled = false;
+                    this.resetInputSendState(input, sendBtn);
+                    this.pendingMessage = null;
                     this.retryCount = 0; // Reset retry count
                 } else {
                     // Handle API errors with retry logic
@@ -342,6 +409,7 @@ class AICarChat {
                                 : `Still retrying... (attempt ${retryAttempt + 1}/${this.maxRetries})`;
                             
                             this.showError(retryMessage);
+                            this.setInputSendingState(true, retryAttempt + 1);
                             
                             // Clear any existing timeout
                             if (this.currentRetryTimeout) {
@@ -358,6 +426,7 @@ class AICarChat {
                         } else {
                             // Max retries reached, but still auto-retry after longer delay
                             this.showError('Service is experiencing high demand. Retrying automatically in 30 seconds...');
+                            this.setInputSendingState(true, this.maxRetries);
                             
                             // Auto-retry after a longer delay (30 seconds)
                             if (this.currentRetryTimeout) {
@@ -368,7 +437,7 @@ class AICarChat {
                                 this.currentRetryTimeout = null;
                                 if (!this.isSending) {
                                     this.showError('Retrying automatically...');
-                                    this.sendMessage(0, triggerSource); // Start fresh retry cycle
+                                    this.sendMessage(1, triggerSource);
                                 }
                             }, 30000);
                             // Don't re-enable input - keep retrying
@@ -379,9 +448,8 @@ class AICarChat {
                             clearTimeout(this.currentRetryTimeout);
                             this.currentRetryTimeout = null;
                         }
-                        this.isSending = false;
-                        input.disabled = false;
-                        if (sendBtn) sendBtn.disabled = false;
+                        this.resetInputSendState(input, sendBtn);
+                        this.pendingMessage = null;
                         const errorMessage = data.message || 'Failed to get response from AI Assistant. Please try again.';
                         this.showError(errorMessage);
                         this.retryCount = 0;
@@ -400,6 +468,7 @@ class AICarChat {
                     const delay = Math.min(exponentialDelay + jitter, this.maxRetryDelay);
                     
                     this.showError(`Request timed out. Retrying automatically... (attempt ${retryAttempt + 1}/${this.maxRetries})`);
+                    this.setInputSendingState(true, retryAttempt + 1);
                     
                     if (this.currentRetryTimeout) {
                         clearTimeout(this.currentRetryTimeout);
@@ -413,13 +482,14 @@ class AICarChat {
                 } else {
                     // Max retries reached, but keep trying
                     this.showError('Request timed out. Retrying automatically in 30 seconds...');
+                    this.setInputSendingState(true, this.maxRetries);
                     if (this.currentRetryTimeout) {
                         clearTimeout(this.currentRetryTimeout);
                     }
                     this.currentRetryTimeout = setTimeout(() => {
                         this.currentRetryTimeout = null;
                         if (!this.isSending) {
-                            this.sendMessage(0, triggerSource); // Start fresh retry cycle
+                            this.sendMessage(1, triggerSource);
                         }
                     }, 30000);
                     return;
@@ -435,6 +505,7 @@ class AICarChat {
                     const delay = Math.min(exponentialDelay + jitter, this.maxRetryDelay);
                     
                     this.showError(`Network error. Retrying automatically... (attempt ${retryAttempt + 1}/${this.maxRetries})`);
+                    this.setInputSendingState(true, retryAttempt + 1);
                     
                     if (this.currentRetryTimeout) {
                         clearTimeout(this.currentRetryTimeout);
@@ -448,13 +519,14 @@ class AICarChat {
                 } else {
                     // Max retries reached, but keep trying
                     this.showError('Network error. Retrying automatically in 30 seconds...');
+                    this.setInputSendingState(true, this.maxRetries);
                     if (this.currentRetryTimeout) {
                         clearTimeout(this.currentRetryTimeout);
                     }
                     this.currentRetryTimeout = setTimeout(() => {
                         this.currentRetryTimeout = null;
                         if (!this.isSending) {
-                            this.sendMessage(0, triggerSource); // Start fresh retry cycle
+                            this.sendMessage(1, triggerSource);
                         }
                     }, 30000);
                     return;
@@ -467,10 +539,9 @@ class AICarChat {
                 clearTimeout(this.currentRetryTimeout);
                 this.currentRetryTimeout = null;
             }
-            
-            this.isSending = false;
-            input.disabled = false;
-            if (sendBtn) sendBtn.disabled = false;
+
+            this.resetInputSendState(input, sendBtn);
+            this.pendingMessage = null;
             this.showError('An unexpected error occurred. Please try again.');
             this.retryCount = 0;
         }
@@ -510,146 +581,20 @@ class AICarChat {
 
         // Format content with markdown links and line breaks
         let formattedContent = this.formatMessageContent(content);
-        
-        // Add garage results if available
+
         if (garages && garages.length > 0) {
-            formattedContent += '<div class="ai-chat-search-results" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">';
-            formattedContent += `<div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">Found ${totalResults} garage${totalResults > 1 ? 's' : ''}:</div>`;
-            
-            garages.slice(0, 5).forEach(garage => {
-                const garageId = garage.id || '';
-                const garageName = this.escapeHtml(garage.name || '');
-                const location = garage.location_name ? this.escapeHtml(garage.location_name) : '';
-                const phone = garage.phone ? this.escapeHtml(garage.phone) : '';
-                
-                // Parse services
-                let servicesList = [];
-                if (garage.services_list) {
-                    servicesList = Array.isArray(garage.services_list) ? garage.services_list : [];
-                } else if (garage.services) {
-                    try {
-                        servicesList = typeof garage.services === 'string' ? JSON.parse(garage.services) : garage.services;
-                        if (!Array.isArray(servicesList)) servicesList = [];
-                    } catch (e) {
-                        servicesList = [];
-                    }
-                }
-                const servicesStr = servicesList.slice(0, 3).map(s => this.escapeHtml(s)).join(', ');
-                
-                formattedContent += `
-                    <div class="ai-chat-search-result-item" 
-                         data-garage-id="${garageId}"
-                         style="margin-bottom: 10px; padding: 10px; background: rgba(0, 200, 83, 0.05); border-radius: 8px; cursor: pointer; transition: background 0.2s ease;">
-                        <div style="font-weight: 600; color: #00c853; margin-bottom: 4px;">
-                            ${garageName}
-                        </div>
-                        ${location ? `<div style="font-size: 12px; color: #999; margin-bottom: 4px;">📍 ${location}</div>` : ''}
-                        ${phone ? `<div style="font-size: 12px; color: #666; margin-bottom: 4px;">📞 ${phone}</div>` : ''}
-                        ${servicesStr ? `<div style="font-size: 12px; color: #666;">🔧 ${servicesStr}${servicesList.length > 3 ? ' and more' : ''}</div>` : ''}
-                    </div>
-                `;
-            });
-            
-            if (totalResults > 5) {
-                formattedContent += `<div style="margin-top: 8px; text-align: center; font-size: 12px; color: #00c853; cursor: pointer; text-decoration: underline;" class="ai-chat-view-more-garages">View all ${totalResults} garages on website →</div>`;
-            }
-            
-            formattedContent += '</div>';
+            formattedContent += this.buildGarageResultsMarkup(garages, totalResults);
         }
-        
-        // Add car hire company results if available
+
         if (carHireCompanies && carHireCompanies.length > 0) {
-            formattedContent += '<div class="ai-chat-search-results" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">';
-            formattedContent += `<div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">Found ${totalResults} car hire compan${totalResults > 1 ? 'ies' : 'y'}:</div>`;
-            
-            carHireCompanies.slice(0, 5).forEach(company => {
-                const companyId = company.id || '';
-                const companyName = this.escapeHtml(company.business_name || '');
-                const location = company.location_name ? this.escapeHtml(company.location_name) : '';
-                const phone = company.phone ? this.escapeHtml(company.phone) : '';
-                
-                // Show matching vehicles if available
-                let vehiclesInfo = '';
-                if (company.matching_vehicles && company.matching_vehicles.length > 0) {
-                    const vehicleCount = company.matching_vehicles.length;
-                    vehiclesInfo = `<div style="font-size: 12px; color: #666; margin-top: 4px;">🚗 ${vehicleCount} vehicle${vehicleCount > 1 ? 's' : ''} available`;
-                    if (company.matching_vehicles[0].daily_rate) {
-                        vehiclesInfo += ' from MWK ' + parseInt(company.matching_vehicles[0].daily_rate).toLocaleString() + '/day';
-                    }
-                    vehiclesInfo += '</div>';
-                } else if (company.total_vehicles > 0) {
-                    vehiclesInfo = `<div style="font-size: 12px; color: #666; margin-top: 4px;">🚗 ${company.total_vehicles} vehicle${company.total_vehicles > 1 ? 's' : ''} available</div>`;
-                }
-                
-                formattedContent += `
-                    <div class="ai-chat-search-result-item" 
-                         data-car-hire-id="${companyId}"
-                         style="margin-bottom: 10px; padding: 10px; background: rgba(0, 200, 83, 0.05); border-radius: 8px; cursor: pointer; transition: background 0.2s ease;">
-                        <div style="font-weight: 600; color: #00c853; margin-bottom: 4px;">
-                            ${companyName}
-                        </div>
-                        ${location ? `<div style="font-size: 12px; color: #999; margin-bottom: 4px;">📍 ${location}</div>` : ''}
-                        ${phone ? `<div style="font-size: 12px; color: #666; margin-bottom: 4px;">📞 ${phone}</div>` : ''}
-                        ${vehiclesInfo}
-                    </div>
-                `;
-            });
-            
-            if (totalResults > 5) {
-                formattedContent += `<div style="margin-top: 8px; text-align: center; font-size: 12px; color: #00c853; cursor: pointer; text-decoration: underline;" class="ai-chat-view-more-car-hire">View all ${totalResults} car hire companies on website →</div>`;
-            }
-            
-            formattedContent += '</div>';
+            formattedContent += this.buildCarHireResultsMarkup(carHireCompanies, totalResults);
         }
-        
-        // Add search results if available
+
         if (searchResults && searchResults.length > 0) {
-            formattedContent += '<div class="ai-chat-search-results" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">';
-            formattedContent += `<div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">Found ${totalResults} result${totalResults > 1 ? 's' : ''}:</div>`;
-            
-            searchResults.slice(0, 5).forEach(listing => {
-                const listingId = listing.id || '';
-                const makeName = this.escapeHtml(listing.make_name || '');
-                const modelName = this.escapeHtml(listing.model_name || '');
-                const year = listing.year || 'N/A';
-                const price = parseInt(listing.price || 0).toLocaleString();
-                const location = listing.location_name ? this.escapeHtml(listing.location_name) : '';
-                
-                formattedContent += `
-                    <div class="ai-chat-search-result-item" 
-                         data-listing-id="${listingId}"
-                         style="margin-bottom: 10px; padding: 12px; background: rgba(0, 200, 83, 0.05); border-radius: 8px; transition: background 0.2s ease;">
-                        <div style="font-weight: 600; color: #00c853; margin-bottom: 4px;">
-                            ${makeName} ${modelName} (${year})
-                        </div>
-                        <div style="font-size: 13px; color: #666; margin-bottom: 4px;">
-                            MWK ${price}
-                        </div>
-                        ${location ? `<div style="font-size: 12px; color: #999; margin-bottom: 8px;">📍 ${location}</div>` : ''}
-                        <div class="ai-chat-quick-actions" style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;">
-                            <button class="ai-chat-action-btn" data-action="view" data-listing-id="${listingId}" 
-                                    style="flex: 1; min-width: 80px; padding: 6px 10px; background: #00c853; color: white; border: none; border-radius: 6px; font-size: 11px; cursor: pointer; transition: background 0.2s;">
-                                <i class="fas fa-eye"></i> View
-                            </button>
-                            <button class="ai-chat-action-btn" data-action="save" data-listing-id="${listingId}" 
-                                    style="flex: 1; min-width: 80px; padding: 6px 10px; background: #2196F3; color: white; border: none; border-radius: 6px; font-size: 11px; cursor: pointer; transition: background 0.2s;">
-                                <i class="fas fa-bookmark"></i> Save
-                            </button>
-                            <button class="ai-chat-action-btn" data-action="contact" data-listing-id="${listingId}" 
-                                    style="flex: 1; min-width: 80px; padding: 6px 10px; background: #FF9800; color: white; border: none; border-radius: 6px; font-size: 11px; cursor: pointer; transition: background 0.2s;">
-                                <i class="fas fa-phone"></i> Contact
-                            </button>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            if (totalResults > 5) {
-                formattedContent += `<div style="margin-top: 8px; text-align: center; font-size: 12px; color: #00c853; cursor: pointer; text-decoration: underline;" class="ai-chat-view-more">View all ${totalResults} results on website →</div>`;
-            }
-            
-            formattedContent += '</div>';
+            formattedContent += this.buildListingsResultsMarkup(searchResults, totalResults);
         }
+
+        const feedbackId = Date.now();
 
         messageDiv.innerHTML = `
             <div class="ai-chat-message-avatar">
@@ -658,149 +603,249 @@ class AICarChat {
             <div class="ai-chat-message-content">
                 <div class="ai-chat-message-bubble">${formattedContent}</div>
                 <div class="ai-chat-message-time">${time}</div>
-                ${role === 'ai' ? `
-                    <div class="ai-chat-feedback" style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
-                        <span style="font-size: 11px; color: #999;">Was this helpful?</span>
-                        <button class="ai-chat-feedback-btn" data-feedback="helpful" data-message-id="${Date.now()}" 
-                                style="padding: 4px 8px; background: transparent; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; color: #666; transition: all 0.2s;">
-                            <i class="fas fa-thumbs-up"></i> Yes
-                        </button>
-                        <button class="ai-chat-feedback-btn" data-feedback="not-helpful" data-message-id="${Date.now()}" 
-                                style="padding: 4px 8px; background: transparent; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; color: #666; transition: all 0.2s;">
-                            <i class="fas fa-thumbs-down"></i> No
-                        </button>
-                    </div>
-                ` : ''}
+                ${role === 'ai' ? this.buildFeedbackMarkup(feedbackId) : ''}
             </div>
         `;
 
         messagesContainer.appendChild(messageDiv);
-        
-        // Add click handlers for quick action buttons
-        const actionButtons = messageDiv.querySelectorAll('.ai-chat-action-btn');
-        actionButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent item click
-                const action = btn.getAttribute('data-action');
-                const listingId = btn.getAttribute('data-listing-id');
-                this.handleQuickAction(action, listingId);
-            });
-            btn.addEventListener('mouseenter', () => {
-                btn.style.opacity = '0.8';
-            });
-            btn.addEventListener('mouseleave', () => {
-                btn.style.opacity = '1';
-            });
-        });
-        
-        // Add click handlers for feedback buttons
-        const feedbackButtons = messageDiv.querySelectorAll('.ai-chat-feedback-btn');
-        feedbackButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const feedback = btn.getAttribute('data-feedback');
-                const messageId = btn.getAttribute('data-message-id');
-                this.handleFeedback(feedback, messageId, messageDiv);
-            });
-            btn.addEventListener('mouseenter', () => {
-                btn.style.background = '#f5f5f5';
-            });
-            btn.addEventListener('mouseleave', () => {
-                btn.style.background = 'transparent';
-            });
-        });
-        
-        // Add click handlers for search results
-        if (searchResults && searchResults.length > 0) {
-            const resultItems = messageDiv.querySelectorAll('.ai-chat-search-result-item');
-            resultItems.forEach((item, index) => {
-                const listingId = item.getAttribute('data-listing-id');
-                if (listingId) {
-                    // Only make item clickable if no action buttons clicked
-                    item.addEventListener('click', (e) => {
-                        // Don't open if clicking on action buttons
-                        if (!e.target.closest('.ai-chat-action-btn')) {
-                            window.open(`car.html?id=${listingId}`, '_blank');
-                        }
-                    });
-                    item.addEventListener('mouseenter', () => {
-                        item.style.background = 'rgba(0, 200, 83, 0.1)';
-                    });
-                    item.addEventListener('mouseleave', () => {
-                        item.style.background = 'rgba(0, 200, 83, 0.05)';
-                    });
-                }
-            });
-            
-            // Handle "view more" link
-            const viewMore = messageDiv.querySelector('.ai-chat-view-more');
-            if (viewMore) {
-                viewMore.addEventListener('click', () => {
-                    // Build search URL - use first listing's make/model if available
-                    const firstListing = searchResults[0];
-                    const params = new URLSearchParams();
-                    if (firstListing.make_id) params.append('make', firstListing.make_id);
-                    if (firstListing.model_id) params.append('model', firstListing.model_id);
-                    window.open(`index.html?${params.toString()}`, '_blank');
-                });
-            }
-        }
-        
-        // Add click handlers for garage results
-        if (garages && garages.length > 0) {
-            const garageItems = messageDiv.querySelectorAll('.ai-chat-search-result-item[data-garage-id]');
-            garageItems.forEach((item) => {
-                const garageId = item.getAttribute('data-garage-id');
-                if (garageId) {
-                    item.addEventListener('click', () => {
-                        window.open(`garages.html?id=${garageId}`, '_blank');
-                    });
-                    item.addEventListener('mouseenter', () => {
-                        item.style.background = 'rgba(0, 200, 83, 0.1)';
-                    });
-                    item.addEventListener('mouseleave', () => {
-                        item.style.background = 'rgba(0, 200, 83, 0.05)';
-                    });
-                }
-            });
-            
-            // Handle "View all garages" click
-            const viewMoreGarages = messageDiv.querySelector('.ai-chat-view-more-garages');
-            if (viewMoreGarages) {
-                viewMoreGarages.addEventListener('click', () => {
-                    window.open('garages.html', '_blank');
-                });
-            }
-        }
-        
-        // Add click handlers for car hire results
-        if (carHireCompanies && carHireCompanies.length > 0) {
-            const carHireItems = messageDiv.querySelectorAll('.ai-chat-search-result-item[data-car-hire-id]');
-            carHireItems.forEach((item) => {
-                const companyId = item.getAttribute('data-car-hire-id');
-                if (companyId) {
-                    item.addEventListener('click', () => {
-                        window.open(`car-hire-company.html?id=${companyId}`, '_blank');
-                    });
-                    item.addEventListener('mouseenter', () => {
-                        item.style.background = 'rgba(0, 200, 83, 0.1)';
-                    });
-                    item.addEventListener('mouseleave', () => {
-                        item.style.background = 'rgba(0, 200, 83, 0.05)';
-                    });
-                }
-            });
-            
-            // Handle "View all car hire companies" click
-            const viewMoreCarHire = messageDiv.querySelector('.ai-chat-view-more-car-hire');
-            if (viewMoreCarHire) {
-                viewMoreCarHire.addEventListener('click', () => {
-                    window.open('car-hire.html', '_blank');
-                });
-            }
-        }
+
+        this.bindMessageInteractions(messageDiv);
         
         this.scrollToBottom();
+    }
+
+    buildFeedbackMarkup(messageId) {
+        return `
+            <div class="ai-chat-feedback">
+                <span class="ai-chat-feedback-label">Was this helpful?</span>
+                <button class="ai-chat-feedback-btn" data-feedback="helpful" data-message-id="${messageId}" type="button">
+                    <i class="fas fa-thumbs-up"></i> Yes
+                </button>
+                <button class="ai-chat-feedback-btn" data-feedback="not-helpful" data-message-id="${messageId}" type="button">
+                    <i class="fas fa-thumbs-down"></i> No
+                </button>
+            </div>
+        `;
+    }
+
+    buildGarageResultsMarkup(garages, totalResults) {
+        let html = '<section class="ai-chat-results" data-results-type="garage">';
+        html += `<div class="ai-chat-results-header">Found ${totalResults} garage${totalResults > 1 ? 's' : ''}</div>`;
+        html += '<div class="ai-chat-results-list">';
+
+        garages.slice(0, 5).forEach((garage) => {
+            const garageId = garage.id || '';
+            const garageName = this.escapeHtml(garage.name || 'Garage');
+            const location = garage.location_name ? this.escapeHtml(garage.location_name) : '';
+            const phone = garage.phone ? this.escapeHtml(garage.phone) : '';
+
+            let servicesList = [];
+            if (garage.services_list) {
+                servicesList = Array.isArray(garage.services_list) ? garage.services_list : [];
+            } else if (garage.services) {
+                try {
+                    servicesList = typeof garage.services === 'string' ? JSON.parse(garage.services) : garage.services;
+                    if (!Array.isArray(servicesList)) servicesList = [];
+                } catch (e) {
+                    servicesList = [];
+                }
+            }
+
+            const servicesStr = servicesList.slice(0, 3).map((s) => this.escapeHtml(s)).join(', ');
+
+            html += `
+                <article class="ai-chat-result-card ai-chat-search-result-item" data-card-type="garage" data-garage-id="${garageId}" tabindex="0" role="button" aria-label="Open ${garageName}">
+                    <div class="ai-chat-result-title">${garageName}</div>
+                    <div class="ai-chat-result-meta">
+                        ${location ? `<span>📍 ${location}</span>` : ''}
+                        ${phone ? `<span>📞 ${phone}</span>` : ''}
+                        ${servicesStr ? `<span>🔧 ${servicesStr}${servicesList.length > 3 ? ' and more' : ''}</span>` : ''}
+                    </div>
+                </article>
+            `;
+        });
+
+        html += '</div>';
+
+        if (totalResults > 5) {
+            html += `<button type="button" class="ai-chat-view-more" data-view-more="garages">View all ${totalResults} garages on website</button>`;
+        }
+
+        html += '</section>';
+        return html;
+    }
+
+    buildCarHireResultsMarkup(companies, totalResults) {
+        let html = '<section class="ai-chat-results" data-results-type="car-hire">';
+        html += `<div class="ai-chat-results-header">Found ${totalResults} car hire compan${totalResults > 1 ? 'ies' : 'y'}</div>`;
+        html += '<div class="ai-chat-results-list">';
+
+        companies.slice(0, 5).forEach((company) => {
+            const companyId = company.id || '';
+            const companyName = this.escapeHtml(company.business_name || 'Car Hire Company');
+            const location = company.location_name ? this.escapeHtml(company.location_name) : '';
+            const phone = company.phone ? this.escapeHtml(company.phone) : '';
+
+            let vehiclesText = '';
+            if (company.matching_vehicles && company.matching_vehicles.length > 0) {
+                const vehicleCount = company.matching_vehicles.length;
+                vehiclesText = `${vehicleCount} vehicle${vehicleCount > 1 ? 's' : ''} available`;
+                const rate = parseInt(company.matching_vehicles[0].daily_rate || 0, 10);
+                if (!Number.isNaN(rate) && rate > 0) {
+                    vehiclesText += ` from MWK ${rate.toLocaleString()}/day`;
+                }
+            } else if (company.total_vehicles > 0) {
+                vehiclesText = `${company.total_vehicles} vehicle${company.total_vehicles > 1 ? 's' : ''} available`;
+            }
+
+            html += `
+                <article class="ai-chat-result-card ai-chat-search-result-item" data-card-type="car-hire" data-car-hire-id="${companyId}" tabindex="0" role="button" aria-label="Open ${companyName}">
+                    <div class="ai-chat-result-title">${companyName}</div>
+                    <div class="ai-chat-result-meta">
+                        ${location ? `<span>📍 ${location}</span>` : ''}
+                        ${phone ? `<span>📞 ${phone}</span>` : ''}
+                        ${vehiclesText ? `<span>🚗 ${this.escapeHtml(vehiclesText)}</span>` : ''}
+                    </div>
+                </article>
+            `;
+        });
+
+        html += '</div>';
+
+        if (totalResults > 5) {
+            html += `<button type="button" class="ai-chat-view-more" data-view-more="car-hire">View all ${totalResults} car hire companies on website</button>`;
+        }
+
+        html += '</section>';
+        return html;
+    }
+
+    buildListingsResultsMarkup(searchResults, totalResults) {
+        const first = searchResults[0] || {};
+        const firstMakeId = first.make_id || '';
+        const firstModelId = first.model_id || '';
+
+        let html = '<section class="ai-chat-results" data-results-type="listings">';
+        html += `<div class="ai-chat-results-header">Found ${totalResults} result${totalResults > 1 ? 's' : ''}</div>`;
+        html += '<div class="ai-chat-results-list">';
+
+        searchResults.slice(0, 5).forEach((listing) => {
+            const listingId = listing.id || '';
+            const makeName = this.escapeHtml(listing.make_name || 'Vehicle');
+            const modelName = this.escapeHtml(listing.model_name || 'Model');
+            const year = this.escapeHtml(String(listing.year || 'N/A'));
+            const priceValue = parseInt(listing.price || 0, 10);
+            const price = !Number.isNaN(priceValue) && priceValue > 0 ? priceValue.toLocaleString() : 'Price on request';
+            const location = listing.location_name ? this.escapeHtml(listing.location_name) : '';
+
+            html += `
+                <article class="ai-chat-result-card ai-chat-search-result-item" data-card-type="listing" data-listing-id="${listingId}" tabindex="0" role="button" aria-label="Open ${makeName} ${modelName}">
+                    <div class="ai-chat-result-title">${makeName} ${modelName} (${year})</div>
+                    <div class="ai-chat-result-price">MWK ${price}</div>
+                    <div class="ai-chat-result-meta">
+                        ${location ? `<span>📍 ${location}</span>` : ''}
+                    </div>
+                    <div class="ai-chat-result-actions">
+                        <button type="button" class="ai-chat-action-btn ai-chat-action-btn-view" data-action="view" data-listing-id="${listingId}">
+                            <i class="fas fa-eye"></i> View
+                        </button>
+                        <button type="button" class="ai-chat-action-btn ai-chat-action-btn-save" data-action="save" data-listing-id="${listingId}">
+                            <i class="fas fa-bookmark"></i> Save
+                        </button>
+                        <button type="button" class="ai-chat-action-btn ai-chat-action-btn-contact" data-action="contact" data-listing-id="${listingId}">
+                            <i class="fas fa-phone"></i> Contact
+                        </button>
+                    </div>
+                </article>
+            `;
+        });
+
+        html += '</div>';
+
+        if (totalResults > 5) {
+            html += `<button type="button" class="ai-chat-view-more" data-view-more="listings" data-make-id="${firstMakeId}" data-model-id="${firstModelId}">View all ${totalResults} results on website</button>`;
+        }
+
+        html += '</section>';
+        return html;
+    }
+
+    bindMessageInteractions(messageDiv) {
+        messageDiv.addEventListener('click', (e) => {
+            const actionBtn = e.target.closest('.ai-chat-action-btn');
+            if (actionBtn) {
+                e.stopPropagation();
+                const action = actionBtn.getAttribute('data-action');
+                const listingId = actionBtn.getAttribute('data-listing-id');
+                this.handleQuickAction(action, listingId);
+                return;
+            }
+
+            const feedbackBtn = e.target.closest('.ai-chat-feedback-btn');
+            if (feedbackBtn) {
+                e.stopPropagation();
+                const feedback = feedbackBtn.getAttribute('data-feedback');
+                const messageId = feedbackBtn.getAttribute('data-message-id');
+                this.handleFeedback(feedback, messageId, messageDiv);
+                return;
+            }
+
+            const viewMoreBtn = e.target.closest('.ai-chat-view-more');
+            if (viewMoreBtn) {
+                const viewMoreType = viewMoreBtn.getAttribute('data-view-more');
+                if (viewMoreType === 'garages') {
+                    window.open('garages.html', '_blank');
+                } else if (viewMoreType === 'car-hire') {
+                    window.open('car-hire.html', '_blank');
+                } else if (viewMoreType === 'listings') {
+                    const params = new URLSearchParams();
+                    const makeId = viewMoreBtn.getAttribute('data-make-id');
+                    const modelId = viewMoreBtn.getAttribute('data-model-id');
+                    if (makeId) params.append('make', makeId);
+                    if (modelId) params.append('model', modelId);
+                    const query = params.toString();
+                    window.open(`index.html${query ? `?${query}` : ''}`, '_blank');
+                }
+                return;
+            }
+
+            const card = e.target.closest('.ai-chat-search-result-item');
+            if (!card || e.target.closest('.ai-chat-action-btn')) {
+                return;
+            }
+
+            const type = card.getAttribute('data-card-type');
+            if (type === 'listing') {
+                const listingId = card.getAttribute('data-listing-id');
+                if (listingId) {
+                    window.open(`car.html?id=${listingId}`, '_blank');
+                }
+            } else if (type === 'garage') {
+                const garageId = card.getAttribute('data-garage-id');
+                if (garageId) {
+                    window.open(`garages.html?id=${garageId}`, '_blank');
+                }
+            } else if (type === 'car-hire') {
+                const companyId = card.getAttribute('data-car-hire-id');
+                if (companyId) {
+                    window.open(`car-hire-company.html?id=${companyId}`, '_blank');
+                }
+            }
+        });
+
+        messageDiv.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') {
+                return;
+            }
+
+            const card = e.target.closest('.ai-chat-search-result-item');
+            if (!card) {
+                return;
+            }
+
+            e.preventDefault();
+            card.click();
+        });
     }
 
     showLoading() {
@@ -967,7 +1012,10 @@ class AICarChat {
                     // Save to favorites
                     const saveResponse = await fetch(`${CONFIG.API_URL}?action=save_listing`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Skip-Global-Loader': '1'
+                        },
                         credentials: 'include',
                         body: JSON.stringify({ listing_id: listingId })
                     });
@@ -1005,17 +1053,15 @@ class AICarChat {
             buttons.forEach(btn => {
                 btn.disabled = true;
                 if (btn.getAttribute('data-feedback') === feedback) {
-                    btn.style.background = feedback === 'helpful' ? '#4CAF50' : '#f44336';
-                    btn.style.color = 'white';
-                    btn.style.border = 'none';
+                    btn.classList.add(feedback === 'helpful' ? 'ai-chat-feedback-btn-selected-helpful' : 'ai-chat-feedback-btn-selected-unhelpful');
                 } else {
-                    btn.style.opacity = '0.5';
+                    btn.classList.add('ai-chat-feedback-btn-muted');
                 }
             });
             
             // Show thank you message
             const thankYou = document.createElement('span');
-            thankYou.style.cssText = 'font-size: 11px; color: #4CAF50; margin-left: 8px;';
+            thankYou.className = 'ai-chat-feedback-thanks';
             thankYou.textContent = 'Thank you for your feedback!';
             feedbackContainer.appendChild(thankYou);
             
@@ -1029,7 +1075,10 @@ class AICarChat {
         try {
             await fetch(`${CONFIG.API_URL}?action=ai_chat_feedback`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Skip-Global-Loader': '1'
+                },
                 credentials: 'include',
                 body: JSON.stringify({
                     feedback: feedback,
@@ -1049,6 +1098,9 @@ class AICarChat {
         
         try {
             const response = await fetch(`${CONFIG.API_URL}?action=get_ai_chat_usage_remaining`, {
+                headers: {
+                    'X-Skip-Global-Loader': '1'
+                },
                 credentials: 'include'
             });
             

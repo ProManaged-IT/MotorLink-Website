@@ -196,7 +196,19 @@ class PageTransitionManager {
     }
 
     trackUserActions() {
-        const markAction = () => {
+        const isChatbotEvent = (event) => {
+            const target = event && event.target;
+            return target instanceof Element && (
+                target.id === 'aiChatInput' ||
+                target.id === 'aiChatSendBtn' ||
+                Boolean(target.closest('#aiCarChatWidget'))
+            );
+        };
+
+        const markAction = (event) => {
+            if (isChatbotEvent(event)) {
+                return;
+            }
             this.lastUserActionAt = Date.now();
         };
 
@@ -204,6 +216,9 @@ class PageTransitionManager {
         document.addEventListener('submit', markAction, true);
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
+                if (isChatbotEvent(e)) {
+                    return;
+                }
                 markAction();
             }
         }, true);
@@ -256,6 +271,10 @@ class PageTransitionManager {
             const url = typeof target === 'string' ? target : (target && target.url ? target.url : '');
 
             let skipGlobalLoader = false;
+            if (!skipGlobalLoader && typeof Request !== 'undefined' && target instanceof Request) {
+                skipGlobalLoader = target.headers.get('X-Skip-Global-Loader') === '1';
+            }
+
             if (init && init.headers) {
                 if (typeof Headers !== 'undefined' && init.headers instanceof Headers) {
                     skipGlobalLoader = init.headers.get('X-Skip-Global-Loader') === '1';
@@ -325,6 +344,20 @@ class PageTransitionManager {
         document.addEventListener('submit', (event) => {
             const form = event.target;
             if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+
+            // Never show full-page loader for chatbot interactions.
+            if (
+                form.closest('#aiCarChatWidget') ||
+                form.querySelector('#aiChatInput') ||
+                (document.activeElement && document.activeElement.id === 'aiChatInput')
+            ) {
+                return;
+            }
+
+            // Optional opt-out for any future lightweight forms.
+            if (form.hasAttribute('data-skip-global-loader')) {
                 return;
             }
 

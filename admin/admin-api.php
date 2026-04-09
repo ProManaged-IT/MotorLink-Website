@@ -5361,6 +5361,13 @@ function handleGetAILearningSettings($db) {
         require_once __DIR__ . '/../ai-learning-api.php';
         
         $settings = getAILearningSettings($db);
+        $telemetry = function_exists('getLearningTelemetryCounters')
+            ? getLearningTelemetryCounters($db)
+            : [
+                'date' => date('Y-m-d'),
+                'total' => ['attempts' => 0, 'success' => 0, 'skipped_limit' => 0, 'errors' => 0],
+                'today' => ['attempts' => 0, 'success' => 0, 'skipped_limit' => 0, 'errors' => 0]
+            ];
         
         // Also get current stats
         $stmt = $db->query("SELECT COUNT(*) as total, 
@@ -5385,7 +5392,8 @@ function handleGetAILearningSettings($db) {
                     'total' => (int)$partsStats['total'],
                     'today' => (int)$webStats['parts_today'],
                     'limit' => $settings['parts_cache_limit']
-                ]
+                ],
+                'telemetry' => $telemetry
             ]
         ]);
     } catch (Exception $e) {
@@ -5502,6 +5510,8 @@ function handleGetAILearningStats($db) {
     requireAdmin();
     
     try {
+        require_once __DIR__ . '/../ai-learning-api.php';
+
         $stmt = $db->query("
             SELECT 
                 COUNT(*) as total,
@@ -5533,6 +5543,14 @@ function handleGetAILearningStats($db) {
             WHERE DATE(created_at) = CURDATE()
         ");
         $partsToday = $stmt->fetch();
+
+        $telemetry = function_exists('getLearningTelemetryCounters')
+            ? getLearningTelemetryCounters($db)
+            : [
+                'date' => date('Y-m-d'),
+                'total' => ['attempts' => 0, 'success' => 0, 'skipped_limit' => 0, 'errors' => 0],
+                'today' => ['attempts' => 0, 'success' => 0, 'skipped_limit' => 0, 'errors' => 0]
+            ];
         
         echo json_encode([
             'success' => true,
@@ -5548,7 +5566,8 @@ function handleGetAILearningStats($db) {
                     'today' => (int)$partsToday['today'],
                     'days_active' => (int)$partsStats['days_active'],
                     'last_learned' => $partsStats['last_learned']
-                ]
+                ],
+                'telemetry' => $telemetry
             ]
         ]);
     } catch (Exception $e) {

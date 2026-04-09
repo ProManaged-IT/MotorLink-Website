@@ -69,7 +69,9 @@
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    backdrop-filter: blur(10px);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
 /* Show widget after page loads with entrance animation */
@@ -815,6 +817,211 @@
     50% { opacity: 1; }
 }
 
+/* Search Results UI */
+.ai-chat-results {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.ai-chat-results-header {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    color: #2e7d32;
+    margin-bottom: 10px;
+}
+
+.ai-chat-results-list {
+    display: grid;
+    gap: 10px;
+}
+
+.ai-chat-result-card {
+    background: #f2faf4;
+    border: 1px solid rgba(0, 200, 83, 0.18);
+    border-radius: 10px;
+    padding: 11px;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.ai-chat-result-card:hover {
+    background: #ecf8ef;
+    border-color: rgba(0, 200, 83, 0.35);
+    transform: translateY(-1px);
+}
+
+.ai-chat-result-card:focus-visible {
+    outline: 2px solid #00c853;
+    outline-offset: 2px;
+}
+
+.ai-chat-result-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #0a6e34;
+    margin-bottom: 4px;
+    line-height: 1.35;
+}
+
+.ai-chat-result-price {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 6px;
+}
+
+.ai-chat-result-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 12px;
+}
+
+.ai-chat-result-meta span {
+    font-size: 12px;
+    color: #4b5563;
+    line-height: 1.35;
+}
+
+.ai-chat-result-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.ai-chat-action-btn {
+    border: none;
+    border-radius: 7px;
+    padding: 7px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    cursor: pointer;
+    transition: filter 0.2s ease, transform 0.2s ease;
+}
+
+.ai-chat-action-btn i {
+    margin-right: 4px;
+}
+
+.ai-chat-action-btn:hover {
+    filter: brightness(0.95);
+}
+
+.ai-chat-action-btn:active {
+    transform: translateY(1px);
+}
+
+.ai-chat-action-btn:focus-visible {
+    outline: 2px solid #00c853;
+    outline-offset: 2px;
+}
+
+.ai-chat-action-btn-view {
+    background: #00a843;
+}
+
+.ai-chat-action-btn-save {
+    background: #2563eb;
+}
+
+.ai-chat-action-btn-contact {
+    background: #f59e0b;
+}
+
+.ai-chat-view-more {
+    margin-top: 9px;
+    width: 100%;
+    border: 1px solid rgba(0, 168, 67, 0.25);
+    border-radius: 8px;
+    background: #fff;
+    color: #0b8043;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.ai-chat-view-more:hover {
+    background: #effaf2;
+    border-color: rgba(0, 168, 67, 0.45);
+}
+
+/* Feedback UI */
+.ai-chat-feedback {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ai-chat-feedback-label {
+    font-size: 11px;
+    color: #6b7280;
+    margin-right: 2px;
+}
+
+.ai-chat-feedback-btn {
+    padding: 4px 8px;
+    background: transparent;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    color: #4b5563;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.ai-chat-feedback-btn:hover {
+    background: #f3f4f6;
+}
+
+.ai-chat-feedback-btn:focus-visible {
+    outline: 2px solid #00c853;
+    outline-offset: 2px;
+}
+
+.ai-chat-feedback-btn[disabled] {
+    cursor: not-allowed;
+}
+
+.ai-chat-feedback-btn-selected-helpful {
+    background: #4caf50;
+    color: #fff;
+    border-color: #4caf50;
+}
+
+.ai-chat-feedback-btn-selected-unhelpful {
+    background: #ef4444;
+    color: #fff;
+    border-color: #ef4444;
+}
+
+.ai-chat-feedback-btn-muted {
+    opacity: 0.45;
+}
+
+.ai-chat-feedback-thanks {
+    font-size: 11px;
+    color: #16a34a;
+    margin-left: 8px;
+    font-weight: 600;
+}
+
+@media (max-width: 520px) {
+    .ai-chat-result-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ai-chat-action-btn-contact {
+        grid-column: 1 / -1;
+    }
+}
+
 /* Input Container */
 .ai-chat-input-container {
     border-top: 1px solid #e5e5e5;
@@ -927,6 +1134,61 @@
     text-align: right;
     margin-top: 4px;
     padding-right: 4px;
+}
+
+.ai-chat-input-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    color: #1f7a3d;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.ai-chat-input-status[hidden] {
+    display: none;
+}
+
+.ai-chat-input-status-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ai-chat-input-status-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #00c853;
+    opacity: 0.3;
+    animation: ai-chat-input-status-pulse 1.2s infinite ease-in-out;
+}
+
+.ai-chat-input-status-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.ai-chat-input-status-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+.ai-chat-input-container.ai-chat-input-sending .ai-chat-char-count {
+    color: #5f8f6f;
+}
+
+@keyframes ai-chat-input-status-pulse {
+    0%,
+    80%,
+    100% {
+        opacity: 0.3;
+        transform: translateY(0);
+    }
+    40% {
+        opacity: 1;
+        transform: translateY(-2px);
+    }
 }
 
 /* Error Message */
@@ -1383,11 +1645,11 @@
 @keyframes messageSlideIn {
     from {
         opacity: 0;
-        transform: translateY(15px) scale(0.95);
+        transform: translateY(15px);
     }
     to {
         opacity: 1;
-        transform: translateY(0) scale(1);
+        transform: translateY(0);
     }
 }
 
@@ -1401,12 +1663,5 @@
     outline-offset: 2px;
 }
 
-/* Smooth Transitions */
-.ai-car-chat-widget,
-.ai-chat-header,
-.ai-chat-body,
-.ai-chat-message-bubble,
-.ai-chat-send-btn {
-    will-change: transform;
-}
+/* Keep rendering stable and crisp by avoiding aggressive compositor hints. */
 
