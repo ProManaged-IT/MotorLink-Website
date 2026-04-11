@@ -1522,6 +1522,7 @@ class OnboardingForm {
         document.getElementById('reviewEmail').textContent = formData.get('email') || 'Not provided';
         document.getElementById('reviewPhone').textContent = formData.get('phone') || 'Not provided';
         document.getElementById('reviewWhatsapp').textContent = formData.get('whatsapp') || 'Not provided';
+        document.getElementById('reviewWhatsappUpdates').textContent = formData.get('whatsapp_updates_opt_in') ? 'Enabled' : 'Disabled';
         document.getElementById('reviewRecoveryNumber').textContent = formData.get('recovery_number') || 'Not provided';
         document.getElementById('reviewAddress').textContent = formData.get('address') || 'Not provided';
         
@@ -1907,6 +1908,7 @@ class OnboardingForm {
             email: data.email,
             phone: data.phone,
             whatsapp: data.whatsapp || null,
+            whatsapp_updates_opt_in: data.whatsapp_updates_opt_in ? 1 : 0,
             address: data.address,
             location_id: parseInt(data.location_id),
             years_established: data.years_established ? parseInt(data.years_established) : null,
@@ -1999,6 +2001,16 @@ class OnboardingForm {
         // Update status badges dynamically
         const businessStatusText = result.business_status === 'pending_approval' ? 'Pending Approval' : result.business_status;
         const userStatusText = result.user_status === 'pending' ? 'Pending Approval' : result.user_status;
+
+        const emailNotice = result?.notifications?.email?.message || 'Credentials email sent.';
+        const waNotice = result?.notifications?.whatsapp?.message || 'WhatsApp updates status unavailable.';
+        const waStatus = result?.notifications?.whatsapp?.status || 'unknown';
+        const waPrefix = waStatus === 'sent' ? 'WhatsApp update sent.' : 'WhatsApp update not sent yet.';
+        const notificationNote = `${emailNotice} ${waPrefix} ${waNotice}`;
+        const noteEl = document.getElementById('successNotificationNote');
+        if (noteEl) {
+            noteEl.textContent = notificationNote;
+        }
 
         document.getElementById('successModal').style.display = 'flex';
 

@@ -121,6 +121,8 @@ define('SITE_NAME', 'MotorLink Malawi');
 define('SITE_URL', 'https://promanaged-it.com/motorlink');
 define('UPLOAD_PATH', 'uploads/');
 define('MAX_VEHICLE_IMAGES', 5); // Maximum number of images per vehicle
+$runtimeSchemaEnv = getenv('MOTORLINK_ENABLE_RUNTIME_SCHEMA_UPDATES');
+define('ENABLE_RUNTIME_SCHEMA_UPDATES', $runtimeSchemaEnv !== false ? filter_var($runtimeSchemaEnv, FILTER_VALIDATE_BOOLEAN) : false);
 
 // Start session if not already started
 if (session_status() == PHP_SESSION_NONE) {
@@ -238,6 +240,154 @@ function getDB() {
 }
 
 /**
+ * Best-effort client IP resolution for abuse controls.
+ */
+function getClientIpAddress() {
+    $headers = [
+        'HTTP_CF_CONNECTING_IP',
+        'HTTP_X_FORWARDED_FOR',
+        'HTTP_X_REAL_IP',
+        'REMOTE_ADDR'
+    ];
+
+    foreach ($headers as $header) {
+        if (!empty($_SERVER[$header])) {
+            $raw = trim((string)$_SERVER[$header]);
+            if ($header === 'HTTP_X_FORWARDED_FOR') {
+                $parts = explode(',', $raw);
+                $raw = trim((string)($parts[0] ?? ''));
+            }
+
+            if (filter_var($raw, FILTER_VALIDATE_IP)) {
+                return $raw;
+            }
+        }
+    }
+
+    return '0.0.0.0';
+}
+
+/**
+ * Ensure API rate-limit storage exists.
+ */
+function ensureApiRateLimitTable($db) {
+    static $ready = false;
+
+    if ($ready) {
+        return;
+    }
+
+    $db->exec("CREATE TABLE IF NOT EXISTS api_rate_limits (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        action_key VARCHAR(64) NOT NULL,
+        identifier_hash VARCHAR(128) NOT NULL,
+        attempt_count INT NOT NULL DEFAULT 0,
+        window_started_at DATETIME NOT NULL,
+        blocked_until DATETIME DEFAULT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_action_identifier (action_key, identifier_hash),
+        INDEX idx_action (action_key),
+        INDEX idx_blocked_until (blocked_until)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $ready = true;
+}
+
+/**
+ * Check if a rate-limit key is currently blocked.
+ */
+function isRateLimited($db, $actionKey, $identifierHash) {
+    ensureApiRateLimitTable($db);
+
+    $stmt = $db->prepare("SELECT blocked_until FROM api_rate_limits WHERE action_key = ? AND identifier_hash = ? LIMIT 1");
+    $stmt->execute([$actionKey, $identifierHash]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row || empty($row['blocked_until'])) {
+        return false;
+    }
+
+    try {
+        $now = new DateTime('now');
+        $blockedUntil = new DateTime($row['blocked_until']);
+        return $blockedUntil > $now;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+/**
+ * Record failed attempt and block key when threshold is exceeded.
+ */
+function recordRateLimitFailure($db, $actionKey, $identifierHash, $maxAttempts, $windowSeconds, $blockSeconds) {
+    ensureApiRateLimitTable($db);
+
+    $maxAttempts = max(1, (int)$maxAttempts);
+    $windowSeconds = max(60, (int)$windowSeconds);
+    $blockSeconds = max(60, (int)$blockSeconds);
+
+    $stmt = $db->prepare("SELECT id, attempt_count, window_started_at FROM api_rate_limits WHERE action_key = ? AND identifier_hash = ? LIMIT 1");
+    $stmt->execute([$actionKey, $identifierHash]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $now = new DateTime('now');
+    $windowStarted = clone $now;
+    $attemptCount = 1;
+
+    if ($row) {
+        try {
+            $existingWindow = new DateTime($row['window_started_at']);
+            $elapsed = $now->getTimestamp() - $existingWindow->getTimestamp();
+            if ($elapsed <= $windowSeconds) {
+                $attemptCount = ((int)$row['attempt_count']) + 1;
+                $windowStarted = $existingWindow;
+            }
+        } catch (Exception $e) {
+            $attemptCount = 1;
+        }
+    }
+
+    $blockedUntil = null;
+    if ($attemptCount >= $maxAttempts) {
+        $blockedAt = clone $now;
+        $blockedAt->modify('+' . $blockSeconds . ' seconds');
+        $blockedUntil = $blockedAt->format('Y-m-d H:i:s');
+    }
+
+    if ($row) {
+        $update = $db->prepare("UPDATE api_rate_limits SET attempt_count = ?, window_started_at = ?, blocked_until = ?, updated_at = NOW() WHERE id = ?");
+        $update->execute([
+            $attemptCount,
+            $windowStarted->format('Y-m-d H:i:s'),
+            $blockedUntil,
+            (int)$row['id']
+        ]);
+    } else {
+        $insert = $db->prepare("INSERT INTO api_rate_limits (action_key, identifier_hash, attempt_count, window_started_at, blocked_until) VALUES (?, ?, ?, ?, ?)");
+        $insert->execute([
+            $actionKey,
+            $identifierHash,
+            $attemptCount,
+            $windowStarted->format('Y-m-d H:i:s'),
+            $blockedUntil
+        ]);
+    }
+
+    return !empty($blockedUntil);
+}
+
+/**
+ * Clear failed-attempt state after a successful flow.
+ */
+function clearRateLimitState($db, $actionKey, $identifierHash) {
+    ensureApiRateLimitTable($db);
+
+    $stmt = $db->prepare("DELETE FROM api_rate_limits WHERE action_key = ? AND identifier_hash = ?");
+    $stmt->execute([$actionKey, $identifierHash]);
+}
+
+/**
  * Get SMTP settings from site_settings table.
  * Falls back to config-smtp.php values and seeds missing DB keys.
  */
@@ -338,34 +488,109 @@ function getPlatformSetting($db, $settingKey, $default = null) {
 }
 
 /**
+ * Apply optional runtime schema update. Disabled by default for safer production traffic.
+ */
+function applyRuntimeSchemaChange($db, $sql) {
+    if (!ENABLE_RUNTIME_SCHEMA_UPDATES) {
+        return;
+    }
+
+    try {
+        $db->exec($sql);
+    } catch (Exception $e) {
+        // Ignore duplicate-column/key failures while logging for visibility.
+        error_log('Runtime schema update skipped: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Resolve a runtime base URL for absolute links without hardcoding production domain.
+ */
+function getRuntimeBaseUrl() {
+    $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+    if (empty($host)) {
+        return rtrim(SITE_URL, '/');
+    }
+
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || ((int)($_SERVER['SERVER_PORT'] ?? 0) === 443);
+
+    return ($https ? 'https' : 'http') . '://' . $host;
+}
+
+/**
+ * Validate an uploaded image and return canonical mime + extension.
+ */
+function validateUploadedImageFile($tmpName, $originalName, $fileSize, $clientMimeType, $maxFileSize = 10485760) {
+    $allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
+    if (!is_uploaded_file($tmpName)) {
+        return ['ok' => false, 'error' => 'File upload integrity check failed'];
+    }
+
+    if ($fileSize <= 0 || $fileSize > $maxFileSize) {
+        return ['ok' => false, 'error' => 'File size is invalid or exceeds limit'];
+    }
+
+    $ext = strtolower(pathinfo((string)$originalName, PATHINFO_EXTENSION));
+    if (!in_array($ext, $allowedExtensions, true)) {
+        return ['ok' => false, 'error' => 'Invalid file extension'];
+    }
+
+    $mimeType = '';
+    if (function_exists('finfo_open')) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo) {
+            $detected = finfo_file($finfo, $tmpName);
+            finfo_close($finfo);
+            if (!empty($detected)) {
+                $mimeType = $detected;
+            }
+        }
+    }
+
+    if (empty($mimeType)) {
+        $imageInfo = @getimagesize($tmpName);
+        $mimeType = $imageInfo['mime'] ?? '';
+    }
+
+    if (empty($mimeType)) {
+        $mimeType = (string)$clientMimeType;
+    }
+
+    if ($mimeType === 'image/x-png') {
+        $mimeType = 'image/png';
+    }
+
+    if (!in_array($mimeType, $allowedMimeTypes, true)) {
+        return ['ok' => false, 'error' => 'Invalid image MIME type'];
+    }
+
+    $safeExt = match ($mimeType) {
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/gif' => 'gif',
+        'image/webp' => 'webp',
+        default => $ext,
+    };
+
+    return [
+        'ok' => true,
+        'mime' => $mimeType,
+        'extension' => $safeExt,
+    ];
+}
+
+/**
  * Ensure listing email verification columns are present.
  */
 function ensureListingEmailVerificationColumns($db) {
-    try {
-        $db->exec("ALTER TABLE car_listings ADD COLUMN listing_email_verified TINYINT(1) DEFAULT 0");
-    } catch (Exception $e) {
-        // ignore
-    }
-    try {
-        $db->exec("ALTER TABLE car_listings ADD COLUMN listing_email_verification_token VARCHAR(128) DEFAULT NULL");
-    } catch (Exception $e) {
-        // ignore
-    }
-    try {
-        $db->exec("ALTER TABLE car_listings ADD COLUMN listing_email_verification_sent_to VARCHAR(255) DEFAULT NULL");
-    } catch (Exception $e) {
-        // ignore
-    }
-    try {
-        $db->exec("ALTER TABLE car_listings ADD COLUMN listing_email_verification_expires DATETIME DEFAULT NULL");
-    } catch (Exception $e) {
-        // ignore
-    }
-    try {
-        $db->exec("ALTER TABLE car_listings ADD COLUMN listing_email_verified_at DATETIME DEFAULT NULL");
-    } catch (Exception $e) {
-        // ignore
-    }
+    applyRuntimeSchemaChange($db, "ALTER TABLE car_listings ADD COLUMN listing_email_verified TINYINT(1) DEFAULT 0");
+    applyRuntimeSchemaChange($db, "ALTER TABLE car_listings ADD COLUMN listing_email_verification_token VARCHAR(128) DEFAULT NULL");
+    applyRuntimeSchemaChange($db, "ALTER TABLE car_listings ADD COLUMN listing_email_verification_sent_to VARCHAR(255) DEFAULT NULL");
+    applyRuntimeSchemaChange($db, "ALTER TABLE car_listings ADD COLUMN listing_email_verification_expires DATETIME DEFAULT NULL");
+    applyRuntimeSchemaChange($db, "ALTER TABLE car_listings ADD COLUMN listing_email_verified_at DATETIME DEFAULT NULL");
 }
 
 /**
@@ -1162,24 +1387,10 @@ function getListings($db) {
         
         $whereClause = implode(' AND ', $whereConditions);
         
-        // Ensure featured/premium columns exist using compatible syntax
-        try {
-            $db->exec("ALTER TABLE car_listings ADD COLUMN is_featured TINYINT(1) DEFAULT 0");
-        } catch (Exception $e) {
-            // Column already exists, ignore
-        }
-
-        try {
-            $db->exec("ALTER TABLE car_listings ADD COLUMN is_premium TINYINT(1) DEFAULT 0");
-        } catch (Exception $e) {
-            // Column already exists, ignore
-        }
-
-        try {
-            $db->exec("ALTER TABLE car_listings ADD COLUMN premium_until DATETIME DEFAULT NULL");
-        } catch (Exception $e) {
-            // Column already exists, ignore
-        }
+        // Optionally backfill schema only when runtime schema updates are explicitly enabled.
+        applyRuntimeSchemaChange($db, "ALTER TABLE car_listings ADD COLUMN is_featured TINYINT(1) DEFAULT 0");
+        applyRuntimeSchemaChange($db, "ALTER TABLE car_listings ADD COLUMN is_premium TINYINT(1) DEFAULT 0");
+        applyRuntimeSchemaChange($db, "ALTER TABLE car_listings ADD COLUMN premium_until DATETIME DEFAULT NULL");
 
         // Get listings - FIXED: Improved query with better field selection
         $sql = "
@@ -1718,12 +1929,7 @@ function getDealerShowroom($db) {
             SELECT l.id, l.title, l.price, l.year, l.mileage, l.fuel_type, l.transmission,
                    l.created_at, l.views_count, l.listing_type, l.negotiable,
                    m.name as make_name, mo.name as model_name, mo.body_type,
-                   (SELECT filename FROM car_listing_images WHERE listing_id = l.id AND is_primary = 1 LIMIT 1) as primary_image,
-                   CASE 
-                       WHEN (SELECT filename FROM car_listing_images WHERE listing_id = l.id AND is_primary = 1 LIMIT 1) IS NOT NULL 
-                       THEN CONCAT('https://promanaged-it.com/motorlink/uploads/', (SELECT filename FROM car_listing_images WHERE listing_id = l.id AND is_primary = 1 LIMIT 1))
-                       ELSE NULL
-                   END as image_url
+                   (SELECT filename FROM car_listing_images WHERE listing_id = l.id AND is_primary = 1 LIMIT 1) as primary_image
             FROM car_listings l
             INNER JOIN car_makes m ON l.make_id = m.id
             INNER JOIN car_models mo ON l.model_id = mo.id
@@ -1732,6 +1938,12 @@ function getDealerShowroom($db) {
         ");
         $stmt->execute([$dealer['user_id']]);
         $cars = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $uploadBase = rtrim(getRuntimeBaseUrl(), '/') . '/uploads/';
+        foreach ($cars as &$car) {
+            $car['image_url'] = !empty($car['primary_image']) ? ($uploadBase . ltrim($car['primary_image'], '/')) : null;
+        }
+        unset($car);
         
         sendSuccess([
             'dealer' => $dealer,
@@ -2029,8 +2241,18 @@ function handleLogin($db) {
     }
     
     $input = json_decode(file_get_contents('php://input'), true);
-    $email = $input['email'] ?? '';
+    $email = strtolower(trim((string)($input['email'] ?? '')));
     $password = $input['password'] ?? '';
+
+    $clientIp = getClientIpAddress();
+    $loginRateMaxAttempts = (int)(getenv('MOTORLINK_LOGIN_RATE_MAX_ATTEMPTS') ?: 8);
+    $loginRateWindowSeconds = (int)(getenv('MOTORLINK_LOGIN_RATE_WINDOW_SECONDS') ?: 900);
+    $loginRateBlockSeconds = (int)(getenv('MOTORLINK_LOGIN_RATE_BLOCK_SECONDS') ?: 900);
+    $loginIdentifierHash = hash('sha256', $email . '|' . $clientIp);
+
+    if (isRateLimited($db, 'login', $loginIdentifierHash)) {
+        sendErrorWithCode('Too many login attempts. Please try again later.', 'RATE_LIMITED', 429);
+    }
     
     if (empty($email) || empty($password)) {
         sendError('Email and password required', 400);
@@ -2045,6 +2267,7 @@ function handleLogin($db) {
         if ($admin && password_verify($password, $admin['password_hash'])) {
             // Admin user found - set both regular and admin sessions
             setAdminSession($admin);
+            clearRateLimitState($db, 'login', $loginIdentifierHash);
             
             // Update last login for admin
             $updateStmt = $db->prepare("UPDATE admin_users SET last_login = NOW() WHERE id = ?");
@@ -2071,23 +2294,27 @@ function handleLogin($db) {
         if ($user && password_verify($password, $user['password_hash'])) {
             // Check if email is verified
             if (!$user['email_verified']) {
+                recordRateLimitFailure($db, 'login', $loginIdentifierHash, $loginRateMaxAttempts, $loginRateWindowSeconds, $loginRateBlockSeconds);
                 sendError('Please verify your email address before logging in. Check your inbox for the verification link.', 403);
                 return;
             }
             
             // Check if account is suspended or banned
             if ($user['status'] === 'suspended' || $user['status'] === 'banned') {
+                recordRateLimitFailure($db, 'login', $loginIdentifierHash, $loginRateMaxAttempts, $loginRateWindowSeconds, $loginRateBlockSeconds);
                 sendError('Your account has been ' . $user['status'] . '. Please contact support for assistance.', 403);
                 return;
             }
             
             // Only allow active users to login
             if ($user['status'] !== 'active') {
+                recordRateLimitFailure($db, 'login', $loginIdentifierHash, $loginRateMaxAttempts, $loginRateWindowSeconds, $loginRateBlockSeconds);
                 sendError('Your account is not active. Please contact support for assistance.', 403);
                 return;
             }
             
             setUserSession($user);
+            clearRateLimitState($db, 'login', $loginIdentifierHash);
             
             sendSuccess([
                 'message' => 'Login successful',
@@ -2099,6 +2326,7 @@ function handleLogin($db) {
                 ]
             ]);
         } else {
+            recordRateLimitFailure($db, 'login', $loginIdentifierHash, $loginRateMaxAttempts, $loginRateWindowSeconds, $loginRateBlockSeconds);
             sendError('Invalid credentials', 401);
         }
     } catch (Exception $e) {
@@ -2276,6 +2504,16 @@ function handleRequestPasswordReset($db) {
     }
     
     $email = trim($input['email'] ?? '');
+
+    $clientIp = getClientIpAddress();
+    $resetRateMaxAttempts = (int)(getenv('MOTORLINK_RESET_RATE_MAX_ATTEMPTS') ?: 5);
+    $resetRateWindowSeconds = (int)(getenv('MOTORLINK_RESET_RATE_WINDOW_SECONDS') ?: 1800);
+    $resetRateBlockSeconds = (int)(getenv('MOTORLINK_RESET_RATE_BLOCK_SECONDS') ?: 1800);
+    $resetIdentifierHash = hash('sha256', strtolower($email) . '|' . $clientIp);
+
+    if (isRateLimited($db, 'password_reset_request', $resetIdentifierHash)) {
+        sendErrorWithCode('Too many reset requests. Please try again later.', 'RATE_LIMITED', 429);
+    }
     
     if (empty($email)) {
         sendError('Email address is required', 400);
@@ -2287,6 +2525,16 @@ function handleRequestPasswordReset($db) {
     }
     
     try {
+        // Consume one budget unit per request to mitigate reset flooding.
+        recordRateLimitFailure(
+            $db,
+            'password_reset_request',
+            $resetIdentifierHash,
+            $resetRateMaxAttempts,
+            $resetRateWindowSeconds,
+            $resetRateBlockSeconds
+        );
+
         // Find user by email
         $stmt = $db->prepare("SELECT id, email, full_name, status FROM users WHERE email = ?");
         $stmt->execute([$email]);
@@ -2344,6 +2592,16 @@ function handleResetPassword($db) {
     $userId = intval($input['user_id'] ?? $input['id'] ?? 0);
     $newPassword = $input['password'] ?? '';
     $confirmPassword = $input['confirm_password'] ?? '';
+
+    $clientIp = getClientIpAddress();
+    $resetAttemptMax = (int)(getenv('MOTORLINK_RESET_SUBMIT_MAX_ATTEMPTS') ?: 10);
+    $resetAttemptWindow = (int)(getenv('MOTORLINK_RESET_SUBMIT_WINDOW_SECONDS') ?: 900);
+    $resetAttemptBlock = (int)(getenv('MOTORLINK_RESET_SUBMIT_BLOCK_SECONDS') ?: 900);
+    $resetSubmitIdentifier = hash('sha256', (string)$userId . '|' . $clientIp);
+
+    if (isRateLimited($db, 'password_reset_submit', $resetSubmitIdentifier)) {
+        sendErrorWithCode('Too many password reset attempts. Please try again later.', 'RATE_LIMITED', 429);
+    }
     
     if (empty($token) || $userId <= 0) {
         sendError('Invalid reset token or user ID', 400);
@@ -2372,6 +2630,7 @@ function handleResetPassword($db) {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$user) {
+            recordRateLimitFailure($db, 'password_reset_submit', $resetSubmitIdentifier, $resetAttemptMax, $resetAttemptWindow, $resetAttemptBlock);
             sendError('Invalid or expired reset token', 400);
         }
         
@@ -2380,11 +2639,13 @@ function handleResetPassword($db) {
         $expiresAt = new DateTime($user['reset_token_expires']);
         
         if ($now > $expiresAt) {
+            recordRateLimitFailure($db, 'password_reset_submit', $resetSubmitIdentifier, $resetAttemptMax, $resetAttemptWindow, $resetAttemptBlock);
             sendError('Reset token has expired. Please request a new password reset.', 400);
         }
         
         // Check if user account is active or pending
         if ($user['status'] !== 'active' && $user['status'] !== 'pending') {
+            recordRateLimitFailure($db, 'password_reset_submit', $resetSubmitIdentifier, $resetAttemptMax, $resetAttemptWindow, $resetAttemptBlock);
             sendError('Account is not active. Please contact support.', 403);
         }
         
@@ -2401,6 +2662,7 @@ function handleResetPassword($db) {
             WHERE id = ?
         ");
         $stmt->execute([$passwordHash, $user['id']]);
+        clearRateLimitState($db, 'password_reset_submit', $resetSubmitIdentifier);
         
         // Log password reset
         error_log("Password reset successful for user: " . $user['email'] . " (ID: " . $user['id'] . ")");
@@ -2563,8 +2825,28 @@ function submitListing($db) {
         $listingEmailToken = null;
         $listingEmailExpiry = null;
         $listingEmailVerified = $requireListingEmailValidation ? 0 : 1;
-        $status = $requireListingEmailValidation ? 'pending_email_verification' : 'pending_approval';
-        $approvalStatus = $requireListingEmailValidation ? 'pending_email_verification' : 'pending';
+
+        $status = 'pending_approval';
+        $approvalStatus = 'pending';
+        if ($requireListingEmailValidation) {
+            try {
+                $statusTypeStmt = $db->query("SHOW COLUMNS FROM car_listings LIKE 'status'");
+                $statusTypeRow = $statusTypeStmt ? $statusTypeStmt->fetch(PDO::FETCH_ASSOC) : null;
+                $statusType = strtolower((string)($statusTypeRow['Type'] ?? ''));
+                if (strpos($statusType, 'pending_email_verification') !== false) {
+                    $status = 'pending_email_verification';
+                }
+
+                $approvalTypeStmt = $db->query("SHOW COLUMNS FROM car_listings LIKE 'approval_status'");
+                $approvalTypeRow = $approvalTypeStmt ? $approvalTypeStmt->fetch(PDO::FETCH_ASSOC) : null;
+                $approvalType = strtolower((string)($approvalTypeRow['Type'] ?? ''));
+                if (strpos($approvalType, 'pending_email_verification') !== false) {
+                    $approvalStatus = 'pending_email_verification';
+                }
+            } catch (Exception $e) {
+                error_log('submitListing status enum check warning: ' . $e->getMessage());
+            }
+        }
 
         if ($requireListingEmailValidation) {
             $listingEmailToken = bin2hex(random_bytes(32));
@@ -2745,9 +3027,37 @@ function getProfile($db) {
     $user = getCurrentUser();
     
     try {
-        $stmt = $db->prepare("SELECT full_name, email, phone, whatsapp, city, address FROM users WHERE id = ?");
+        $stmt = $db->prepare("SELECT full_name, email, phone, whatsapp, city, address, bio, user_type FROM users WHERE id = ?");
         $stmt->execute([$user['id']]);
         $profile = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$profile) {
+            sendError('Profile not found', 404);
+        }
+
+        // Provide dealer-specific profile fields expected by the profile page.
+        if (($profile['user_type'] ?? '') === 'dealer') {
+            $dealerStmt = $db->prepare("\n                SELECT business_name, years_established, phone, whatsapp, address, description,\n                       facebook_url, instagram_url, twitter_url, website\n                FROM car_dealers\n                WHERE user_id = ?\n                LIMIT 1\n            ");
+            $dealerStmt->execute([$user['id']]);
+            $dealer = $dealerStmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($dealer) {
+                $profile['years_in_business'] = $dealer['years_established'] ?? null;
+                $profile['business_name'] = $dealer['business_name'] ?? null;
+                $profile['business_phone'] = $dealer['phone'] ?? null;
+                $profile['business_whatsapp'] = $dealer['whatsapp'] ?? null;
+                $profile['business_address'] = $dealer['address'] ?? null;
+                $profile['business_description'] = $dealer['description'] ?? null;
+                $profile['description'] = $dealer['description'] ?? null;
+                $profile['facebook_url'] = $dealer['facebook_url'] ?? null;
+                $profile['instagram_url'] = $dealer['instagram_url'] ?? null;
+                $profile['twitter_url'] = $dealer['twitter_url'] ?? null;
+                $profile['website_url'] = $dealer['website'] ?? null;
+                $profile['website'] = $dealer['website'] ?? null;
+            }
+        }
+
+        unset($profile['user_type']);
         sendSuccess(['profile' => $profile]);
     } catch (Exception $e) {
         error_log("Get profile error: " . $e->getMessage());
@@ -2768,13 +3078,29 @@ function updateProfile($db) {
     
     $user = getCurrentUser();
     $input = json_decode(file_get_contents('php://input'), true);
+
+    if (!is_array($input)) {
+        sendError('Invalid request body', 400);
+    }
+
+    $fullName = trim((string)($input['full_name'] ?? ''));
+    if ($fullName === '') {
+        sendError('Full name is required', 400);
+    }
+
+    $isPasswordChangeRequested = !empty($input['current_password']) || !empty($input['new_password']);
+    if ($isPasswordChangeRequested) {
+        if (empty($input['current_password']) || empty($input['new_password'])) {
+            sendError('Current password and new password are required', 400);
+        }
+        if (strlen((string)$input['new_password']) < 6) {
+            sendError('New password must be at least 6 characters long', 400);
+        }
+    }
     
     try {
-        // Start transaction
-        $db->beginTransaction();
-        
         // Check if password change is requested
-        if (!empty($input['current_password']) && !empty($input['new_password'])) {
+        if ($isPasswordChangeRequested) {
             // Verify current password
             $stmt = $db->prepare("SELECT password_hash FROM users WHERE id = ?");
             $stmt->execute([$user['id']]);
@@ -2783,6 +3109,12 @@ function updateProfile($db) {
             if (!$userData || !password_verify($input['current_password'], $userData['password_hash'])) {
                 sendError('Current password is incorrect', 400);
             }
+        }
+
+        // Start transaction
+        $db->beginTransaction();
+
+        if ($isPasswordChangeRequested) {
             
             // Update password
             $stmt = $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
@@ -2794,27 +3126,68 @@ function updateProfile($db) {
         
         // Update profile information
         $stmt = $db->prepare("
-            UPDATE users SET full_name = ?, phone = ?, whatsapp = ?, city = ?, address = ?, updated_at = NOW()
+            UPDATE users SET full_name = ?, phone = ?, whatsapp = ?, city = ?, address = ?, bio = ?, updated_at = NOW()
             WHERE id = ?
         ");
         
         $stmt->execute([
-            $input['full_name'],
-            $input['phone'] ?? null,
-            $input['whatsapp'] ?? null,
-            $input['city'] ?? null,
-            $input['address'] ?? null,
+            $fullName,
+            isset($input['phone']) ? trim((string)$input['phone']) : null,
+            isset($input['whatsapp']) ? trim((string)$input['whatsapp']) : null,
+            isset($input['city']) ? trim((string)$input['city']) : null,
+            isset($input['address']) ? trim((string)$input['address']) : null,
+            isset($input['bio']) ? trim((string)$input['bio']) : null,
             $user['id']
         ]);
+
+        // Update dealer profile fields when provided.
+        $dealerFieldMap = [
+            'business_phone' => 'phone',
+            'business_whatsapp' => 'whatsapp',
+            'business_address' => 'address',
+            'business_description' => 'description',
+            'facebook_url' => 'facebook_url',
+            'instagram_url' => 'instagram_url',
+            'twitter_url' => 'twitter_url',
+            'website_url' => 'website'
+        ];
+
+        $dealerUpdateFields = [];
+        $dealerParams = [];
+        foreach ($dealerFieldMap as $inputKey => $columnName) {
+            if (array_key_exists($inputKey, $input)) {
+                $dealerUpdateFields[] = $columnName . ' = ?';
+                $dealerParams[] = trim((string)$input[$inputKey]);
+            }
+        }
+
+        if (!empty($dealerUpdateFields)) {
+            $dealerCheck = $db->prepare("SELECT id FROM car_dealers WHERE user_id = ? LIMIT 1");
+            $dealerCheck->execute([$user['id']]);
+            $dealerRow = $dealerCheck->fetch(PDO::FETCH_ASSOC);
+
+            if ($dealerRow) {
+                $dealerUpdateFields[] = 'updated_at = NOW()';
+                $dealerParams[] = $user['id'];
+                $dealerSql = "UPDATE car_dealers SET " . implode(', ', $dealerUpdateFields) . " WHERE user_id = ?";
+                $dealerStmt = $db->prepare($dealerSql);
+                $dealerStmt->execute($dealerParams);
+            }
+        }
         
         $db->commit();
+
+        // Keep session display name aligned with latest profile update.
+        $_SESSION['full_name'] = $fullName;
         
         sendSuccess(['message' => 'Profile updated successfully']);
         
     } catch (Exception $e) {
-        $db->rollBack();
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         error_log("Update profile error: " . $e->getMessage());
-        sendError('Failed to update profile: ' . $e->getMessage(), 500);
+        sendError('Failed to update profile', 500);
     }
 }
 
@@ -3789,19 +4162,9 @@ function reportListing($db) {
             INDEX idx_created_at (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-        // Backfill uniqueness rule for older schemas.
-        try {
-            $db->exec("ALTER TABLE listing_reports ADD UNIQUE KEY uniq_listing_user_report (listing_id, user_id)");
-        } catch (Exception $e) {
-            // Ignore if the key already exists or legacy duplicates prevent creation.
-        }
-
-        // Ensure report_count column exists for listing-level counters.
-        try {
-            $db->exec("ALTER TABLE car_listings ADD COLUMN report_count INT DEFAULT 0");
-        } catch (Exception $e) {
-            // Ignore if the column already exists.
-        }
+        // Backfill legacy schema only when runtime updates are explicitly enabled.
+        applyRuntimeSchemaChange($db, "ALTER TABLE listing_reports ADD UNIQUE KEY uniq_listing_user_report (listing_id, user_id)");
+        applyRuntimeSchemaChange($db, "ALTER TABLE car_listings ADD COLUMN report_count INT DEFAULT 0");
         
         // Get JSON input
         $input = json_decode(file_get_contents('php://input'), true);
@@ -4433,6 +4796,108 @@ function sendApprovalEmail($db, $email, $fullName) {
     }
 }
 
+/**
+ * Send a messaging notification email when a user receives a new message.
+ */
+function sendMessageNotificationEmail($db, $recipientEmail, $recipientName, $senderName, $listingTitle, $messageText, $conversationId) {
+    try {
+        if (empty($recipientEmail)) {
+            return false;
+        }
+
+        require_once(__DIR__ . '/includes/smtp-mailer.php');
+        $smtp = getSMTPSettings($db);
+
+        $smtpHost = $smtp['host'];
+        $smtpPort = $smtp['port'];
+        $smtpUsername = $smtp['username'];
+        $smtpPassword = $smtp['password'];
+        $fromEmail = $smtp['from_email'];
+        $fromName = $smtp['from_name'];
+
+        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+        $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
+        if ($isProduction) {
+            $baseUrl = 'https://promanaged-it.com/motorlink/';
+        } else {
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $baseUrl = $protocol . '://' . $serverHost . '/';
+        }
+
+        $messagesLink = $baseUrl . 'chat_system.html';
+        $subject = 'MotorLink Malawi - New Message Alert';
+        $safeRecipient = htmlspecialchars((string)$recipientName, ENT_QUOTES, 'UTF-8');
+        $safeSender = htmlspecialchars((string)$senderName, ENT_QUOTES, 'UTF-8');
+        $safeListing = htmlspecialchars((string)($listingTitle ?: 'Direct Conversation'), ENT_QUOTES, 'UTF-8');
+        $messagePreview = trim((string)$messageText);
+        if (strlen($messagePreview) > 300) {
+            $messagePreview = substr($messagePreview, 0, 297) . '...';
+        }
+        $safePreview = nl2br(htmlspecialchars($messagePreview, ENT_QUOTES, 'UTF-8'));
+
+        $htmlMessage = "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #1f1f1f; margin: 0; padding: 0; background: #f4faf6; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #00c853 0%, #00a843 100%); color: white; padding: 24px; text-align: center; border-radius: 12px 12px 0 0; }
+                .header h2 { margin: 0; font-size: 26px; letter-spacing: 0.2px; }
+                .content { background: #ffffff; padding: 24px; border-radius: 0 0 12px 12px; border: 1px solid #d7eadf; }
+                .message-box { background: #eefaf2; border: 1px solid #b7e7c6; border-radius: 10px; padding: 14px; margin: 16px 0; color: #1f1f1f; }
+                .icon-row { margin: 12px 0 2px 0; color: #2f5d3f; font-size: 14px; }
+                .icon-row span { display: inline-block; margin-right: 14px; }
+                .button { display: inline-block; padding: 12px 22px; background: linear-gradient(135deg, #00c853 0%, #00a843 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; }
+                .meta { color: #5f6368; font-size: 13px; margin-top: 10px; }
+                .footer { margin-top: 18px; color: #6f6f6f; font-size: 12px; }
+            </style>
+        </head>
+        <body>
+            <div class='container'>
+                <div class='header'>
+                    <h2>&#128172; You Have a New Message</h2>
+                </div>
+                <div class='content'>
+                    <p>Hello <strong>{$safeRecipient}</strong>,</p>
+                    <p><strong>{$safeSender}</strong> sent you a new message on MotorLink Malawi.</p>
+                    <p><strong>Conversation:</strong> {$safeListing}</p>
+                    <div class='icon-row'>
+                        <span>&#128100; Sender: {$safeSender}</span>
+                        <span>&#128663; Listing: {$safeListing}</span>
+                    </div>
+                    <div class='message-box'>{$safePreview}</div>
+                    <p><a href='{$messagesLink}' class='button'>&#128233; Open Message Inbox</a></p>
+                    <p class='meta'>Conversation ID: {$conversationId}</p>
+                    <div class='footer'>This is an automated notification email from MotorLink Malawi.</div>
+                </div>
+            </div>
+        </body>
+        </html>";
+
+        $textMessage = "Hello {$recipientName},\n\n";
+        $textMessage .= "{$senderName} sent you a new message on MotorLink Malawi.\n";
+        $textMessage .= "Conversation: " . ($listingTitle ?: 'Direct Conversation') . "\n\n";
+        $textMessage .= "Message preview:\n{$messagePreview}\n\n";
+        $textMessage .= "Open messages: {$messagesLink}\n";
+        $textMessage .= "Conversation ID: {$conversationId}\n\n";
+        $textMessage .= "This is an automated notification email from MotorLink Malawi.";
+
+        $mailer = new SMTPMailer($smtpHost, $smtpPort, $smtpUsername, $smtpPassword, $fromEmail, $fromName);
+        $sent = $mailer->send($recipientEmail, $subject, $htmlMessage, $textMessage);
+
+        if (!$sent) {
+            error_log('sendMessageNotificationEmail failed for: ' . $recipientEmail);
+        }
+
+        return $sent;
+    } catch (Exception $e) {
+        error_log('sendMessageNotificationEmail error: ' . $e->getMessage());
+        return false;
+    }
+}
+
 // ============================================================================
 // MESSAGING HANDLERS
 // ============================================================================
@@ -4528,10 +4993,11 @@ function sendMessage($db) {
     }
 
     try {
-        // Verify user is part of conversation
-        $stmt = $db->prepare("SELECT id FROM conversations WHERE id = ? AND (buyer_id = ? OR seller_id = ?)");
+        // Verify user is part of conversation and load participants for notifications.
+        $stmt = $db->prepare("\n            SELECT c.id, c.buyer_id, c.seller_id, c.listing_id,\n                   l.title AS listing_title,\n                   b.full_name AS buyer_name, b.email AS buyer_email,\n                   s.full_name AS seller_name, s.email AS seller_email\n            FROM conversations c\n            LEFT JOIN car_listings l ON l.id = c.listing_id\n            LEFT JOIN users b ON b.id = c.buyer_id\n            LEFT JOIN users s ON s.id = c.seller_id\n            WHERE c.id = ? AND (c.buyer_id = ? OR c.seller_id = ?)\n            LIMIT 1\n        ");
         $stmt->execute([$conversationId, $user['id'], $user['id']]);
-        if (!$stmt->fetch()) {
+        $conversation = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$conversation) {
             sendError('Conversation not found', 404);
         }
 
@@ -4547,6 +5013,23 @@ function sendMessage($db) {
         $stmt->execute([$message, $conversationId]);
 
         $db->commit();
+
+        $senderName = $user['name'] ?? ($user['full_name'] ?? 'MotorLink User');
+        $isBuyerSender = ((int)$conversation['buyer_id'] === (int)$user['id']);
+        $recipientEmail = $isBuyerSender ? ($conversation['seller_email'] ?? '') : ($conversation['buyer_email'] ?? '');
+        $recipientName = $isBuyerSender ? ($conversation['seller_name'] ?? 'User') : ($conversation['buyer_name'] ?? 'User');
+        $listingTitle = $conversation['listing_title'] ?? 'Direct Conversation';
+
+        // Best effort email notification for the recipient.
+        sendMessageNotificationEmail(
+            $db,
+            $recipientEmail,
+            $recipientName,
+            $senderName,
+            $listingTitle,
+            $message,
+            $conversationId
+        );
 
         // Get the inserted message
         $stmt = $db->prepare("SELECT * FROM messages WHERE id = ?");
@@ -4730,6 +5213,39 @@ function startConversation($db) {
 
         $db->commit();
 
+        // Load participants/listing metadata for email notifications.
+        $metaStmt = $db->prepare("\n            SELECT c.id, c.buyer_id, c.seller_id,\n                   l.title AS listing_title,\n                   b.full_name AS buyer_name, b.email AS buyer_email,\n                   s.full_name AS seller_name, s.email AS seller_email\n            FROM conversations c\n            LEFT JOIN car_listings l ON l.id = c.listing_id\n            LEFT JOIN users b ON b.id = c.buyer_id\n            LEFT JOIN users s ON s.id = c.seller_id\n            WHERE c.id = ?\n            LIMIT 1\n        ");
+        $metaStmt->execute([$conversationId]);
+        $conversationMeta = $metaStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($conversationMeta) {
+            $senderName = $user['name'] ?? ($user['full_name'] ?? 'MotorLink User');
+
+            // Notify seller about buyer's initial message.
+            sendMessageNotificationEmail(
+                $db,
+                $conversationMeta['seller_email'] ?? '',
+                $conversationMeta['seller_name'] ?? 'User',
+                $senderName,
+                $conversationMeta['listing_title'] ?? 'Direct Conversation',
+                $message,
+                $conversationId
+            );
+
+            // If auto-reply was sent, notify buyer about seller's auto-reply.
+            if ($autoReplySent && !empty($autoReplyMsg)) {
+                sendMessageNotificationEmail(
+                    $db,
+                    $conversationMeta['buyer_email'] ?? '',
+                    $conversationMeta['buyer_name'] ?? 'User',
+                    $conversationMeta['seller_name'] ?? 'Seller',
+                    $conversationMeta['listing_title'] ?? 'Direct Conversation',
+                    $autoReplyMsg,
+                    $conversationId
+                );
+            }
+        }
+
         sendSuccess([
             'conversation_id' => $conversationId,
             'message' => 'Conversation started',
@@ -4886,13 +5402,9 @@ function getAutoReplySettings($db) {
     $user = getCurrentUser();
 
     try {
-        // Ensure columns exist
-        try {
-            $db->exec("ALTER TABLE users ADD COLUMN auto_reply_enabled TINYINT(1) DEFAULT 0");
-        } catch (Exception $e) {}
-        try {
-            $db->exec("ALTER TABLE users ADD COLUMN auto_reply_message TEXT DEFAULT NULL");
-        } catch (Exception $e) {}
+        // Ensure columns exist only when explicitly enabled for runtime schema updates.
+        applyRuntimeSchemaChange($db, "ALTER TABLE users ADD COLUMN auto_reply_enabled TINYINT(1) DEFAULT 0");
+        applyRuntimeSchemaChange($db, "ALTER TABLE users ADD COLUMN auto_reply_message TEXT DEFAULT NULL");
 
         $stmt = $db->prepare("SELECT auto_reply_enabled, auto_reply_message FROM users WHERE id = ?");
         $stmt->execute([$user['id']]);
@@ -4926,13 +5438,9 @@ function updateAutoReplySettings($db) {
     $message = trim($input['auto_reply_message'] ?? '');
 
     try {
-        // Ensure columns exist
-        try {
-            $db->exec("ALTER TABLE users ADD COLUMN auto_reply_enabled TINYINT(1) DEFAULT 0");
-        } catch (Exception $e) {}
-        try {
-            $db->exec("ALTER TABLE users ADD COLUMN auto_reply_message TEXT DEFAULT NULL");
-        } catch (Exception $e) {}
+        // Ensure columns exist only when explicitly enabled for runtime schema updates.
+        applyRuntimeSchemaChange($db, "ALTER TABLE users ADD COLUMN auto_reply_enabled TINYINT(1) DEFAULT 0");
+        applyRuntimeSchemaChange($db, "ALTER TABLE users ADD COLUMN auto_reply_message TEXT DEFAULT NULL");
 
         $stmt = $db->prepare("UPDATE users SET auto_reply_enabled = ?, auto_reply_message = ? WHERE id = ?");
         $stmt->execute([$enabled ? 1 : 0, $message, $user['id']]);
@@ -4963,10 +5471,8 @@ function getDealerInfo($db) {
     }
 
     try {
-        // Ensure user_id column exists
-        try {
-            $db->exec("ALTER TABLE car_dealers ADD COLUMN user_id INT DEFAULT NULL");
-        } catch (Exception $e) {}
+        // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
+        applyRuntimeSchemaChange($db, "ALTER TABLE car_dealers ADD COLUMN user_id INT DEFAULT NULL");
 
         // Try to find dealer by user_id or email, include user's full_name
         $stmt = $db->prepare("
@@ -5123,30 +5629,27 @@ function updateDealerBusiness($db) {
 
     try {
         $businessName = trim($_POST['business_name'] ?? '');
-        $registrationNumber = trim($_POST['registration_number'] ?? '');
-        $taxId = trim($_POST['tax_id'] ?? '');
-        $businessType = trim($_POST['business_type'] ?? '');
         $yearsInBusiness = intval($_POST['years_in_business'] ?? 0);
 
-        $stmt = $db->prepare("
-            UPDATE car_dealers
-            SET business_name = ?,
-                registration_number = ?,
-                tax_id = ?,
-                business_type = ?,
-                years_in_business = ?,
-                updated_at = NOW()
-            WHERE user_id = ?
-        ");
+        $setParts = ['business_name = ?'];
+        $params = [$businessName];
 
-        $stmt->execute([
-            $businessName,
-            $registrationNumber,
-            $taxId,
-            $businessType,
-            $yearsInBusiness,
-            $user['id']
-        ]);
+        // Align with current schema variants across environments.
+        $yearsField = 'years_established';
+        $colCheck = $db->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'car_dealers' AND COLUMN_NAME = 'years_in_business'");
+        $colCheck->execute();
+        if ((int)$colCheck->fetchColumn() > 0) {
+            $yearsField = 'years_in_business';
+        }
+
+        $setParts[] = "{$yearsField} = ?";
+        $params[] = $yearsInBusiness;
+        $setParts[] = 'updated_at = NOW()';
+        $params[] = $user['id'];
+
+        $sql = "UPDATE car_dealers SET " . implode(', ', $setParts) . " WHERE user_id = ?";
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
 
         sendSuccess(['message' => 'Business information updated successfully']);
     } catch (Exception $e) {
@@ -5274,8 +5777,8 @@ function dealerAddCar($db) {
     }
 
     try {
-        // Get dealer ID
-        $stmt = $db->prepare("SELECT id FROM car_dealers WHERE user_id = ?");
+        // Get dealer profile info used for listing defaults.
+        $stmt = $db->prepare("SELECT id, location_id FROM car_dealers WHERE user_id = ?");
         $stmt->execute([$user['id']]);
         $dealer = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -5285,28 +5788,79 @@ function dealerAddCar($db) {
 
         $make = trim($_POST['make'] ?? '');
         $model = trim($_POST['model'] ?? '');
+        $makeId = intval($_POST['make_id'] ?? 0);
+        $modelId = intval($_POST['model_id'] ?? 0);
         $year = intval($_POST['year'] ?? 0);
         $price = floatval($_POST['price'] ?? 0);
         $description = trim($_POST['description'] ?? '');
         $mileage = intval($_POST['mileage'] ?? 0);
-        $fuelType = trim($_POST['fuel_type'] ?? 'Petrol');
-        $transmission = trim($_POST['transmission'] ?? 'Manual');
+        $fuelType = strtolower(trim($_POST['fuel_type'] ?? 'petrol'));
+        $transmission = strtolower(trim($_POST['transmission'] ?? 'manual'));
         $color = trim($_POST['color'] ?? '');
+        $conditionType = strtolower(trim($_POST['condition_type'] ?? 'good'));
 
-        if (empty($make) || empty($model) || $year < 1990 || $price <= 0) {
+        if ($makeId <= 0 && $make !== '') {
+            $mkStmt = $db->prepare("SELECT id FROM car_makes WHERE LOWER(name) = LOWER(?) LIMIT 1");
+            $mkStmt->execute([$make]);
+            $makeRow = $mkStmt->fetch(PDO::FETCH_ASSOC);
+            $makeId = $makeRow ? (int)$makeRow['id'] : 0;
+        }
+
+        if ($modelId <= 0 && $model !== '' && $makeId > 0) {
+            $mdStmt = $db->prepare("SELECT id FROM car_models WHERE make_id = ? AND LOWER(name) = LOWER(?) LIMIT 1");
+            $mdStmt->execute([$makeId, $model]);
+            $modelRow = $mdStmt->fetch(PDO::FETCH_ASSOC);
+            $modelId = $modelRow ? (int)$modelRow['id'] : 0;
+        }
+
+        if ($modelId <= 0 && $makeId > 0) {
+            $mdStmt = $db->prepare("SELECT id FROM car_models WHERE make_id = ? ORDER BY id ASC LIMIT 1");
+            $mdStmt->execute([$makeId]);
+            $modelRow = $mdStmt->fetch(PDO::FETCH_ASSOC);
+            $modelId = $modelRow ? (int)$modelRow['id'] : 0;
+        }
+
+        $locationId = !empty($dealer['location_id']) ? (int)$dealer['location_id'] : 0;
+        if ($locationId <= 0) {
+            $locStmt = $db->query("SELECT id FROM locations ORDER BY id ASC LIMIT 1");
+            $locRow = $locStmt->fetch(PDO::FETCH_ASSOC);
+            $locationId = $locRow ? (int)$locRow['id'] : 0;
+        }
+
+        if (!in_array($fuelType, ['petrol', 'diesel', 'hybrid', 'electric', 'lpg'], true)) {
+            $fuelType = 'petrol';
+        }
+        if (!in_array($transmission, ['manual', 'automatic', 'cvt', 'semi-automatic'], true)) {
+            $transmission = 'manual';
+        }
+        if (!in_array($conditionType, ['excellent', 'very_good', 'good', 'fair', 'poor'], true)) {
+            $conditionType = 'good';
+        }
+
+        if ($makeId <= 0 || $modelId <= 0 || $locationId <= 0 || $year < 1990 || $price <= 0) {
             sendError('Invalid car details', 400);
         }
 
-        $title = "$year $make $model";
+        if ($make === '' || $model === '') {
+            $nameStmt = $db->prepare("SELECT m.name AS make_name, mo.name AS model_name FROM car_makes m INNER JOIN car_models mo ON mo.make_id = m.id WHERE m.id = ? AND mo.id = ? LIMIT 1");
+            $nameStmt->execute([$makeId, $modelId]);
+            $nameRow = $nameStmt->fetch(PDO::FETCH_ASSOC);
+            if ($nameRow) {
+                $make = $nameRow['make_name'];
+                $model = $nameRow['model_name'];
+            }
+        }
+
+        $title = trim("$year $make $model");
         $refNumber = generateReferenceNumber($db);
 
-        // Insert car listing
+        // Insert as dealer-owned listing using normalized schema fields.
         $stmt = $db->prepare("
             INSERT INTO car_listings (
-                user_id, dealer_id, reference_number, title, make, model, year,
-                price, description, mileage, fuel_type, transmission, color,
-                status, approval_status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', NOW())
+                user_id, dealer_id, reference_number, title, make_id, model_id, year,
+                price, description, mileage, fuel_type, transmission, condition_type, exterior_color,
+                location_id, status, approval_status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', 'pending', NOW())
         ");
 
         $stmt->execute([
@@ -5314,20 +5868,22 @@ function dealerAddCar($db) {
             $dealer['id'],
             $refNumber,
             $title,
-            $make,
-            $model,
+            $makeId,
+            $modelId,
             $year,
             $price,
             $description,
             $mileage,
             $fuelType,
             $transmission,
-            $color
+            $conditionType,
+            $color,
+            $locationId
         ]);
 
         $carId = $db->lastInsertId();
 
-        // Handle image uploads
+        // Handle image uploads with server-side MIME and extension validation.
         if (!empty($_FILES['images'])) {
             $uploadDir = UPLOAD_PATH . 'cars/';
             if (!file_exists($uploadDir)) {
@@ -5335,19 +5891,38 @@ function dealerAddCar($db) {
             }
 
             $imageCount = count($_FILES['images']['name']);
-            for ($i = 0; $i < min($imageCount, 5); $i++) {
+            for ($i = 0; $i < min($imageCount, MAX_VEHICLE_IMAGES); $i++) {
                 if ($_FILES['images']['error'][$i] === UPLOAD_ERR_OK) {
-                    $ext = pathinfo($_FILES['images']['name'][$i], PATHINFO_EXTENSION);
-                    $filename = $carId . '_' . time() . '_' . $i . '.' . $ext;
+                    $validation = validateUploadedImageFile(
+                        $_FILES['images']['tmp_name'][$i],
+                        $_FILES['images']['name'][$i],
+                        (int)$_FILES['images']['size'][$i],
+                        $_FILES['images']['type'][$i] ?? '',
+                        10 * 1024 * 1024
+                    );
+                    if (!$validation['ok']) {
+                        continue;
+                    }
+
+                    $filename = $carId . '_' . time() . '_' . $i . '.' . $validation['extension'];
                     $filepath = $uploadDir . $filename;
 
                     if (move_uploaded_file($_FILES['images']['tmp_name'][$i], $filepath)) {
                         $isPrimary = ($i === 0) ? 1 : 0;
                         $imgStmt = $db->prepare("
-                            INSERT INTO car_images (car_id, image_path, is_primary, uploaded_at)
-                            VALUES (?, ?, ?, NOW())
+                            INSERT INTO car_listing_images (listing_id, filename, original_filename, file_path, file_size, mime_type, is_primary, sort_order)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ");
-                        $imgStmt->execute([$carId, $filepath, $isPrimary]);
+                        $imgStmt->execute([
+                            $carId,
+                            $filename,
+                            $_FILES['images']['name'][$i],
+                            $filepath,
+                            (int)$_FILES['images']['size'][$i],
+                            $validation['mime'],
+                            $isPrimary,
+                            $i
+                        ]);
                     }
                 }
             }
@@ -5431,14 +6006,15 @@ function uploadDealerLogo($db) {
 
     $file = $_FILES['logo'];
 
-    // Validate file
-    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!in_array($file['type'], $allowedTypes)) {
-        sendError('Invalid file type. Only JPG, PNG, GIF, and WEBP allowed.', 400);
-    }
-
-    if ($file['size'] > 2 * 1024 * 1024) {
-        sendError('File too large. Maximum size is 2MB.', 400);
+    $validation = validateUploadedImageFile(
+        $file['tmp_name'],
+        $file['name'] ?? 'logo',
+        (int)($file['size'] ?? 0),
+        $file['type'] ?? '',
+        2 * 1024 * 1024
+    );
+    if (!$validation['ok']) {
+        sendError('Invalid logo image: ' . $validation['error'], 400);
     }
 
     try {
@@ -5463,8 +6039,7 @@ function uploadDealerLogo($db) {
         }
 
         // Upload new logo
-        $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-        $filename = 'dealer_' . $dealer['id'] . '_' . time() . '.' . $ext;
+        $filename = 'dealer_' . $dealer['id'] . '_' . time() . '.' . $validation['extension'];
         $filepath = $uploadDir . $filename;
 
         if (move_uploaded_file($file['tmp_name'], $filepath)) {
@@ -5499,16 +6074,10 @@ function updateNotificationPreferences($db) {
         $listingUpdates = isset($_POST['listing_updates']) ? 1 : 0;
         $marketingEmails = isset($_POST['marketing_emails']) ? 1 : 0;
 
-        // Ensure columns exist
-        try {
-            $db->exec("ALTER TABLE users ADD COLUMN email_notifications TINYINT(1) DEFAULT 1");
-        } catch (Exception $e) {}
-        try {
-            $db->exec("ALTER TABLE users ADD COLUMN listing_updates TINYINT(1) DEFAULT 1");
-        } catch (Exception $e) {}
-        try {
-            $db->exec("ALTER TABLE users ADD COLUMN marketing_emails TINYINT(1) DEFAULT 0");
-        } catch (Exception $e) {}
+        // Ensure columns exist only when explicitly enabled for runtime schema updates.
+        applyRuntimeSchemaChange($db, "ALTER TABLE users ADD COLUMN email_notifications TINYINT(1) DEFAULT 1");
+        applyRuntimeSchemaChange($db, "ALTER TABLE users ADD COLUMN listing_updates TINYINT(1) DEFAULT 1");
+        applyRuntimeSchemaChange($db, "ALTER TABLE users ADD COLUMN marketing_emails TINYINT(1) DEFAULT 0");
 
         $stmt = $db->prepare("
             UPDATE users
@@ -5547,10 +6116,8 @@ function getGarageInfo($db) {
     }
 
     try {
-        // Ensure user_id column exists
-        try {
-            $db->exec("ALTER TABLE garages ADD COLUMN user_id INT DEFAULT NULL");
-        } catch (Exception $e) {}
+        // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
+        applyRuntimeSchemaChange($db, "ALTER TABLE garages ADD COLUMN user_id INT DEFAULT NULL");
 
         // Try to find garage by user_id or email
         $stmt = $db->prepare("
@@ -5730,7 +6297,27 @@ function updateGarageServices($db) {
     }
 
     try {
-        $services = trim($_POST['services'] ?? '');
+        $servicesInput = $_POST['services'] ?? [];
+        if (is_array($servicesInput)) {
+            $servicesList = array_values(array_filter(array_map('trim', $servicesInput), function ($value) {
+                return $value !== '';
+            }));
+            $services = json_encode($servicesList, JSON_UNESCAPED_UNICODE);
+        } else {
+            $servicesRaw = trim((string)$servicesInput);
+
+            if ($servicesRaw === '') {
+                $services = '[]';
+            } else {
+                $decoded = json_decode($servicesRaw, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $services = json_encode(array_values($decoded), JSON_UNESCAPED_UNICODE);
+                } else {
+                    $servicesList = preg_split('/\s*,\s*/', $servicesRaw, -1, PREG_SPLIT_NO_EMPTY);
+                    $services = json_encode(array_values($servicesList ?: []), JSON_UNESCAPED_UNICODE);
+                }
+            }
+        }
 
         $stmt = $db->prepare("
             UPDATE garages
@@ -5826,17 +6413,25 @@ function uploadGarageLogo($db) {
 
     $file = $_FILES['logo'];
 
-    // Validate file
-    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!in_array($file['type'], $allowedTypes)) {
-        sendError('Invalid file type. Only JPG, PNG, GIF, and WEBP allowed.', 400);
-    }
-
-    if ($file['size'] > 2 * 1024 * 1024) {
-        sendError('File too large. Maximum size is 2MB.', 400);
+    $validation = validateUploadedImageFile(
+        $file['tmp_name'],
+        $file['name'] ?? 'logo',
+        (int)($file['size'] ?? 0),
+        $file['type'] ?? '',
+        2 * 1024 * 1024
+    );
+    if (!$validation['ok']) {
+        sendError('Invalid logo image: ' . $validation['error'], 400);
     }
 
     try {
+        // Backward-compatible schema fix for deployments missing logo_url.
+        try {
+            $db->exec("ALTER TABLE garages ADD COLUMN logo_url VARCHAR(255) DEFAULT NULL");
+        } catch (Exception $e) {
+            // Ignore if column already exists.
+        }
+
         // Get garage ID
         $stmt = $db->prepare("SELECT id, logo_url FROM garages WHERE user_id = ?");
         $stmt->execute([$user['id']]);
@@ -5858,8 +6453,7 @@ function uploadGarageLogo($db) {
         }
 
         // Upload new logo
-        $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-        $filename = 'garage_' . $garage['id'] . '_' . time() . '.' . $ext;
+        $filename = 'garage_' . $garage['id'] . '_' . time() . '.' . $validation['extension'];
         $filepath = $uploadDir . $filename;
 
         if (move_uploaded_file($file['tmp_name'], $filepath)) {
@@ -5894,10 +6488,8 @@ function getCarHireCompanyInfo($db) {
     }
 
     try {
-        // Ensure user_id column exists
-        try {
-            $db->exec("ALTER TABLE car_hire_companies ADD COLUMN user_id INT DEFAULT NULL");
-        } catch (Exception $e) {}
+        // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
+        applyRuntimeSchemaChange($db, "ALTER TABLE car_hire_companies ADD COLUMN user_id INT DEFAULT NULL");
 
         // Try to find company by user_id or email
         $stmt = $db->prepare("
@@ -6046,8 +6638,8 @@ function getCarHireFleetManagement($db) {
     }
 
     try {
-        // Get company ID
-        $stmt = $db->prepare("SELECT id FROM car_hire_companies WHERE user_id = ?");
+        // Get company profile details for fleet denormalized fields.
+        $stmt = $db->prepare("SELECT id, business_name, phone, email, location_id FROM car_hire_companies WHERE user_id = ?");
         $stmt->execute([$user['id']]);
         $company = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -6111,16 +6703,12 @@ function addCarHireVehicle($db) {
         $modelId = intval($_POST['model_id'] ?? 0);
         $year = intval($_POST['year'] ?? 0);
         $dailyRate = floatval($_POST['daily_rate'] ?? 0);
-        $description = trim($_POST['description'] ?? '');
         $licensePlate = trim($_POST['license_plate'] ?? '');
         $seats = intval($_POST['seats'] ?? 4);
         $fuelType = trim($_POST['fuel_type'] ?? 'petrol');
         $transmission = trim($_POST['transmission'] ?? 'manual');
         $color = trim($_POST['color'] ?? '');
         $status = trim($_POST['status'] ?? 'available');
-        $engineSize = !empty($_POST['engine_size']) ? floatval($_POST['engine_size']) : null;
-        $fuelTankCapacity = !empty($_POST['fuel_tank_capacity']) ? floatval($_POST['fuel_tank_capacity']) : null;
-        $drivetrain = !empty($_POST['drivetrain']) ? trim($_POST['drivetrain']) : null;
 
         // Validate required fields
         if ($makeId <= 0 || $modelId <= 0 || $year < 1990 || $dailyRate <= 0) {
@@ -6145,37 +6733,40 @@ function addCarHireVehicle($db) {
         // Build vehicle name
         $vehicleName = "$year {$make['name']} {$model['name']}";
 
-        // Insert vehicle
+        // Insert vehicle using live schema columns.
         $stmt = $db->prepare("
             INSERT INTO car_hire_fleet (
-                company_id, make_id, model_id, year, vehicle_name, daily_rate, description,
-                registration_number, seats, fuel_type, transmission, exterior_color,
-                engine_size, fuel_tank_capacity, drivetrain, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                company_id, company_name, company_phone, company_email, company_location_id,
+                make_id, model_id, make_name, model_name, year, vehicle_name,
+                registration_number, transmission, fuel_type, seats, exterior_color,
+                daily_rate, is_available, status, is_active, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, NOW())
         ");
 
         $stmt->execute([
             $company['id'],
+            $company['business_name'] ?? null,
+            $company['phone'] ?? null,
+            $company['email'] ?? null,
+            !empty($company['location_id']) ? (int)$company['location_id'] : null,
             $makeId,
             $modelId,
+            $make['name'],
+            $model['name'],
             $year,
             $vehicleName,
             $dailyRate,
-            $description,
             $licensePlate,
-            $seats,
-            $fuelType,
             $transmission,
+            $fuelType,
+            max(1, $seats),
             $color,
-            $engineSize,
-            $fuelTankCapacity,
-            $drivetrain,
             $status
         ]);
 
         $vehicleId = $db->lastInsertId();
 
-        // Handle image uploads
+        // Handle image uploads with server-side MIME and extension validation.
         if (!empty($_FILES['images'])) {
             $uploadDir = UPLOAD_PATH . 'fleet/';
             if (!file_exists($uploadDir)) {
@@ -6183,20 +6774,23 @@ function addCarHireVehicle($db) {
             }
 
             $imageCount = count($_FILES['images']['name']);
-            for ($i = 0; $i < min($imageCount, 5); $i++) {
+            for ($i = 0; $i < min($imageCount, MAX_VEHICLE_IMAGES); $i++) {
                 if ($_FILES['images']['error'][$i] === UPLOAD_ERR_OK) {
-                    $ext = pathinfo($_FILES['images']['name'][$i], PATHINFO_EXTENSION);
-                    $filename = 'fleet_' . $vehicleId . '_' . time() . '_' . $i . '.' . $ext;
+                    $validation = validateUploadedImageFile(
+                        $_FILES['images']['tmp_name'][$i],
+                        $_FILES['images']['name'][$i],
+                        (int)$_FILES['images']['size'][$i],
+                        $_FILES['images']['type'][$i] ?? '',
+                        10 * 1024 * 1024
+                    );
+                    if (!$validation['ok']) {
+                        continue;
+                    }
+
+                    $filename = 'fleet_' . $vehicleId . '_' . time() . '_' . $i . '.' . $validation['extension'];
                     $filepath = $uploadDir . $filename;
 
-                    if (move_uploaded_file($_FILES['images']['tmp_name'][$i], $filepath)) {
-                        $isPrimary = ($i === 0) ? 1 : 0;
-                        $imgStmt = $db->prepare("
-                            INSERT INTO car_images (car_id, image_path, is_primary, uploaded_at)
-                            VALUES (?, ?, ?, NOW())
-                        ");
-                        $imgStmt->execute([$vehicleId, $filepath, $isPrimary]);
-                    }
+                    move_uploaded_file($_FILES['images']['tmp_name'][$i], $filepath);
                 }
             }
         }
@@ -6403,17 +6997,25 @@ function uploadCarHireLogo($db) {
 
     $file = $_FILES['logo'];
 
-    // Validate file
-    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!in_array($file['type'], $allowedTypes)) {
-        sendError('Invalid file type. Only JPG, PNG, GIF, and WEBP allowed.', 400);
-    }
-
-    if ($file['size'] > 2 * 1024 * 1024) {
-        sendError('File too large. Maximum size is 2MB.', 400);
+    $validation = validateUploadedImageFile(
+        $file['tmp_name'],
+        $file['name'] ?? 'logo',
+        (int)($file['size'] ?? 0),
+        $file['type'] ?? '',
+        2 * 1024 * 1024
+    );
+    if (!$validation['ok']) {
+        sendError('Invalid logo image: ' . $validation['error'], 400);
     }
 
     try {
+        // Backward-compatible schema fix for deployments missing logo_url.
+        try {
+            $db->exec("ALTER TABLE car_hire_companies ADD COLUMN logo_url VARCHAR(255) DEFAULT NULL");
+        } catch (Exception $e) {
+            // Ignore if column already exists.
+        }
+
         // Get company ID
         $stmt = $db->prepare("SELECT id, logo_url FROM car_hire_companies WHERE user_id = ?");
         $stmt->execute([$user['id']]);
@@ -6435,8 +7037,7 @@ function uploadCarHireLogo($db) {
         }
 
         // Upload new logo
-        $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-        $filename = 'car_hire_' . $company['id'] . '_' . time() . '.' . $ext;
+        $filename = 'car_hire_' . $company['id'] . '_' . time() . '.' . $validation['extension'];
         $filepath = $uploadDir . $filename;
 
         if (move_uploaded_file($file['tmp_name'], $filepath)) {

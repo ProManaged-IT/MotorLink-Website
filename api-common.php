@@ -34,12 +34,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // Database Configuration
 $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-$isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
+$isLocalhost = in_array($serverHost, ['localhost', '127.0.0.1'])
+    || strpos($serverHost, 'localhost:') === 0
+    || strpos($serverHost, '127.0.0.1:') === 0
+    || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $serverHost);
+$defaultDbHost = (!$isLocalhost && !empty($serverHost)) ? 'localhost' : 'promanaged-it.com';
 
-define('DB_HOST', $isProduction ? 'localhost' : 'promanaged-it.com');
-define('DB_USER', 'p601229');
-define('DB_PASS', '2:p2WpmX[0YTs7');
-define('DB_NAME', 'p601229_motorlinkmalawi_db');
+function loadRuntimeLocalSecrets() {
+    $paths = [
+        __DIR__ . '/admin/admin-secrets.local.php',
+        __DIR__ . '/admin/admin-secrets.example.php'
+    ];
+
+    foreach ($paths as $path) {
+        if (!file_exists($path)) {
+            continue;
+        }
+        $loaded = require $path;
+        if (is_array($loaded)) {
+            return $loaded;
+        }
+    }
+
+    return [];
+}
+
+function getBootstrapDbConfig($defaultHost) {
+    $local = loadRuntimeLocalSecrets();
+
+    $config = [
+        'host' => getenv('MOTORLINK_DB_HOST') ?: ($local['MOTORLINK_DB_HOST'] ?? $defaultHost),
+        'user' => getenv('MOTORLINK_DB_USER') ?: ($local['MOTORLINK_DB_USER'] ?? ''),
+        'pass' => getenv('MOTORLINK_DB_PASS') ?: ($local['MOTORLINK_DB_PASS'] ?? ''),
+        'name' => getenv('MOTORLINK_DB_NAME') ?: ($local['MOTORLINK_DB_NAME'] ?? '')
+    ];
+
+    if ($config['user'] === '' || $config['pass'] === '' || $config['name'] === '') {
+        throw new Exception('Missing DB bootstrap credentials. Configure MOTORLINK_DB_* or admin/admin-secrets.local.php.');
+    }
+
+    return $config;
+}
+
+function loadFinalDbConfigFromSiteSettings(array $bootstrapConfig) {
+    $resolved = $bootstrapConfig;
+
+    try {
+        $pdo = new PDO(
+            "mysql:host={$bootstrapConfig['host']};dbname={$bootstrapConfig['name']};charset=utf8mb4",
+            $bootstrapConfig['user'],
+            $bootstrapConfig['pass'],
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false
+            ]
+        );
+
+        $keyMap = [
+            'admin_db_host' => 'host',
+            'admin_db_user' => 'user',
+            'admin_db_pass' => 'pass',
+            'admin_db_name' => 'name'
+        ];
+
+        $keys = array_keys($keyMap);
+        $placeholders = implode(',', array_fill(0, count($keys), '?'));
+        $stmt = $pdo->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
+        $stmt->execute($keys);
+
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $target = $keyMap[$row['setting_key']] ?? null;
+            $value = trim((string)($row['setting_value'] ?? ''));
+            if ($target && $value !== '') {
+                $resolved[$target] = $value;
+            }
+        }
+    } catch (Exception $e) {
+        error_log('api-common DB settings load warning: ' . $e->getMessage());
+    }
+
+    return $resolved;
+}
+
+$bootstrapDb = getBootstrapDbConfig($defaultDbHost);
+$runtimeDb = loadFinalDbConfigFromSiteSettings($bootstrapDb);
+
+define('DB_HOST', $runtimeDb['host']);
+define('DB_USER', $runtimeDb['user']);
+define('DB_PASS', $runtimeDb['pass']);
+define('DB_NAME', $runtimeDb['name']);
 
 // Start session if not already started
 if (session_status() == PHP_SESSION_NONE) {

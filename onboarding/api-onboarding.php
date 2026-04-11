@@ -31,25 +31,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Database Configuration
-// Auto-detect environment: Production vs UAT (User Acceptance Testing)
-//
-// PRODUCTION: Running on promanaged-it.com server -> Use localhost (DB on same server)
-// UAT: Running locally on developer laptop -> Use remote DB (promanaged-it.com)
-//
-// Detection: Check if the server hostname matches the production server
 $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-// Production: Any non-localhost hostname (flexible for any domain)
-$isLocalhost = in_array($serverHost, ['localhost', '127.0.0.1']) || 
-               strpos($serverHost, 'localhost:') === 0 || 
-               strpos($serverHost, '127.0.0.1:') === 0 ||
-               preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $serverHost);
-$isProduction = !$isLocalhost && !empty($serverHost);
+$isLocalhost = in_array($serverHost, ['localhost', '127.0.0.1'])
+    || strpos($serverHost, 'localhost:') === 0
+    || strpos($serverHost, '127.0.0.1:') === 0
+    || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $serverHost);
+$defaultDbHost = (!$isLocalhost && !empty($serverHost)) ? 'localhost' : 'promanaged-it.com';
 
-// Database host: localhost on production, remote for UAT/local development
-define('DB_HOST', $isProduction ? 'localhost' : 'promanaged-it.com');
-define('DB_USER', 'p601229');
-define('DB_PASS', '2:p2WpmX[0YTs7');
-define('DB_NAME', 'p601229_motorlinkmalawi_db');
+function loadOnboardingLocalSecrets() {
+    $paths = [
+        __DIR__ . '/../admin/admin-secrets.local.php',
+        __DIR__ . '/../admin/admin-secrets.example.php'
+    ];
+
+    foreach ($paths as $path) {
+        if (!file_exists($path)) {
+            continue;
+        }
+        $loaded = require $path;
+        if (is_array($loaded)) {
+            return $loaded;
+        }
+    }
+
+    return [];
+}
+
+function getOnboardingBootstrapDbConfig($defaultHost) {
+    $local = loadOnboardingLocalSecrets();
+
+    $config = [
+        'host' => getenv('MOTORLINK_DB_HOST') ?: ($local['MOTORLINK_DB_HOST'] ?? $defaultHost),
+        'user' => getenv('MOTORLINK_DB_USER') ?: ($local['MOTORLINK_DB_USER'] ?? ''),
+        'pass' => getenv('MOTORLINK_DB_PASS') ?: ($local['MOTORLINK_DB_PASS'] ?? ''),
+        'name' => getenv('MOTORLINK_DB_NAME') ?: ($local['MOTORLINK_DB_NAME'] ?? '')
+    ];
+
+    if ($config['user'] === '' || $config['pass'] === '' || $config['name'] === '') {
+        throw new Exception('Missing DB bootstrap credentials. Configure MOTORLINK_DB_* or admin/admin-secrets.local.php.');
+    }
+
+    return $config;
+}
+
+function loadOnboardingFinalDbConfig(array $bootstrapConfig) {
+    $resolved = $bootstrapConfig;
+
+    try {
+        $pdo = new PDO(
+            "mysql:host={$bootstrapConfig['host']};dbname={$bootstrapConfig['name']};charset=utf8mb4",
+            $bootstrapConfig['user'],
+            $bootstrapConfig['pass'],
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false
+            ]
+        );
+
+        $keyMap = [
+            'admin_db_host' => 'host',
+            'admin_db_user' => 'user',
+            'admin_db_pass' => 'pass',
+            'admin_db_name' => 'name'
+        ];
+
+        $keys = array_keys($keyMap);
+        $placeholders = implode(',', array_fill(0, count($keys), '?'));
+        $stmt = $pdo->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
+        $stmt->execute($keys);
+
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $target = $keyMap[$row['setting_key']] ?? null;
+            $value = trim((string)($row['setting_value'] ?? ''));
+            if ($target && $value !== '') {
+                $resolved[$target] = $value;
+            }
+        }
+    } catch (Exception $e) {
+        error_log('Onboarding DB settings load warning: ' . $e->getMessage());
+    }
+
+    return $resolved;
+}
+
+$bootstrapDb = getOnboardingBootstrapDbConfig($defaultDbHost);
+$runtimeDb = loadOnboardingFinalDbConfig($bootstrapDb);
+
+define('DB_HOST', $runtimeDb['host']);
+define('DB_USER', $runtimeDb['user']);
+define('DB_PASS', $runtimeDb['pass']);
+define('DB_NAME', $runtimeDb['name']);
 define('SITE_NAME', 'MotorLink Malawi');
 define('SITE_URL', 'https://promanaged-it.com/motorlink');
 
@@ -294,6 +366,339 @@ function logActivity($message) {
     $timestamp = date('Y-m-d H:i:s');
     $logMessage = "[$timestamp] $message\n";
     file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+}
+
+/**
+ * Check whether a table column exists.
+ */
+function hasTableColumn($db, $table, $column) {
+    try {
+        $stmt = $db->prepare("SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?");
+        $stmt->execute([$table, $column]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return ((int)($row['cnt'] ?? 0)) > 0;
+    } catch (Exception $e) {
+        logActivity('Column check warning for ' . $table . '.' . $column . ': ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Ensure users.whatsapp_notifications column exists for opt-in preference persistence.
+ */
+function ensureUserWhatsappPreferenceColumn($db) {
+    try {
+        if (!hasTableColumn($db, 'users', 'whatsapp_notifications')) {
+            $db->exec("ALTER TABLE users ADD COLUMN whatsapp_notifications TINYINT(1) NOT NULL DEFAULT 0");
+        }
+    } catch (Exception $e) {
+        // Ignore duplicate column and non-fatal schema update errors.
+        logActivity('Ensure whatsapp_notifications column warning: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Load SMTP + onboarding notification settings.
+ */
+function getOnboardingNotificationSettings($db) {
+    require_once(__DIR__ . '/../config-smtp.php');
+
+    $defaults = [
+        'smtp_host' => defined('SMTP_HOST') ? SMTP_HOST : 'localhost',
+        'smtp_port' => (string)(defined('SMTP_PORT') ? SMTP_PORT : 587),
+        'smtp_username' => defined('SMTP_USERNAME') ? SMTP_USERNAME : '',
+        'smtp_password' => defined('SMTP_PASSWORD') ? SMTP_PASSWORD : '',
+        'smtp_from_email' => defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : 'noreply@promanaged-it.com',
+        'smtp_from_name' => defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : 'MotorLink Malawi',
+        'onboarding_whatsapp_enabled' => '0',
+        'onboarding_whatsapp_api_url' => '',
+        'onboarding_whatsapp_api_token' => '',
+        'onboarding_portal_url' => rtrim(SITE_URL, '/') . '/login.html'
+    ];
+
+    try {
+        $keys = array_keys($defaults);
+        $placeholders = implode(',', array_fill(0, count($keys), '?'));
+        $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
+        $stmt->execute($keys);
+
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            if (array_key_exists($row['setting_key'], $defaults)) {
+                $defaults[$row['setting_key']] = (string)$row['setting_value'];
+            }
+        }
+    } catch (Exception $e) {
+        logActivity('Onboarding settings load warning: ' . $e->getMessage());
+    }
+
+    return $defaults;
+}
+
+/**
+ * Send onboarding credentials email.
+ */
+function sendOnboardingWelcomeEmail($db, $payload) {
+    try {
+        require_once(__DIR__ . '/../includes/smtp-mailer.php');
+        $settings = getOnboardingNotificationSettings($db);
+
+        $recipientEmail = trim((string)($payload['email'] ?? ''));
+        if ($recipientEmail === '' || !filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+            return [
+                'sent' => false,
+                'status' => 'skipped',
+                'message' => 'Invalid recipient email address'
+            ];
+        }
+
+        $recipientName = trim((string)($payload['owner_name'] ?? 'Client'));
+        $businessName = trim((string)($payload['business_name'] ?? 'Your Business'));
+        $businessType = trim((string)($payload['business_type'] ?? 'Business Account'));
+        $username = trim((string)($payload['username'] ?? ''));
+        $plainPassword = (string)($payload['password'] ?? '');
+        $reference = trim((string)($payload['reference'] ?? ''));
+        $portalUrl = trim((string)$settings['onboarding_portal_url']);
+        if ($portalUrl === '') {
+            $portalUrl = rtrim(SITE_URL, '/') . '/login.html';
+        }
+
+        $subject = 'MotorLink Malawi - Your New Account Credentials';
+
+        $safeRecipientName = htmlspecialchars($recipientName, ENT_QUOTES, 'UTF-8');
+        $safeBusinessName = htmlspecialchars($businessName, ENT_QUOTES, 'UTF-8');
+        $safeBusinessType = htmlspecialchars($businessType, ENT_QUOTES, 'UTF-8');
+        $safeUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
+        $safePassword = htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8');
+        $safePortalUrl = htmlspecialchars($portalUrl, ENT_QUOTES, 'UTF-8');
+        $safeReference = htmlspecialchars($reference, ENT_QUOTES, 'UTF-8');
+
+        $referenceLine = $safeReference !== ''
+            ? '<p style="margin:0 0 8px 0;"><strong>Reference:</strong> ' . $safeReference . '</p>'
+            : '';
+
+        $htmlMessage = '
+            <div style="font-family:Segoe UI,Arial,sans-serif;line-height:1.55;color:#113322;background:#f3fbf6;padding:20px;">
+                <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #dcefe2;border-radius:14px;overflow:hidden;">
+                    <div style="background:linear-gradient(135deg,#1f8f4b,#0f6d37);color:#ffffff;padding:20px 22px;">
+                        <h2 style="margin:0;font-size:20px;">Welcome to MotorLink Malawi</h2>
+                        <p style="margin:8px 0 0 0;font-size:14px;opacity:0.95;">Your onboarding is complete and your account is ready.</p>
+                    </div>
+                    <div style="padding:22px;">
+                        <p style="margin:0 0 12px 0;">Hello ' . $safeRecipientName . ',</p>
+                        <p style="margin:0 0 14px 0;">We created your <strong>' . $safeBusinessType . '</strong> account for <strong>' . $safeBusinessName . '</strong>.</p>
+                        ' . $referenceLine . '
+                        <div style="border:1px solid #cde7d6;border-radius:10px;padding:14px 16px;background:#f7fffa;margin:0 0 16px 0;">
+                            <p style="margin:0 0 8px 0;"><strong>Login URL:</strong> <a href="' . $safePortalUrl . '" style="color:#0f6d37;text-decoration:none;">' . $safePortalUrl . '</a></p>
+                            <p style="margin:0 0 8px 0;"><strong>Username:</strong> ' . $safeUsername . '</p>
+                            <p style="margin:0;"><strong>Temporary Password:</strong> ' . $safePassword . '</p>
+                        </div>
+                        <p style="margin:0 0 12px 0;">Please log in and change your password immediately for security.</p>
+                        <p style="margin:0;">Need help? Reply to this email and our team will assist you.</p>
+                    </div>
+                </div>
+            </div>
+        ';
+
+        $textMessage = "Welcome to MotorLink Malawi\n\n" .
+            "Hello {$recipientName},\n" .
+            "Your {$businessType} account for {$businessName} has been created.\n" .
+            ($reference !== '' ? "Reference: {$reference}\n" : '') .
+            "Login URL: {$portalUrl}\n" .
+            "Username: {$username}\n" .
+            "Temporary Password: {$plainPassword}\n\n" .
+            "Please log in and change your password immediately.";
+
+        $mailer = new SMTPMailer(
+            (string)$settings['smtp_host'],
+            (int)$settings['smtp_port'],
+            (string)$settings['smtp_username'],
+            (string)$settings['smtp_password'],
+            (string)$settings['smtp_from_email'],
+            (string)$settings['smtp_from_name']
+        );
+
+        $sent = $mailer->send($recipientEmail, $subject, $htmlMessage, $textMessage);
+        if ($sent) {
+            logActivity('Onboarding credentials email sent to ' . $recipientEmail);
+            return [
+                'sent' => true,
+                'status' => 'sent',
+                'message' => 'Credentials email delivered'
+            ];
+        }
+
+        logActivity('Onboarding credentials email failed for ' . $recipientEmail);
+        return [
+            'sent' => false,
+            'status' => 'failed',
+            'message' => 'SMTP send failed'
+        ];
+    } catch (Exception $e) {
+        logActivity('Onboarding email exception: ' . $e->getMessage());
+        return [
+            'sent' => false,
+            'status' => 'failed',
+            'message' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Normalize phone to WhatsApp-friendly international format.
+ */
+function normalizeWhatsappPhone($phone) {
+    $digits = preg_replace('/\D+/', '', (string)$phone);
+    if ($digits === '') {
+        return '';
+    }
+
+    // Malawi local format 0XXXXXXXXX -> 265XXXXXXXXX
+    if (strpos($digits, '0') === 0 && strlen($digits) >= 9) {
+        return '265' . ltrim($digits, '0');
+    }
+
+    return $digits;
+}
+
+/**
+ * Send onboarding credentials on WhatsApp using optional webhook/API endpoint.
+ */
+function sendOnboardingWelcomeWhatsApp($db, $payload) {
+    try {
+        $optIn = (int)($payload['whatsapp_updates_opt_in'] ?? 0) === 1;
+        if (!$optIn) {
+            return [
+                'sent' => false,
+                'status' => 'skipped',
+                'message' => 'Client opted out of WhatsApp updates'
+            ];
+        }
+
+        $settings = getOnboardingNotificationSettings($db);
+        $enabledRaw = strtolower(trim((string)($settings['onboarding_whatsapp_enabled'] ?? '0')));
+        $enabled = in_array($enabledRaw, ['1', 'true', 'yes', 'on'], true);
+
+        if (!$enabled) {
+            return [
+                'sent' => false,
+                'status' => 'skipped',
+                'message' => 'WhatsApp notifications are disabled'
+            ];
+        }
+
+        $apiUrl = trim((string)($settings['onboarding_whatsapp_api_url'] ?? ''));
+        if ($apiUrl === '') {
+            return [
+                'sent' => false,
+                'status' => 'skipped',
+                'message' => 'WhatsApp updates are coming soon. We will activate them automatically once provider setup is completed.'
+            ];
+        }
+
+        $targetPhone = normalizeWhatsappPhone($payload['whatsapp'] ?? ($payload['phone'] ?? ''));
+        if ($targetPhone === '') {
+            return [
+                'sent' => false,
+                'status' => 'skipped',
+                'message' => 'No WhatsApp number provided by client'
+            ];
+        }
+
+        if (!function_exists('curl_init')) {
+            return [
+                'sent' => false,
+                'status' => 'failed',
+                'message' => 'cURL extension not available'
+            ];
+        }
+
+        $recipientName = trim((string)($payload['owner_name'] ?? 'Client'));
+        $businessName = trim((string)($payload['business_name'] ?? 'Your Business'));
+        $username = trim((string)($payload['username'] ?? ''));
+        $plainPassword = (string)($payload['password'] ?? '');
+        $portalUrl = trim((string)($settings['onboarding_portal_url'] ?? rtrim(SITE_URL, '/') . '/login.html'));
+
+        $messageText = "MotorLink Malawi Onboarding\n" .
+            "Hello {$recipientName}, your account for {$businessName} is ready.\n" .
+            "Login: {$portalUrl}\n" .
+            "Username: {$username}\n" .
+            "Password: {$plainPassword}\n" .
+            "Please change password after first login.";
+
+        $requestBody = [
+            'to' => $targetPhone,
+            'name' => $recipientName,
+            'message' => $messageText,
+            'username' => $username,
+            'password' => $plainPassword,
+            'business_name' => $businessName
+        ];
+
+        $headers = ['Content-Type: application/json'];
+        $apiToken = trim((string)($settings['onboarding_whatsapp_api_token'] ?? ''));
+        if ($apiToken !== '') {
+            $headers[] = 'Authorization: Bearer ' . $apiToken;
+        }
+
+        $ch = curl_init($apiUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody, JSON_UNESCAPED_UNICODE));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+
+        $responseBody = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlError) {
+            logActivity('Onboarding WhatsApp cURL error: ' . $curlError);
+            return [
+                'sent' => false,
+                'status' => 'failed',
+                'message' => $curlError
+            ];
+        }
+
+        if ($httpCode >= 200 && $httpCode < 300) {
+            logActivity('Onboarding WhatsApp sent to ' . $targetPhone);
+            return [
+                'sent' => true,
+                'status' => 'sent',
+                'message' => 'WhatsApp notification sent',
+                'http_code' => $httpCode
+            ];
+        }
+
+        logActivity('Onboarding WhatsApp API failed: HTTP ' . $httpCode . ' | response=' . substr((string)$responseBody, 0, 300));
+        return [
+            'sent' => false,
+            'status' => 'failed',
+            'message' => 'WhatsApp API returned HTTP ' . $httpCode,
+            'http_code' => $httpCode
+        ];
+    } catch (Exception $e) {
+        logActivity('Onboarding WhatsApp exception: ' . $e->getMessage());
+        return [
+            'sent' => false,
+            'status' => 'failed',
+            'message' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Send onboarding notifications (email + optional WhatsApp).
+ */
+function sendOnboardingWelcomeNotifications($db, $payload) {
+    $email = sendOnboardingWelcomeEmail($db, $payload);
+    $whatsapp = sendOnboardingWelcomeWhatsApp($db, $payload);
+
+    return [
+        'email' => $email,
+        'whatsapp' => $whatsapp
+    ];
 }
 
 // ============================================================================
@@ -844,6 +1249,8 @@ function addCarHireCompany($db) {
             sendError('A car hire company with the name "' . $input['business_name'] . '" already exists. Please choose a different business name.', 409);
         }
 
+        ensureUserWhatsappPreferenceColumn($db);
+
         // Start transaction to ensure atomicity and prevent ID skipping
         $db->beginTransaction();
         
@@ -894,6 +1301,12 @@ function addCarHireCompany($db) {
             
             if (!$verifiedUser) {
                 throw new Exception('User was not found in database after insert');
+            }
+
+            if (hasTableColumn($db, 'users', 'whatsapp_notifications')) {
+                $optIn = !empty($input['whatsapp_updates_opt_in']) ? 1 : 0;
+                $prefStmt = $db->prepare("UPDATE users SET whatsapp_notifications = ? WHERE id = ?");
+                $prefStmt->execute([$optIn, $userId]);
             }
             
         } catch (Exception $e) {
@@ -955,6 +1368,19 @@ function addCarHireCompany($db) {
         // Log successful creation
         logActivity("Car hire company created successfully: Company ID=$companyId, User ID=$userId, Business={$input['business_name']}");
 
+        $notifications = sendOnboardingWelcomeNotifications($db, [
+            'email' => $input['email'],
+            'owner_name' => $input['owner_name'],
+            'business_name' => $input['business_name'],
+            'business_type' => 'Car Hire Company',
+            'username' => $input['username'],
+            'password' => $input['password'],
+            'phone' => $input['phone'],
+            'whatsapp' => $input['whatsapp'] ?? null,
+            'whatsapp_updates_opt_in' => !empty($input['whatsapp_updates_opt_in']) ? 1 : 0,
+            'reference' => 'CH' . str_pad($companyId, 5, '0', STR_PAD_LEFT)
+        ]);
+
         sendSuccess([
             'api_version' => 'v2_with_user_creation',
             'message' => 'Car hire company successfully onboarded! Status: Pending Approval. Login account created.',
@@ -968,7 +1394,8 @@ function addCarHireCompany($db) {
             'business_status' => 'pending_approval',
             'user_status' => 'pending',
             'status' => 'pending_approval',
-            'reference' => 'CH' . str_pad($companyId, 5, '0', STR_PAD_LEFT)
+            'reference' => 'CH' . str_pad($companyId, 5, '0', STR_PAD_LEFT),
+            'notifications' => $notifications
         ]);
 
     } catch (Exception $e) {
@@ -1137,6 +1564,8 @@ function addGarage($db) {
             sendError('A garage with the name "' . $input['name'] . '" already exists. Please choose a different garage name.', 409);
         }
 
+        ensureUserWhatsappPreferenceColumn($db);
+
         // Start transaction to ensure atomicity and prevent ID skipping
         $db->beginTransaction();
         
@@ -1187,6 +1616,12 @@ function addGarage($db) {
             
             if (!$verifiedUser) {
                 throw new Exception('User was not found in database after insert');
+            }
+
+            if (hasTableColumn($db, 'users', 'whatsapp_notifications')) {
+                $optIn = !empty($input['whatsapp_updates_opt_in']) ? 1 : 0;
+                $prefStmt = $db->prepare("UPDATE users SET whatsapp_notifications = ? WHERE id = ?");
+                $prefStmt->execute([$optIn, $userId]);
             }
             
         } catch (Exception $e) {
@@ -1244,6 +1679,19 @@ function addGarage($db) {
         // Log successful creation
         logActivity("Garage created successfully: Garage ID=$garageId, User ID=$userId, Business={$input['name']}");
 
+        $notifications = sendOnboardingWelcomeNotifications($db, [
+            'email' => $input['email'],
+            'owner_name' => $input['owner_name'],
+            'business_name' => $input['name'],
+            'business_type' => 'Garage',
+            'username' => $input['username'],
+            'password' => $input['password'],
+            'phone' => $input['phone'],
+            'whatsapp' => $input['whatsapp'] ?? null,
+            'whatsapp_updates_opt_in' => !empty($input['whatsapp_updates_opt_in']) ? 1 : 0,
+            'reference' => 'GR' . str_pad($garageId, 5, '0', STR_PAD_LEFT)
+        ]);
+
         sendSuccess([
             'api_version' => 'v2_with_user_creation',
             'message' => 'Garage successfully onboarded! Status: Pending Approval. Login account created.',
@@ -1257,7 +1705,8 @@ function addGarage($db) {
             'business_status' => 'pending_approval',
             'user_status' => 'pending',
             'status' => 'pending_approval',
-            'reference' => 'GR' . str_pad($garageId, 5, '0', STR_PAD_LEFT)
+            'reference' => 'GR' . str_pad($garageId, 5, '0', STR_PAD_LEFT),
+            'notifications' => $notifications
         ]);
 
     } catch (Exception $e) {
@@ -1418,6 +1867,8 @@ function addCarDealer($db) {
             sendError('A car dealer with the name "' . $input['business_name'] . '" already exists. Please choose a different business name.', 409);
         }
 
+        ensureUserWhatsappPreferenceColumn($db);
+
         // Start transaction to ensure atomicity and prevent partial writes
         $db->beginTransaction();
 
@@ -1459,6 +1910,12 @@ function addCarDealer($db) {
 
             if (!$userId) {
                 throw new Exception('Failed to get user ID after insert');
+            }
+
+            if (hasTableColumn($db, 'users', 'whatsapp_notifications')) {
+                $optIn = !empty($input['whatsapp_updates_opt_in']) ? 1 : 0;
+                $prefStmt = $db->prepare("UPDATE users SET whatsapp_notifications = ? WHERE id = ?");
+                $prefStmt->execute([$optIn, $userId]);
             }
         } catch (Exception $e) {
             throw new Exception('User creation failed: ' . $e->getMessage());
@@ -1510,6 +1967,19 @@ function addCarDealer($db) {
         // Log successful creation
         logActivity("Car dealer created successfully: Dealer ID=$dealerId, User ID=$userId, Business={$input['business_name']}");
 
+        $notifications = sendOnboardingWelcomeNotifications($db, [
+            'email' => $input['email'],
+            'owner_name' => $input['owner_name'],
+            'business_name' => $input['business_name'],
+            'business_type' => 'Car Dealer',
+            'username' => $input['username'],
+            'password' => $input['password'],
+            'phone' => $input['phone'],
+            'whatsapp' => $input['whatsapp'] ?? null,
+            'whatsapp_updates_opt_in' => !empty($input['whatsapp_updates_opt_in']) ? 1 : 0,
+            'reference' => 'DL' . str_pad($dealerId, 5, '0', STR_PAD_LEFT)
+        ]);
+
         sendSuccess([
             'api_version' => 'v2_with_user_creation',
             'message' => 'Car dealer successfully onboarded! Status: Pending Approval. Login account created.',
@@ -1523,7 +1993,8 @@ function addCarDealer($db) {
             'business_status' => 'pending_approval',
             'user_status' => 'pending',
             'status' => 'pending_approval',
-            'reference' => 'DL' . str_pad($dealerId, 5, '0', STR_PAD_LEFT)
+            'reference' => 'DL' . str_pad($dealerId, 5, '0', STR_PAD_LEFT),
+            'notifications' => $notifications
         ]);
 
     } catch (Exception $e) {

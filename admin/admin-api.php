@@ -74,22 +74,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit();
 }
 
-// Enhanced session configuration - secure flag only for HTTPS
-$isHTTPS = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-    || $_SERVER['SERVER_PORT'] == 443
-    || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
-
-session_set_cookie_params([
-    'lifetime' => 86400,
-    'path' => '/',
-    'domain' => '',  // Empty domain for compatibility
-    'secure' => $isHTTPS,
-    'httponly' => true,
-    'samesite' => 'Lax'
-]);
-
-// Start session early
+// Enhanced session configuration - set cookie params only before session starts.
 if (session_status() !== PHP_SESSION_ACTIVE) {
+    $isHTTPS = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['SERVER_PORT'] ?? null) == 443)
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+
+    session_set_cookie_params([
+        'lifetime' => 86400,
+        'path' => '/',
+        'domain' => '',  // Empty domain for compatibility
+        'secure' => $isHTTPS,
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+
+    // Start session early
     session_start();
 }
 
@@ -1259,11 +1259,14 @@ function approveUser($db) {
         // Update user status (check for both 'pending' and 'pending_approval' to handle both cases)
         $stmt = $db->prepare("
             UPDATE users 
-            SET status = ?, updated_at = NOW()
+            SET status = ?,
+                email_verified = CASE WHEN ? = 'active' THEN 1 ELSE email_verified END,
+                verification_token = CASE WHEN ? = 'active' THEN NULL ELSE verification_token END,
+                updated_at = NOW()
             WHERE id = ? AND (status = 'pending' OR status = 'pending_approval')
         ");
         
-        $result = $stmt->execute([$newStatus, $id]);
+        $result = $stmt->execute([$newStatus, $newStatus, $newStatus, $id]);
         
         if ($result && $stmt->rowCount() > 0) {
             // If approving, also activate the associated business
@@ -1304,11 +1307,11 @@ function approveUser($db) {
             
             $db->commit();
             
-            // Send approval email if user was approved
-            if ($action === 'approve' && isset($user['email']) && isset($user['full_name'])) {
-                // Include email functions from main API
-                require_once(__DIR__ . '/../api.php');
+            // Send approval email if helper is available without importing api.php.
+            $approvalEmailSent = false;
+            if ($action === 'approve' && isset($user['email']) && isset($user['full_name']) && function_exists('sendApprovalEmail')) {
                 sendApprovalEmail($db, $user['email'], $user['full_name']);
+                $approvalEmailSent = true;
             }
             
             $actionText = ($action === 'approve') ? 'approved' : 'rejected';
@@ -1317,7 +1320,7 @@ function approveUser($db) {
                 'success' => true, 
                 'message' => "User has been {$actionText} successfully" . 
                             ($action === 'approve' && isset($user['business_id']) ? ' and associated business activated' : '') .
-                            ($action === 'approve' && isset($user['email']) ? '. Approval email sent.' : '')
+                            ($approvalEmailSent ? '. Approval email sent.' : '')
             ]);
             exit();
         } else {
@@ -1377,7 +1380,10 @@ function approveGarage($db) {
                 if ($action === 'approve') {
                     $userStmt = $db->prepare("
                         UPDATE users 
-                        SET status = 'active', updated_at = NOW()
+                        SET status = 'active',
+                            email_verified = CASE WHEN email_verified = 0 THEN 1 ELSE email_verified END,
+                            verification_token = CASE WHEN email_verified = 0 THEN NULL ELSE verification_token END,
+                            updated_at = NOW()
                         WHERE id = ? AND (status = 'pending' OR status = 'pending_approval')
                     ");
                     $userStmt->execute([$garage['user_id']]);
@@ -1447,7 +1453,10 @@ function approveDealer($db) {
                 if ($action === 'approve') {
                     $userStmt = $db->prepare("
                         UPDATE users 
-                        SET status = 'active', updated_at = NOW()
+                        SET status = 'active',
+                            email_verified = CASE WHEN email_verified = 0 THEN 1 ELSE email_verified END,
+                            verification_token = CASE WHEN email_verified = 0 THEN NULL ELSE verification_token END,
+                            updated_at = NOW()
                         WHERE id = ? AND (status = 'pending' OR status = 'pending_approval')
                     ");
                     $userStmt->execute([$dealer['user_id']]);
@@ -1517,7 +1526,10 @@ function approveCarHire($db) {
                 if ($action === 'approve') {
                     $userStmt = $db->prepare("
                         UPDATE users 
-                        SET status = 'active', updated_at = NOW()
+                        SET status = 'active',
+                            email_verified = CASE WHEN email_verified = 0 THEN 1 ELSE email_verified END,
+                            verification_token = CASE WHEN email_verified = 0 THEN NULL ELSE verification_token END,
+                            updated_at = NOW()
                         WHERE id = ? AND (status = 'pending' OR status = 'pending_approval')
                     ");
                     $userStmt->execute([$carHire['user_id']]);
