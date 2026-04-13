@@ -1333,9 +1333,20 @@
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Hero stat cards — distinctly green to match car-hire feature-box */
+.showroom-stats .stat-item {
+    background: rgba(0, 195, 75, 0.28);
+    border: 1px solid rgba(0, 255, 110, 0.35);
+}
+
 .stat-item:hover {
     background: rgba(255, 255, 255, 0.25);
     transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.showroom-stats .stat-item:hover {
+    background: rgba(0, 210, 80, 0.42);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
 }
 
@@ -2346,8 +2357,8 @@
     }
 
     .showroom-stats .stat-item {
-        background: rgba(255, 255, 255, 0.18) !important;
-        border: 1px solid rgba(255, 255, 255, 0.25) !important;
+        background: rgba(0, 195, 75, 0.28) !important;
+        border: 1px solid rgba(0, 255, 110, 0.35) !important;
         border-radius: 10px !important;
         padding: 10px 8px !important;
         display: flex !important;
@@ -2363,7 +2374,7 @@
     }
 
     .showroom-stats .stat-item:hover {
-        background: rgba(255, 255, 255, 0.25) !important;
+        background: rgba(0, 210, 80, 0.42) !important;
         transform: translateY(-2px) !important;
         box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
     }

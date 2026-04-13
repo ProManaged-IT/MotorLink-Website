@@ -101,6 +101,10 @@ async function loadCompanyData(id) {
             renderCompanyHeader(companyData);
             renderContactCard(companyData);
             document.title = `${companyData.business_name} - Car Hire - MotorLink Malawi`;
+            // Re-trigger mobile description move after async render completes
+            if (typeof moveDescriptionsOnMobile === 'function') {
+                setTimeout(moveDescriptionsOnMobile, 50);
+            }
         } else {
             showCompanyLoadError(data.message || 'Company not found.');
         }
