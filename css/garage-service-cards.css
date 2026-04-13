@@ -575,10 +575,12 @@
   .garage-service-card {
     border-left: 3px solid transparent;
     transition: all 0.3s ease;
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 12px;
     gap: 8px;
     min-height: auto;
+    border: 1.5px solid #cfd8e3;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
   }
   
   /* Unique left border colors */
@@ -616,9 +618,16 @@
   .garage-service-name {
     font-size: 0.9rem;
     font-weight: 700;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
     line-height: 1.2;
     color: #111827;
+    display: inline-block;
+    padding: 5px 10px 5px 8px;
+    background: linear-gradient(135deg, #f7faf7 0%, #edfdf2 100%);
+    border-left: 3px solid #00c853;
+    border-radius: 0 10px 10px 0;
+    box-shadow: inset 0 0 0 1px rgba(0, 200, 83, 0.08);
+    max-width: calc(100% - 4px);
   }
   
   /* Location meta - vertical list on mobile */
@@ -652,12 +661,28 @@
   .garage-meta-item {
     font-size: 0.65rem;
   }
+
+  .garage-status-badges {
+    top: 2px;
+    right: 2px;
+    gap: 4px;
+    align-items: flex-end;
+  }
   
-  /* Corner ribbon badges - smaller on mobile */
+  /* Mobile badges - cleaner pills instead of ribbons */
   .garage-badge {
     font-size: 0.6rem;
-    padding: 5px 10px 5px 8px;
-    min-width: 75px;
+    padding: 4px 9px;
+    min-width: auto;
+    border-radius: 999px;
+    clip-path: none;
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
+    letter-spacing: 0.25px;
+    backdrop-filter: none;
+  }
+
+  .garage-badge::after {
+    display: none;
   }
 
   .garage-badge i {
@@ -796,9 +821,11 @@
 
   /* Compact actions */
   .garage-card-actions {
-    padding: 6px 0 0;
-    gap: 5px;
+    padding: 8px 0 0;
+    gap: 4px;
     flex-wrap: nowrap;
+    background: transparent;
+    border-top: 0;
   }
 
   .garage-action-btn {
@@ -806,7 +833,14 @@
     min-width: 0;
     font-size: 0.65rem;
     padding: 7px 6px;
-    border-radius: 6px;
+    border-radius: 8px;
+    min-height: 36px;
+    border: 1px solid transparent;
+    box-shadow: none;
+  }
+
+  .garage-action-btn.primary {
+    box-shadow: 0 4px 10px rgba(0, 200, 83, 0.18);
   }
   
   .garage-action-btn i {
@@ -824,8 +858,16 @@
   .garage-action-btn.emergency,
   .garage-action-btn.directions {
     flex: 0 0 auto;
-    min-width: 32px;
+    min-width: 34px;
+    min-height: 34px;
     padding: 7px;
+    border-radius: 8px;
+  }
+
+  .garage-action-btn.directions {
+    background: #f8fafc;
+    border-color: #dbe3ea;
+    color: #475569;
   }
 }
 
@@ -834,6 +876,9 @@
   .garage-service-card {
     padding: 10px;
     gap: 6px;
+    border-width: 1.5px;
+    border-color: #c7d2de;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
   }
 
   .garage-card-header {
@@ -847,11 +892,23 @@
   
   .garage-service-name {
     font-size: 0.8rem;
+    padding: 4px 9px 4px 7px;
+    border-left-width: 2px;
+    border-radius: 0 8px 8px 0;
   }
 
   .garage-meta-item {
     font-size: 0.6rem;
     padding: 2px 5px;
+  }
+
+  .garage-status-badges {
+    gap: 3px;
+  }
+
+  .garage-badge {
+    font-size: 0.55rem;
+    padding: 4px 8px;
   }
   
   .garage-card-body {
@@ -881,17 +938,26 @@
   }
   
   .garage-card-actions {
-    padding: 5px 0 0;
+    padding: 6px 0 0;
     gap: 4px;
   }
   
   .garage-action-btn {
     font-size: 0.6rem;
     padding: 6px 5px;
+    min-height: 34px;
   }
   
   .garage-action-btn i {
     font-size: 0.7rem;
+  }
+
+  .garage-action-btn.whatsapp,
+  .garage-action-btn.emergency,
+  .garage-action-btn.directions {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 6px;
   }
 }
 
@@ -929,8 +995,8 @@
   
   .garage-badge {
     font-size: 0.55rem;
-    padding: 4px 8px 4px 6px;
-    min-width: 65px;
+    padding: 3px 7px;
+    min-width: auto;
   }
   
   .garage-card-body {
