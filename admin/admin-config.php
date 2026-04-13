@@ -42,33 +42,60 @@ function getAdminBootstrapDbConfig($defaultHost) {
         'name' => getenv('MOTORLINK_DB_NAME') ?: ($local['MOTORLINK_DB_NAME'] ?? '')
     ];
 
-    // Fallback: load shared DB constants from api.php when neither env vars nor
-    // admin-secrets.local.php are present (e.g. on the live production server).
+    // Fallback: read shared DB constants from api.php without executing it.
+    // Executing api.php here starts the main API session/bootstrap and breaks
+    // admin session cookie setup on live requests.
     if ($config['user'] === '' || $config['pass'] === '' || $config['name'] === '') {
-        if (!defined('DB_USER')) {
-            if (!defined('MOTORLINK_CONSTANTS_ONLY')) {
-                define('MOTORLINK_CONSTANTS_ONLY', true);
-            }
-            ob_start();
-            @require_once __DIR__ . '/../api.php';
-            ob_end_clean();
+        $sharedConfig = readSharedApiDbConfig(__DIR__ . '/../api.php', $defaultHost);
+        if ($config['user'] === '' && !empty($sharedConfig['user'])) {
+            $config['user'] = $sharedConfig['user'];
         }
-        if (defined('DB_USER') && $config['user'] === '') {
-            $config['user'] = DB_USER;
+        if ($config['pass'] === '' && !empty($sharedConfig['pass'])) {
+            $config['pass'] = $sharedConfig['pass'];
         }
-        if (defined('DB_PASS') && $config['pass'] === '') {
-            $config['pass'] = DB_PASS;
+        if ($config['name'] === '' && !empty($sharedConfig['name'])) {
+            $config['name'] = $sharedConfig['name'];
         }
-        if (defined('DB_NAME') && $config['name'] === '') {
-            $config['name'] = DB_NAME;
-        }
-        if (defined('DB_HOST') && $config['host'] === $defaultHost) {
-            $config['host'] = DB_HOST;
+        if ($config['host'] === $defaultHost && !empty($sharedConfig['host'])) {
+            $config['host'] = $sharedConfig['host'];
         }
     }
 
     if ($config['user'] === '' || $config['pass'] === '' || $config['name'] === '') {
         throw new Exception('Missing bootstrap DB credentials. Set MOTORLINK_DB_* env vars or provide admin/admin-secrets.local.php.');
+    }
+
+    return $config;
+}
+
+function readSharedApiDbConfig($apiFilePath, $defaultHost) {
+    $config = [
+        'host' => $defaultHost,
+        'user' => '',
+        'pass' => '',
+        'name' => ''
+    ];
+
+    if (!is_file($apiFilePath) || !is_readable($apiFilePath)) {
+        return $config;
+    }
+
+    $contents = @file_get_contents($apiFilePath);
+    if ($contents === false || $contents === '') {
+        return $config;
+    }
+
+    $patterns = [
+        'user' => "/define\('DB_USER',\s*'([^']*)'\);/",
+        'pass' => "/define\('DB_PASS',\s*'([^']*)'\);/",
+        'name' => "/define\('DB_NAME',\s*'([^']*)'\);/",
+        'host' => "/define\('DB_HOST',\s*'([^']*)'\);/"
+    ];
+
+    foreach ($patterns as $key => $pattern) {
+        if (preg_match($pattern, $contents, $matches)) {
+            $config[$key] = $matches[1];
+        }
     }
 
     return $config;
@@ -169,7 +196,17 @@ class Database {
                 $finalConfig['name'] === $bootstrapConfig['name']
             );
 
-            $this->connection = $usesBootstrap ? $bootstrapDb : $this->createConnection($finalConfig);
+            if ($usesBootstrap) {
+                $this->connection = $bootstrapDb;
+                return;
+            }
+
+            try {
+                $this->connection = $this->createConnection($finalConfig);
+            } catch (PDOException $e) {
+                error_log('Admin final DB settings failed, falling back to bootstrap connection: ' . $e->getMessage());
+                $this->connection = $bootstrapDb;
+            }
         } catch(PDOException $e) {
             error_log("Database connection failed: " . $e->getMessage());
             throw new Exception("Database connection failed: " . $e->getMessage());

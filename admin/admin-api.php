@@ -97,10 +97,15 @@ if (empty($action)) {
 }
 
 try {
-    $db = getDatabase();
-    
-    // Test database connection first
-    $db->query("SELECT 1");
+    $actionsWithoutDatabase = ['admin_logout', 'check_admin_auth'];
+    $db = null;
+
+    if (!in_array($action, $actionsWithoutDatabase, true)) {
+        $db = getDatabase();
+
+        // Test database connection first
+        $db->query("SELECT 1");
+    }
     
     switch ($action) {
         case 'admin_login':
@@ -497,8 +502,9 @@ function syncAdminSession() {
 }
 
 function checkSession() {
-    // STRICT CHECK: Only accept admin panel sessions for admin dashboard
-    // This prevents auto-login from lingering sessions
+    // Allow seamless admin portal access when an admin has already logged in
+    // through the main site and the shared PHP session is still valid.
+    syncAdminSession();
     return isAdminPanelSession();
 }
 
@@ -710,7 +716,7 @@ function handleAdminLogin($db) {
         exit();
     }
 
-    $email = $input['email'] ?? '';
+    $email = strtolower(trim((string)($input['email'] ?? '')));
     $password = $input['password'] ?? '';
 
     if (empty($email) || empty($password)) {
@@ -720,7 +726,7 @@ function handleAdminLogin($db) {
     
     try {
         // Check admin_users table
-        $stmt = $db->prepare("SELECT * FROM admin_users WHERE email = ? AND status = 'active'");
+        $stmt = $db->prepare("SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?) AND status = 'active'");
         $stmt->execute([$email]);
         $admin = $stmt->fetch();
         
@@ -734,6 +740,13 @@ function handleAdminLogin($db) {
                 $_SESSION['admin_logged_in'] = true;
                 $_SESSION['admin_role'] = $admin['role'] ?? 'admin';
                 $_SESSION['last_activity'] = time();
+
+                // Mirror the main-site session format so the frontend and admin
+                // portal stay in sync without requiring a second login.
+                $_SESSION['user_id'] = $admin['id'];
+                $_SESSION['full_name'] = $admin['full_name'];
+                $_SESSION['email'] = $admin['email'];
+                $_SESSION['user_type'] = 'admin';
                 
                 // Verify session was set
                 if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
@@ -750,14 +763,45 @@ function handleAdminLogin($db) {
                 } else {
                     throw new Exception('Session could not be established');
                 }
-            } else {
-                echo json_encode(['success' => false, 'message' => 'Invalid password']);
+            }
+        }
+
+        // Fallback: support legacy admin accounts stored in users.
+        $stmt = $db->prepare("SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND user_type = 'admin' LIMIT 1");
+        $stmt->execute([$email]);
+        $legacyAdmin = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($legacyAdmin && isset($legacyAdmin['password_hash']) && password_verify($password, $legacyAdmin['password_hash'])) {
+            if (($legacyAdmin['status'] ?? '') !== 'active') {
+                echo json_encode(['success' => false, 'message' => 'Admin user not found or inactive']);
                 exit();
             }
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Admin user not found or inactive']);
+
+            $_SESSION['admin_id'] = $legacyAdmin['id'];
+            $_SESSION['admin_name'] = $legacyAdmin['full_name'];
+            $_SESSION['admin_email'] = $legacyAdmin['email'];
+            $_SESSION['admin_logged_in'] = true;
+            $_SESSION['admin_role'] = 'admin';
+            $_SESSION['last_activity'] = time();
+            $_SESSION['user_id'] = $legacyAdmin['id'];
+            $_SESSION['full_name'] = $legacyAdmin['full_name'];
+            $_SESSION['email'] = $legacyAdmin['email'];
+            $_SESSION['user_type'] = 'admin';
+
+            echo json_encode([
+                'success' => true,
+                'message' => 'Login successful',
+                'admin' => [
+                    'name' => $legacyAdmin['full_name'],
+                    'email' => $legacyAdmin['email'],
+                    'role' => 'admin'
+                ]
+            ]);
             exit();
         }
+
+        echo json_encode(['success' => false, 'message' => 'Invalid email or password']);
+        exit();
 
     } catch (Exception $e) {
         error_log("Login error: " . $e->getMessage());

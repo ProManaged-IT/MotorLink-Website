@@ -490,18 +490,19 @@
         <!-- Profile Tabs -->
         <div class="profile-tabs">
             <button class="profile-tab active" onclick="showTab('overview')">
+            <button class="profile-tab active" onclick="showTab('overview', this)">
                 <i class="fas fa-chart-line"></i> Overview
             </button>
-            <button class="profile-tab" onclick="showTab('edit')">
+            <button class="profile-tab" onclick="showTab('edit', this)">
                 <i class="fas fa-edit"></i> Edit Profile
             </button>
-            <button class="profile-tab" onclick="showTab('listings')">
+            <button class="profile-tab" onclick="showTab('listings', this)">
                 <i class="fas fa-car"></i> My Listings
             </button>
-            <button class="profile-tab" onclick="showTab('messages')">
+            <button class="profile-tab" onclick="showTab('messages', this)">
                 <i class="fas fa-comments"></i> Messages
             </button>
-            <button class="profile-tab" onclick="showTab('security')">
+            <button class="profile-tab" onclick="showTab('security', this)">
                 <i class="fas fa-shield-alt"></i> Security
             </button>
         </div>
@@ -619,11 +620,12 @@
                     </div>
                     <div class="form-group">
                         <label for="autoReplyMessage">Auto-Reply Message</label>
-                        <textarea id="autoReplyMessage" name="auto_reply_message" rows="4"
+                        <textarea id="autoReplyMessage" name="auto_reply_message" rows="4" maxlength="500"
                             placeholder="Example: Thank you for your interest! I'll get back to you as soon as possible. In the meantime, feel free to check out my other listings."
-                            style="resize: vertical;"></textarea>
-                        <small style="color: #888; display: block; margin-top: 5px;">
-                            This message will be sent automatically when a buyer starts a new conversation with you.
+                            style="resize: vertical;" oninput="document.getElementById('arCharCount').textContent=this.value.length"></textarea>
+                        <small style="color: #888; margin-top: 5px; display: flex; justify-content: space-between; align-items: center;">
+                            <span>Sent automatically when a buyer starts a new conversation.</span>
+                            <span style="white-space:nowrap;margin-left:8px;font-weight:600;"><span id="arCharCount">0</span> / 500</span>
                         </small>
                     </div>
                     <button type="submit" class="btn-update" id="saveAutoReplyBtn">
@@ -640,16 +642,31 @@
                 <form id="passwordForm">
                     <div class="form-group">
                         <label for="currentPassword">Current Password</label>
-                        <input type="password" id="currentPassword" name="current_password" required autocomplete="current-password">
+                        <div style="position:relative;display:flex;align-items:center;">
+                            <input type="password" id="currentPassword" name="current_password" required autocomplete="current-password" style="flex:1;padding-right:44px;">
+                            <button type="button" onclick="togglePwd('currentPassword',this)" tabindex="-1" style="position:absolute;right:10px;background:none;border:none;cursor:pointer;color:#888;font-size:16px;padding:4px;line-height:1;"><i class="fas fa-eye"></i></button>
+                        </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="newPassword">New Password</label>
-                            <input type="password" id="newPassword" name="new_password" required minlength="6" autocomplete="new-password">
+                            <div style="position:relative;display:flex;align-items:center;">
+                                <input type="password" id="newPassword" name="new_password" required minlength="8" autocomplete="new-password" style="flex:1;padding-right:44px;">
+                                <button type="button" onclick="togglePwd('newPassword',this)" tabindex="-1" style="position:absolute;right:10px;background:none;border:none;cursor:pointer;color:#888;font-size:16px;padding:4px;line-height:1;"><i class="fas fa-eye"></i></button>
+                            </div>
+                            <div id="passwordStrengthWrap" style="display:none;margin-top:8px;">
+                                <div style="height:5px;background:#e5e7eb;border-radius:3px;overflow:hidden;">
+                                    <div id="strengthFill" style="height:100%;width:0;transition:width .3s,background .3s;border-radius:3px;"></div>
+                                </div>
+                                <span id="strengthText" style="font-size:12px;font-weight:600;"></span>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label for="confirmPassword">Confirm New Password</label>
-                            <input type="password" id="confirmPassword" name="confirm_password" required minlength="6" autocomplete="new-password">
+                            <div style="position:relative;display:flex;align-items:center;">
+                                <input type="password" id="confirmPassword" name="confirm_password" required minlength="8" autocomplete="new-password" style="flex:1;padding-right:44px;">
+                                <button type="button" onclick="togglePwd('confirmPassword',this)" tabindex="-1" style="position:absolute;right:10px;background:none;border:none;cursor:pointer;color:#888;font-size:16px;padding:4px;line-height:1;"><i class="fas fa-eye"></i></button>
+                            </div>
                         </div>
                     </div>
                     <button type="submit" class="btn-update">
@@ -661,7 +678,7 @@
             <div class="form-section">
                 <h3>Account Settings</h3>
                 <p style="color: #666; margin-bottom: 20px;">Manage your account preferences and data.</p>
-                <button class="btn-update" style="background: #dc3545;" onclick="confirmDeleteAccount()">
+                <button class="btn-update" style="background: #dc3545;" type="button" onclick="confirmDeleteAccount()">
                     <i class="fas fa-trash"></i> Delete Account
                 </button>
             </div>
@@ -669,6 +686,32 @@
     </div>
 
     <!-- Footer -->
+    <!-- Delete Account Modal -->
+    <div id="deleteAccountModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:14px;padding:32px 28px;max-width:420px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.25);">
+            <h3 style="margin:0 0 8px;color:#dc3545;"><i class="fas fa-exclamation-triangle"></i> Delete Account</h3>
+            <p style="color:#555;margin-bottom:20px;">This will permanently delete all your data and listings. This action <strong>cannot be undone</strong>.</p>
+            <div class="form-group" style="margin-bottom:20px;">
+                <label for="deleteConfirmPwd" style="font-weight:600;">Enter your password to confirm</label>
+                <div style="position:relative;display:flex;align-items:center;margin-top:6px;">
+                    <input type="password" id="deleteConfirmPwd" placeholder="Your current password"
+                        style="flex:1;padding:10px 44px 10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;" autocomplete="current-password">
+                    <button type="button" onclick="togglePwd('deleteConfirmPwd',this)" tabindex="-1"
+                        style="position:absolute;right:10px;background:none;border:none;cursor:pointer;color:#888;font-size:16px;padding:4px;"><i class="fas fa-eye"></i></button>
+                </div>
+            </div>
+            <div style="display:flex;gap:12px;justify-content:flex-end;">
+                <button type="button" onclick="document.getElementById('deleteAccountModal').style.display='none'"
+                    style="padding:10px 22px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-weight:600;">Cancel</button>
+                <button type="button" id="confirmDeleteBtn"
+                    onclick="deleteAccount(document.getElementById('deleteConfirmPwd').value)"
+                    style="padding:10px 22px;border:none;border-radius:8px;background:#dc3545;color:#fff;cursor:pointer;font-weight:600;">
+                    <i class="fas fa-trash"></i> Delete Account
+                </button>
+            </div>
+        </div>
+    </div>
+
     <footer class="footer" role="contentinfo">
         <div class="container"></div>
     </footer>
@@ -681,33 +724,22 @@
 
     <script>
     // Profile tab switching functionality
-    function showTab(tabName) {
-        // Hide all tab contents
-        document.querySelectorAll('.tab-content').forEach(tab => {
-            tab.classList.remove('active');
-        });
+    function showTab(tabName, btn) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.profile-tab').forEach(b => b.classList.remove('active'));
+        const sel = document.getElementById(tabName);
+        if (sel) sel.classList.add('active');
+        if (btn) btn.classList.add('active');
+        if (tabName === 'messages') loadAutoReplySettings();
+    }
 
-        // Remove active class from all tab buttons
-        document.querySelectorAll('.profile-tab').forEach(button => {
-            button.classList.remove('active');
-        });
-
-        // Show selected tab content
-        const selectedTab = document.getElementById(tabName);
-        if (selectedTab) {
-            selectedTab.classList.add('active');
-        }
-
-        // Add active class to clicked button
-        const clickedButton = event.target.closest('.profile-tab');
-        if (clickedButton) {
-            clickedButton.classList.add('active');
-        }
-
-        // Load auto-reply settings when messages tab is opened
-        if (tabName === 'messages') {
-            loadAutoReplySettings();
-        }
+    function togglePwd(fieldId, btn) {
+        const f = document.getElementById(fieldId);
+        if (!f) return;
+        const show = f.type === 'password';
+        f.type = show ? 'text' : 'password';
+        const icon = btn.querySelector('i');
+        if (icon) icon.className = show ? 'fas fa-eye-slash' : 'fas fa-eye';
     }
 
     // Auto-reply settings
@@ -753,13 +785,13 @@
                     const data = await response.json();
 
                     if (data.success) {
-                        alert('Auto-reply settings saved successfully!');
+                        showProfileNotification('Auto-reply settings saved!', 'success');
                     } else {
-                        alert(data.message || 'Failed to save settings');
+                        showProfileNotification(data.message || 'Failed to save settings', 'error');
                     }
                 } catch (error) {
                     console.error('Failed to save auto-reply settings:', error);
-                    alert('Failed to save settings. Please try again.');
+                    showProfileNotification('Failed to save settings. Please try again.', 'error');
                 } finally {
                     btn.innerHTML = originalText;
                     btn.disabled = false;

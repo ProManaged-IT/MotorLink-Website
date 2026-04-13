@@ -3,6 +3,53 @@
  * Handles profile data loading, editing, and stats
  */
 
+// ── Toast notification (replaces all alert() calls) ──────────────────────────
+function showProfileNotification(message, type = 'success') {
+    let toast = document.getElementById('profileToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'profileToast';
+        toast.style.cssText =
+            'position:fixed;top:80px;right:20px;z-index:9999;padding:14px 22px;border-radius:10px;' +
+            'font-weight:600;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.15);max-width:340px;' +
+            'transition:opacity .3s ease;pointer-events:none;';
+        document.body.appendChild(toast);
+    }
+    const palette = {
+        success: { bg: '#ecfdf5', color: '#065f46', border: '#a7f3d0' },
+        error:   { bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
+        info:    { bg: '#eff6ff', color: '#1e40af', border: '#bfdbfe' }
+    };
+    const c = palette[type] || palette.info;
+    Object.assign(toast.style, { background: c.bg, color: c.color, border: `1px solid ${c.border}`, opacity: '1' });
+    toast.textContent = `${type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}  ${message}`;
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+}
+
+// ── Safe HTML-escape (XSS prevention for innerHTML inserts) ──────────────────
+function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : String(str);
+    return d.innerHTML;
+}
+
+// ── Password strength ─────────────────────────────────────────────────────────
+function getPasswordStrength(pwd) {
+    let s = 0;
+    if (pwd.length >= 8)  s++;
+    if (pwd.length >= 12) s++;
+    if (/[A-Z]/.test(pwd)) s++;
+    if (/[0-9]/.test(pwd)) s++;
+    if (/[^A-Za-z0-9]/.test(pwd)) s++;
+    if (s <= 1) return { label: 'Weak',   colour: '#ef4444', width: '25%' };
+    if (s <= 2) return { label: 'Fair',   colour: '#f59e0b', width: '50%' };
+    if (s <= 3) return { label: 'Good',   colour: '#3b82f6', width: '75%' };
+    return             { label: 'Strong', colour: '#10b981', width: '100%' };
+}
+
+class ProfileManager {
+
 class ProfileManager {
     constructor() {
         this.currentUser = null;
@@ -82,27 +129,16 @@ class ProfileManager {
 
     updateUserAvatar(userName) {
         const avatarBtn = document.getElementById('userAvatar');
-        if (avatarBtn && userName) {
-            // Extract initials from name
-            const nameParts = userName.trim().split(/\s+/).filter(n => n.length > 0);
-            let initials = '';
+        if (!avatarBtn || !userName) return;
+        const parts    = userName.trim().split(/\s+/).filter(n => n.length > 0);
+        let initials   = '';
+        if (parts.length >= 2) initials = parts[0][0] + parts[parts.length - 1][0];
+        else if (parts.length === 1) initials = parts[0].substring(0, 2);
+        initials = initials.toUpperCase();
+        avatarBtn.innerHTML = initials
+            ? `<span style="color:white;font-weight:700;font-size:16px;">${escHtml(initials)}</span>`
+            : '<i class="fas fa-user"></i>';
 
-            if (nameParts.length >= 2) {
-                // First and last name initials
-                initials = nameParts[0][0] + nameParts[nameParts.length - 1][0];
-            } else if (nameParts.length === 1) {
-                // Single name - take first two characters
-                initials = nameParts[0].substring(0, 2);
-            }
-
-            initials = initials.toUpperCase();
-
-            if (initials) {
-                avatarBtn.innerHTML = `<span style="color: white; font-weight: 700; font-size: 16px;">${initials}</span>`;
-            } else {
-                avatarBtn.innerHTML = '<i class="fas fa-user"></i>';
-            }
-        }
     }
 
     populateEditForm(profile) {
@@ -272,12 +308,13 @@ class ProfileManager {
             html += `
                 <div class="activity-item" style="padding: 12px; border-bottom: 1px solid #e1e5e9; display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <strong>${listing.title}</strong>
+                        <strong>${escHtml(listing.title)}</strong>
                         <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                            ${listing.views || 0} views • MWK ${parseInt(listing.price || 0).toLocaleString()}
+                            ${parseInt(listing.views) || 0} views &bull; MWK ${parseInt(listing.price || 0).toLocaleString()}
                         </div>
                     </div>
-                    <span class="status-badge ${statusClass}">${listing.status || 'pending'}</span>
+                    <span class="status-badge ${statusClass}">${escHtml(listing.status || 'pending')}</span>
+
                 </div>
             `;
         });
@@ -345,14 +382,15 @@ class ProfileManager {
             html += `
                 <tr>
                     <td>
-                        <strong>${listing.title}</strong>
-                        <div style="font-size: 12px; color: #666;">${listing.year || ''} • ${listing.mileage ? parseInt(listing.mileage).toLocaleString() + ' km' : ''}</div>
+                        <strong>${escHtml(listing.title)}</strong>
+                        <div style="font-size: 12px; color: #666;">${escHtml(String(listing.year || ''))}${listing.year && listing.mileage ? ' &bull; ' : ''}${listing.mileage ? parseInt(listing.mileage).toLocaleString() + ' km' : ''}</div>
                     </td>
                     <td>MWK ${parseInt(listing.price || 0).toLocaleString()}</td>
-                    <td>${listing.views || 0}</td>
-                    <td><span class="status-badge ${statusClass}">${listing.status || 'pending'}</span></td>
+                    <td>${parseInt(listing.views) || 0}</td>
+                    <td><span class="status-badge ${statusClass}">${escHtml(listing.status || 'pending')}</span></td>
                     <td>
-                        <a href="car.html?id=${listing.id}" class="btn btn-sm" style="padding: 6px 12px; text-decoration: none; font-size: 12px;">
+                        <a href="car.html?id=${parseInt(listing.id) || 0}" class="btn btn-sm" style="padding: 6px 12px; text-decoration: none; font-size: 12px;">
+
                             <i class="fas fa-eye"></i> View
                         </a>
                     </td>
@@ -377,6 +415,25 @@ class ProfileManager {
         const passwordForm = document.getElementById('passwordForm');
         if (passwordForm) {
             passwordForm.addEventListener('submit', (e) => this.handlePasswordChange(e));
+                }
+
+                const newPwd = document.getElementById('newPassword');
+                if (newPwd) newPwd.addEventListener('input', () => this.updatePasswordStrength(newPwd.value));
+            }
+
+            updatePasswordStrength(pwd) {
+                const bar  = document.getElementById('strengthFill');
+                const text = document.getElementById('strengthText');
+                const wrap = document.getElementById('passwordStrengthWrap');
+                if (!bar || !text || !wrap) return;
+                if (!pwd) { wrap.style.display = 'none'; return; }
+                wrap.style.display = 'block';
+                const s = getPasswordStrength(pwd);
+                bar.style.width       = s.width;
+                bar.style.background  = s.colour;
+                text.textContent      = s.label;
+                text.style.color      = s.colour;
+            }
         }
     }
 
@@ -429,13 +486,13 @@ class ProfileManager {
             const data = await response.json();
 
             if (data.success) {
-                alert('Profile updated successfully!');
+                showProfileNotification('Profile updated successfully!', 'success');
                 await this.loadProfileData();
             } else {
-                alert(data.message || 'Failed to update profile');
+                showProfileNotification(data.message || 'Failed to update profile', 'error');
             }
         } catch (error) {
-            alert('Failed to update profile. Please try again.');
+            showProfileNotification('Failed to update profile. Please try again.', 'error');
         } finally {
             updateBtn.innerHTML = originalText;
             updateBtn.disabled = false;
@@ -450,12 +507,18 @@ class ProfileManager {
         const confirmPassword = document.getElementById('confirmPassword').value;
 
         if (newPassword !== confirmPassword) {
-            alert('New passwords do not match!');
+            showProfileNotification('New passwords do not match!', 'error');
             return;
         }
 
-        if (newPassword.length < 6) {
-            alert('Password must be at least 6 characters long!');
+        if (newPassword.length < 8) {
+            showProfileNotification('Password must be at least 8 characters long!', 'error');
+
+                    const strength = getPasswordStrength(newPassword);
+                    if (strength.label === 'Weak') {
+                        showProfileNotification('Password too weak — add uppercase letters, numbers or symbols.', 'error');
+                        return;
+                    }
             return;
         }
 
@@ -478,13 +541,14 @@ class ProfileManager {
             const data = await response.json();
 
             if (data.success) {
-                alert('Password changed successfully!');
+                showProfileNotification('Password changed successfully!', 'success');
                 document.getElementById('passwordForm').reset();
+                            this.updatePasswordStrength('');
             } else {
-                alert(data.message || 'Failed to change password');
+                showProfileNotification(data.message || 'Failed to change password', 'error');
             }
         } catch (error) {
-            alert('Failed to change password. Please try again.');
+            showProfileNotification('Failed to change password. Please try again.', 'error');
         } finally {
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
@@ -492,36 +556,46 @@ class ProfileManager {
     }
 
     showError(message) {
-        alert(message);
+        showProfileNotification(message, 'error');
     }
 }
 
 // Account deletion
 function confirmDeleteAccount() {
-    if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-        if (confirm('This will permanently delete all your data, listings, and messages. Are you absolutely sure?')) {
-            deleteAccount();
-        }
+    const modal = document.getElementById('deleteAccountModal');
+    if (modal) {
+        modal.style.display = 'flex';
+    } else {
+        // Fallback when modal is not present in HTML
+        if (!confirm('Delete your account? This cannot be undone.')) return;
+        const pwd = prompt('Enter your password to confirm:');
+        if (pwd !== null) deleteAccount(pwd);
     }
 }
 
 async function deleteAccount() {
+async function deleteAccount(password) {
+    const btn      = document.getElementById('confirmDeleteBtn');
+    const origText = btn ? btn.innerHTML : '';
+    if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...'; btn.disabled = true; }
     try {
         const response = await fetch(`${CONFIG.API_URL}?action=delete_account`, {
             method: 'DELETE',
-            credentials: 'include'
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ password: password || '' })
         });
-
         const data = await response.json();
-
         if (data.success) {
-            alert('Your account has been deleted successfully.');
-            window.location.href = 'index.html';
+            showProfileNotification('Account deleted. Redirecting...', 'info');
+            setTimeout(() => { window.location.href = 'index.html'; }, 1500);
         } else {
-            alert(data.message || 'Failed to delete account');
+            showProfileNotification(data.message || 'Failed to delete account', 'error');
+            if (btn) { btn.innerHTML = origText; btn.disabled = false; }
         }
-    } catch (error) {
-        alert('Failed to delete account. Please try again.');
+    } catch {
+        showProfileNotification('Failed to delete account. Please try again.', 'error');
+        if (btn) { btn.innerHTML = origText; btn.disabled = false; }
     }
 }
 
