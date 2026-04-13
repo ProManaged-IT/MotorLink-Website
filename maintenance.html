@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="css/common.css">
     <link rel="stylesheet" href="css/mobile-enhancements.css">
     <link rel="stylesheet" href="css/mobile-redesign.css">
+    <link rel="stylesheet" href="css/price-redesign.css">
     <style>
         body {
             min-height: 100vh;
@@ -91,6 +92,24 @@
         .btn-secondary {
             background: #111827;
             color: #fff;
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 14px;
+            }
+            .maintenance-card {
+                padding: 22px 16px;
+                border-radius: 12px;
+            }
+            .maintenance-icon {
+                width: 60px;
+                height: 60px;
+                font-size: 26px;
+            }
+            h1 {
+                font-size: 1.45rem;
+            }
         }
     </style>
 </head>

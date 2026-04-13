@@ -249,3 +249,25 @@
         flex-wrap: wrap;
     }
 }
+
+@media (max-width: 480px) {
+    .car-image {
+        height: 160px;
+    }
+
+    .car-price {
+        font-size: 17px;
+    }
+
+    .car-actions .btn {
+        flex: 1 1 100%;
+    }
+
+    .empty-state {
+        padding: 48px 16px;
+    }
+
+    .empty-state i {
+        font-size: 48px;
+    }
+}

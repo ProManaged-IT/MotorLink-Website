@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/mobile-enhancements.css">
     <link rel="stylesheet" href="css/mobile-redesign.css">
+    <link rel="stylesheet" href="css/price-redesign.css">
     <link rel="stylesheet" href="css/mobile-footer-optimization.css">
     <link rel="stylesheet" href="css/mobile-page-indicator.css">
     
@@ -136,26 +137,56 @@
             border-top: 1px solid #e0e0e0;
         }
         
+        .cookie-table-wrap {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
         @media (max-width: 768px) {
             .cookie-policy-header {
                 padding: 40px 20px;
             }
-            
+
             .cookie-policy-header h1 {
                 font-size: 2rem;
             }
-            
+
             .cookie-policy-content {
                 padding: 25px;
             }
-            
+
             .cookie-table {
                 font-size: 0.9rem;
+                min-width: 540px;
             }
-            
+
             .cookie-table th,
             .cookie-table td {
                 padding: 8px;
+            }
+        }
+        @media (max-width: 480px) {
+            .cookie-policy-container {
+                padding: 0 10px;
+            }
+            .cookie-policy-header {
+                padding: 28px 14px;
+                border-radius: 8px;
+            }
+            .cookie-policy-header h1 {
+                font-size: 1.6rem;
+            }
+            .cookie-policy-header p {
+                font-size: 0.95rem;
+            }
+            .cookie-policy-content {
+                padding: 16px;
+            }
+            .cookie-policy-content h2 {
+                font-size: 1.3rem;
+            }
+            .contact-section {
+                padding: 20px 14px;
             }
         }
     </style>
@@ -231,6 +262,7 @@
             <p>
                 These cookies are essential for the website to function properly. They enable core functionality such as security, network management, and accessibility. You cannot opt-out of these cookies as they are required for the Service to operate.
             </p>
+            <div class="cookie-table-wrap">
             <table class="cookie-table">
                 <thead>
                     <tr>
@@ -252,11 +284,13 @@
                     </tr>
                 </tbody>
             </table>
+            </div>
 
             <h3>3.2 Functional Cookies</h3>
             <p>
                 These cookies enable the website to provide enhanced functionality and personalization. They may be set by us or by third-party providers whose services we have added to our pages.
             </p>
+            <div class="cookie-table-wrap">
             <table class="cookie-table">
                 <thead>
                     <tr>
@@ -293,11 +327,13 @@
                     </tr>
                 </tbody>
             </table>
+            </div>
 
             <h3>3.3 Analytics and Performance Cookies</h3>
             <p>
                 These cookies help us understand how visitors interact with our website by collecting and reporting information anonymously. This helps us improve the way our website works.
             </p>
+            <div class="cookie-table-wrap">
             <table class="cookie-table">
                 <thead>
                     <tr>
@@ -319,6 +355,7 @@
                     </tr>
                 </tbody>
             </table>
+            </div>
 
             <h3>3.4 Third-Party Cookies</h3>
             <p>

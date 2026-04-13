@@ -1129,49 +1129,57 @@ function setUserSession($user) {
 /**
  * Check if user is logged in
  */
-function isLoggedIn() {
-    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+if (!function_exists('isLoggedIn')) {
+    function isLoggedIn() {
+        return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+    }
 }
 
 /**
  * Get current user data
  */
-function getCurrentUser($required = true) {
-    $user = [
-        'id' => $_SESSION['user_id'] ?? null,
-        'name' => $_SESSION['full_name'] ?? null,
-        'email' => $_SESSION['email'] ?? null,
-        'type' => $_SESSION['user_type'] ?? null
-    ];
+if (!function_exists('getCurrentUser')) {
+    function getCurrentUser($required = true) {
+        $user = [
+            'id' => $_SESSION['user_id'] ?? null,
+            'name' => $_SESSION['full_name'] ?? null,
+            'email' => $_SESSION['email'] ?? null,
+            'type' => $_SESSION['user_type'] ?? null
+        ];
 
-    if (!empty($user['id'])) {
-        return $user;
+        if (!empty($user['id'])) {
+            return $user;
+        }
+
+        if ($required) {
+            sendError('Authentication required', 401);
+        }
+
+        return null;
     }
-
-    if ($required) {
-        sendError('Authentication required', 401);
-    }
-
-    return null;
 }
 
 /**
  * Require authentication
  */
-function requireAuth() {
-    if (!isLoggedIn()) {
-        sendError('Authentication required', 401);
+if (!function_exists('requireAuth')) {
+    function requireAuth() {
+        if (!isLoggedIn()) {
+            sendError('Authentication required', 401);
+        }
     }
 }
 
 /**
  * Require admin privileges
  */
-function requireAdmin() {
-    requireAuth();
-    $user = getCurrentUser();
-    if ($user['type'] !== 'admin') {
-        sendError('Admin access required', 403);
+if (!function_exists('requireAdmin')) {
+    function requireAdmin() {
+        requireAuth();
+        $user = getCurrentUser();
+        if ($user['type'] !== 'admin') {
+            sendError('Admin access required', 403);
+        }
     }
 }
 
@@ -1374,6 +1382,8 @@ try {
         case 'submit_listing': submitListing($db); break;
         case 'get_profile': requireAuth(); getProfile($db); break;
         case 'update_profile': requireAuth(); updateProfile($db); break;
+        case 'change_password': requireAuth(); changePassword($db); break;
+        case 'delete_account': requireAuth(); deleteAccount($db); break;
         case 'user_stats': 
             // Check auth but don't block - getUserStats handles its own auth
             if (isLoggedIn()) {
@@ -2731,33 +2741,35 @@ function serveImage($db) {
 /**
  * Check authentication status
  */
-function checkAuth() {
-    // Check for session timeout (30 minutes of inactivity)
-    $sessionTimeout = 1800; // 30 minutes in seconds
-    
-    if (isLoggedIn()) {
-        // Check for session timeout
-        if (isset($_SESSION['last_activity'])) {
-            $inactiveTime = time() - $_SESSION['last_activity'];
-            
-            if ($inactiveTime > $sessionTimeout) {
-                // Session has expired
-                session_unset();
-                session_destroy();
-                
-                sendSuccess([
-                    'authenticated' => false,
-                    'message' => 'Session expired due to inactivity'
-                ]);
+if (!function_exists('checkAuth')) {
+    function checkAuth() {
+        // Check for session timeout (30 minutes of inactivity)
+        $sessionTimeout = 1800; // 30 minutes in seconds
+
+        if (isLoggedIn()) {
+            // Check for session timeout
+            if (isset($_SESSION['last_activity'])) {
+                $inactiveTime = time() - $_SESSION['last_activity'];
+
+                if ($inactiveTime > $sessionTimeout) {
+                    // Session has expired
+                    session_unset();
+                    session_destroy();
+
+                    sendSuccess([
+                        'authenticated' => false,
+                        'message' => 'Session expired due to inactivity'
+                    ]);
+                }
             }
+
+            // Update last activity time
+            $_SESSION['last_activity'] = time();
+
+            sendSuccess(['authenticated' => true, 'user' => getCurrentUser()]);
+        } else {
+            sendSuccess(['authenticated' => false]);
         }
-        
-        // Update last activity time
-        $_SESSION['last_activity'] = time();
-        
-        sendSuccess(['authenticated' => true, 'user' => getCurrentUser()]);
-    } else {
-        sendSuccess(['authenticated' => false]);
     }
 }
 
@@ -3882,6 +3894,107 @@ function updateProfile($db) {
         }
         error_log("Update profile error: " . $e->getMessage());
         sendError('Failed to update profile', 500);
+    }
+}
+
+/**
+ * Change user password (dedicated endpoint)
+ */
+function changePassword($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendError('POST method required', 405);
+    }
+    $user = getCurrentUser();
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    $currentPassword = trim($input['current_password'] ?? '');
+    $newPassword     = $input['new_password'] ?? '';
+
+    if ($currentPassword === '' || $newPassword === '') {
+        sendError('Current password and new password are required', 400);
+    }
+    if (strlen($newPassword) < 8) {
+        sendError('New password must be at least 8 characters', 400);
+    }
+
+    try {
+        $stmt = $db->prepare("SELECT password_hash FROM users WHERE id = ?");
+        $stmt->execute([$user['id']]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row || !password_verify($currentPassword, $row['password_hash'])) {
+            sendError('Current password is incorrect', 400);
+        }
+
+        $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
+        $stmt = $db->prepare("UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$newHash, $user['id']]);
+
+        sendSuccess(['message' => 'Password changed successfully']);
+    } catch (Exception $e) {
+        error_log("changePassword error: " . $e->getMessage());
+        sendError('Failed to change password', 500);
+    }
+}
+
+/**
+ * Delete (anonymise) the authenticated user's account
+ */
+function deleteAccount($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'DELETE') {
+        sendError('DELETE method required', 405);
+    }
+    $user = getCurrentUser();
+
+    // Require password confirmation sent as JSON body
+    $input = json_decode(file_get_contents('php://input'), true);
+    $confirmPassword = $input['password'] ?? '';
+
+    if ($confirmPassword === '') {
+        sendError('Password confirmation is required', 400);
+    }
+
+    try {
+        $stmt = $db->prepare("SELECT password_hash FROM users WHERE id = ?");
+        $stmt->execute([$user['id']]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row || !password_verify($confirmPassword, $row['password_hash'])) {
+            sendError('Password confirmation is incorrect', 400);
+        }
+
+        $db->beginTransaction();
+
+        // Anonymise user data (preserves relational integrity)
+        $anonEmail = 'deleted_' . $user['id'] . '_' . time() . '@deleted.local';
+        $stmt = $db->prepare(
+            "UPDATE users SET full_name = 'Deleted User', email = ?, phone = NULL, whatsapp = NULL,
+             city = NULL, address = NULL, bio = NULL, password_hash = '',
+             status = 'deleted', updated_at = NOW() WHERE id = ?"
+        );
+        $stmt->execute([$anonEmail, $user['id']]);
+
+        // Soft-delete all their listings
+        $stmt = $db->prepare("UPDATE listings SET status = 'deleted', updated_at = NOW() WHERE user_id = ?");
+        $stmt->execute([$user['id']]);
+
+        $db->commit();
+
+        // Destroy session
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000,
+                $params['path'], $params['domain'],
+                $params['secure'], $params['httponly']);
+        }
+        session_destroy();
+
+        sendSuccess(['message' => 'Account deleted successfully']);
+    } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        error_log("deleteAccount error: " . $e->getMessage());
+        sendError('Failed to delete account', 500);
     }
 }
 

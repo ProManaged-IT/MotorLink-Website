@@ -714,3 +714,50 @@
         grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     }
 }
+
+@media (max-width: 480px) {
+    .page-header .container {
+        padding: 0 12px;
+    }
+
+    .page-header-content h1 {
+        font-size: 22px;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .stat-number {
+        font-size: 22px;
+    }
+
+    .filter-tabs {
+        gap: 6px;
+    }
+
+    .filter-tab {
+        padding: 8px 14px;
+        font-size: 12px;
+    }
+
+    .listing-actions .btn {
+        flex: 1 1 100%;
+    }
+
+    .large-modal {
+        max-width: 100%;
+        max-height: 100vh;
+        border-radius: 0;
+    }
+
+    .edit-images-grid {
+        grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    }
+
+    .upload-new-photos {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
