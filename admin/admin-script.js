@@ -1,47 +1,26 @@
 // Admin API configuration - works same way as main website
 // Uses proxy to forward requests to production API
 const getAdminAPIUrl = () => {
-    // Check if running on localhost
     const hostname = window.location.hostname;
     const protocol = window.location.protocol;
-    
-    // Comprehensive local environment detection (RFC 1918 compliant)
-    const checkIsLocal = hostname === 'localhost' || 
-                         hostname === '127.0.0.1' || 
-                         protocol === 'file:' ||
-                         hostname.startsWith('192.168.') ||
-                         hostname.startsWith('10.') ||
-                         // Check for 172.16.0.0/12 range (172.16.0.0 - 172.31.255.255)
-                         /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
-    
-    // Production: Any non-localhost hostname (flexible for any domain)
-    const checkIsProduction = !checkIsLocal && 
-                               hostname !== '' && 
-                               !hostname.includes('localhost') && 
-                               !hostname.includes('127.0.0.1');
-    
-    if (checkIsProduction) {
-        // Production mode: use relative path since we're on the same server
-        return '/motorlink/admin/admin-api.php';
-    }
-    
-    if (typeof CONFIG !== 'undefined' && CONFIG.MODE === 'UAT') {
-        if (checkIsLocal) {
-            // Local development should default to local admin API.
-            // If served from static localhost port, target the local PHP server.
-            const currentPort = window.location.port || '';
-            if (protocol === 'file:' || (currentPort && currentPort !== '80' && currentPort !== '443' && currentPort !== '8000')) {
-                return `${window.location.protocol}//${window.location.hostname}:8000/admin/admin-api.php`;
-            }
-            return 'admin-api.php';
-        } else {
-            // UAT on production server: use local admin-api.php
-            return 'admin-api.php';
+
+    const isLocal = hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        protocol === 'file:' ||
+        hostname.startsWith('192.168.') ||
+        hostname.startsWith('10.') ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+
+    // When opened from file: or from a non-PHP static dev server, point to the local PHP server.
+    if (isLocal) {
+        const currentPort = window.location.port || '';
+        if (protocol === 'file:' || (currentPort && currentPort !== '80' && currentPort !== '443' && currentPort !== '8000')) {
+            return `${window.location.protocol}//${window.location.hostname}:8000/admin/admin-api.php`;
         }
     }
-    
-    // Fallback: use relative path
-    return 'admin-api.php';
+
+    // In all normal served environments, resolve admin-api.php relative to the current admin page.
+    return new URL('admin-api.php', window.location.href).toString();
 };
 
 const ADMIN_API_BASE = getAdminAPIUrl();
@@ -4975,11 +4954,7 @@ async function adminLogin(event) {
         });
         
         debugLog('Response status:', response.status);
-        
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status} ${response.statusText}`);
-        }
-        
+
         const responseText = await response.text();
         debugLog('Raw response:', responseText);
         
@@ -4992,6 +4967,10 @@ async function adminLogin(event) {
             data = JSON.parse(responseText);
         } catch (parseError) {
             throw new Error('Server returned invalid response');
+        }
+
+        if (!response.ok) {
+            throw new Error(data.message || data.error || `Server error: ${response.status} ${response.statusText}`);
         }
         
         debugLog('Parsed response:', data);
