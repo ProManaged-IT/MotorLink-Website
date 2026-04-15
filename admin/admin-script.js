@@ -96,13 +96,6 @@ class AdminDashboard {
             });
         });
 
-        const sidebarToggle = document.getElementById('sidebarToggle');
-        if (sidebarToggle) {
-            sidebarToggle.addEventListener('click', () => {
-                this.toggleSidebar();
-            });
-        }
-
         // Keep sidebar/overlay state consistent when viewport changes.
         window.addEventListener('resize', () => {
             if (window.innerWidth > 1024) {

@@ -2467,3 +2467,96 @@
         display: none !important;
     }
 }
+
+/* ============================================================================
+   CONTACT ACTIONS PARITY - Match car-hire-company contact-actions design
+   ============================================================================ */
+.dealer-contact-card .dealer-quick-actions.contact-actions {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-bottom: 4px !important;
+}
+
+.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn {
+    width: 100% !important;
+    min-height: 42px;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    text-align: center;
+    text-decoration: none;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    font-size: 0.9rem !important;
+    font-weight: 700;
+    transition: all 0.3s ease;
+    background: #f8f9fa !important;
+    color: #333 !important;
+    border: 1px solid #e0e0e0 !important;
+    backdrop-filter: none !important;
+}
+
+.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn.whatsapp {
+    background: #25d366 !important;
+    color: white !important;
+    border-color: #25d366 !important;
+}
+
+.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn.whatsapp:hover {
+    background: #128c7e !important;
+    border-color: #128c7e !important;
+    transform: translateY(-2px);
+}
+
+.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn.phone {
+    background: #00a651 !important;
+    color: white !important;
+    border-color: #00a651 !important;
+}
+
+.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn.phone:hover {
+    background: #008f45 !important;
+    border-color: #008f45 !important;
+    transform: translateY(-2px);
+}
+
+.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn.website {
+    background: #0066cc !important;
+    color: white !important;
+    border-color: #0066cc !important;
+}
+
+.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn.website:hover {
+    background: #0052a3 !important;
+    border-color: #0052a3 !important;
+    transform: translateY(-2px);
+}
+
+.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn:not(.whatsapp):not(.phone):not(.website):hover {
+    background: #e9ecef !important;
+    border-color: #00a651 !important;
+    color: #00a651 !important;
+    transform: translateY(-2px);
+}
+
+@media (max-width: 768px) {
+    .dealer-contact-card .dealer-quick-actions.contact-actions {
+        grid-template-columns: 1fr !important;
+        gap: 7px !important;
+    }
+
+    .dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn {
+        min-height: 38px;
+        padding: 8px 12px !important;
+        font-size: 0.82rem !important;
+        flex-direction: row !important;
+    }
+
+    .dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn i {
+        font-size: 0.9rem !important;
+        margin-bottom: 0 !important;
+    }
+}

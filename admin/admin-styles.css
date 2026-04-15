@@ -2552,35 +2552,64 @@ body {
         position: sticky;
         top: 0;
         z-index: 999;
-        height: auto;
-        min-height: 60px;
-        padding: 12px 15px;
+        height: 56px;
+        min-height: 56px;
+        padding: 0 12px 0 56px; /* 56px left = space for .admin-sidebar-toggle FAB */
+        background: #fff;
+        border-bottom: 2px solid #e8f5e9;
+        box-shadow: 0 2px 8px rgba(0, 200, 83, 0.1);
     }
-    
-    .admin-header h2 {
-        font-size: 1.2rem;
+
+    .header-left h1,
+    .admin-header #pageTitle {
+        font-size: 15px;
+        font-weight: 700;
+        color: #1a1a1a;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: calc(100vw - 160px); /* prevent overlap with avatar */
+        line-height: 56px;
     }
-    
+
+    /* Compact user pill on mobile */
+    .user-menu {
+        padding: 4px;
+        background: transparent;
+        gap: 0;
+        border-radius: 50%;
+    }
+
+    .user-menu span#headerAdminName {
+        display: none;
+    }
+
+    .user-avatar {
+        width: 34px;
+        height: 34px;
+        font-size: 15px;
+    }
+
     .menu-toggle {
         display: block !important;
         width: 40px;
         height: 40px;
         font-size: 1.2rem;
     }
-    
+
     .header-actions {
         gap: 8px;
     }
-    
+
     .header-actions .btn {
         padding: 8px 12px;
         font-size: 0.85rem;
     }
-    
+
     .header-actions .btn span {
         display: none;
     }
-    
+
     .header-stats {
         display: none !important;
     }
@@ -2661,26 +2690,352 @@ body {
         gap: 15px;
     }
     
-    /* Tables - Mobile Responsive */
+    /* Tables -> cards on mobile/tablet for easier management */
     .table-container {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        margin: 0 -15px;
-        padding: 0 15px;
+        overflow: visible;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+        background: transparent;
+        border-radius: 0;
     }
-    
-    .admin-table {
-        font-size: 0.85rem;
-        min-width: 800px;
+
+    .table-container .data-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 10px;
     }
-    
-    .admin-table th,
-    .admin-table td {
-        padding: 10px 8px;
+
+    .table-container .data-table thead {
+        display: none;
     }
-    
-    .admin-table th {
-        font-size: 0.8rem;
+
+    .table-container .data-table tbody,
+    .table-container .data-table tr,
+    .table-container .data-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .table-container .data-table tr {
+        background: #fff;
+        border: 1px solid #e6efe9;
+        border-radius: 14px;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
+        padding: 8px 12px;
+        margin-bottom: 10px;
+    }
+
+    .table-container .data-table td {
+        border: 0;
+        border-bottom: 1px dashed #e9ecef;
+        padding: 9px 0;
+        font-size: 0.88rem;
+        line-height: 1.35;
+        min-height: 30px;
+        position: relative;
+        word-break: break-word;
+        white-space: normal;
+    }
+
+    .table-container .data-table td:last-child {
+        border-bottom: 0;
+        padding-bottom: 4px;
+    }
+
+    /* Action columns as wrapped chips */
+    .table-container .data-table td .management-actions,
+    .table-container .data-table td .d-flex,
+    .table-container .data-table td .action-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .table-container .data-table td .btn,
+    .table-container .data-table td .btn-sm,
+    .table-container .data-table td .btn-action,
+    .table-container .data-table td .action-btn {
+        min-height: 34px;
+        padding: 6px 10px;
+        font-size: 0.78rem;
+        border-radius: 9px;
+    }
+
+    /* Table-specific labels for card rows */
+    #carsTable td:nth-child(1)::before { content: "Select"; }
+    #carsTable td:nth-child(2)::before { content: "ID"; }
+    #carsTable td:nth-child(3)::before { content: "Image"; }
+    #carsTable td:nth-child(4)::before { content: "Title & Description"; }
+    #carsTable td:nth-child(5)::before { content: "Make/Model"; }
+    #carsTable td:nth-child(6)::before { content: "Year"; }
+    #carsTable td:nth-child(7)::before { content: "Price"; }
+    #carsTable td:nth-child(8)::before { content: "Location"; }
+    #carsTable td:nth-child(9)::before { content: "Status"; }
+    #carsTable td:nth-child(10)::before { content: "Payment"; }
+    #carsTable td:nth-child(11)::before { content: "Views"; }
+    #carsTable td:nth-child(12)::before { content: "Created"; }
+    #carsTable td:nth-child(13)::before { content: "Actions"; }
+
+    #pendingCarsTable td:nth-child(1)::before { content: "Select"; }
+    #pendingCarsTable td:nth-child(2)::before { content: "ID"; }
+    #pendingCarsTable td:nth-child(3)::before { content: "Image"; }
+    #pendingCarsTable td:nth-child(4)::before { content: "Title & Description"; }
+    #pendingCarsTable td:nth-child(5)::before { content: "Make/Model"; }
+    #pendingCarsTable td:nth-child(6)::before { content: "Year"; }
+    #pendingCarsTable td:nth-child(7)::before { content: "Price"; }
+    #pendingCarsTable td:nth-child(8)::before { content: "Location"; }
+    #pendingCarsTable td:nth-child(9)::before { content: "Payment"; }
+    #pendingCarsTable td:nth-child(10)::before { content: "Submitted"; }
+    #pendingCarsTable td:nth-child(11)::before { content: "Actions"; }
+
+    #guestListingsTable td:nth-child(1)::before { content: "ID"; }
+    #guestListingsTable td:nth-child(2)::before { content: "Image"; }
+    #guestListingsTable td:nth-child(3)::before { content: "Title"; }
+    #guestListingsTable td:nth-child(4)::before { content: "Guest Seller"; }
+    #guestListingsTable td:nth-child(5)::before { content: "Email Verified"; }
+    #guestListingsTable td:nth-child(6)::before { content: "Status"; }
+    #guestListingsTable td:nth-child(7)::before { content: "Expires"; }
+    #guestListingsTable td:nth-child(8)::before { content: "Submitted"; }
+    #guestListingsTable td:nth-child(9)::before { content: "Actions"; }
+
+    #rejectedCarsTable td:nth-child(1)::before { content: "ID"; }
+    #rejectedCarsTable td:nth-child(2)::before { content: "Image"; }
+    #rejectedCarsTable td:nth-child(3)::before { content: "Title & Description"; }
+    #rejectedCarsTable td:nth-child(4)::before { content: "Make/Model"; }
+    #rejectedCarsTable td:nth-child(5)::before { content: "Year"; }
+    #rejectedCarsTable td:nth-child(6)::before { content: "Price"; }
+    #rejectedCarsTable td:nth-child(7)::before { content: "Location"; }
+    #rejectedCarsTable td:nth-child(8)::before { content: "Rejected Date"; }
+    #rejectedCarsTable td:nth-child(9)::before { content: "Reason"; }
+    #rejectedCarsTable td:nth-child(10)::before { content: "Actions"; }
+
+    #deletedCarsTable td:nth-child(1)::before { content: "ID"; }
+    #deletedCarsTable td:nth-child(2)::before { content: "Image"; }
+    #deletedCarsTable td:nth-child(3)::before { content: "Title"; }
+    #deletedCarsTable td:nth-child(4)::before { content: "Make/Model"; }
+    #deletedCarsTable td:nth-child(5)::before { content: "Year"; }
+    #deletedCarsTable td:nth-child(6)::before { content: "Price"; }
+    #deletedCarsTable td:nth-child(7)::before { content: "Location"; }
+    #deletedCarsTable td:nth-child(8)::before { content: "Owner"; }
+    #deletedCarsTable td:nth-child(9)::before { content: "Deleted By"; }
+    #deletedCarsTable td:nth-child(10)::before { content: "Listed Date"; }
+    #deletedCarsTable td:nth-child(11)::before { content: "Views"; }
+    #deletedCarsTable td:nth-child(12)::before { content: "Actions"; }
+
+    #paymentsTable td:nth-child(1)::before { content: "Payment ID"; }
+    #paymentsTable td:nth-child(2)::before { content: "User"; }
+    #paymentsTable td:nth-child(3)::before { content: "Service Type"; }
+    #paymentsTable td:nth-child(4)::before { content: "Amount"; }
+    #paymentsTable td:nth-child(5)::before { content: "Method"; }
+    #paymentsTable td:nth-child(6)::before { content: "Reference"; }
+    #paymentsTable td:nth-child(7)::before { content: "Status"; }
+    #paymentsTable td:nth-child(8)::before { content: "Date"; }
+    #paymentsTable td:nth-child(9)::before { content: "Actions"; }
+
+    #freeListingsPaymentsTable td:nth-child(1)::before { content: "Listing ID"; }
+    #freeListingsPaymentsTable td:nth-child(2)::before { content: "Title"; }
+    #freeListingsPaymentsTable td:nth-child(3)::before { content: "Seller"; }
+    #freeListingsPaymentsTable td:nth-child(4)::before { content: "Reference"; }
+    #freeListingsPaymentsTable td:nth-child(5)::before { content: "Status"; }
+    #freeListingsPaymentsTable td:nth-child(6)::before { content: "Created"; }
+    #freeListingsPaymentsTable td:nth-child(7)::before { content: "Actions"; }
+
+    #usersTable td:nth-child(1)::before { content: "ID"; }
+    #usersTable td:nth-child(2)::before { content: "Avatar"; }
+    #usersTable td:nth-child(3)::before { content: "Name"; }
+    #usersTable td:nth-child(4)::before { content: "Email"; }
+    #usersTable td:nth-child(5)::before { content: "Phone"; }
+    #usersTable td:nth-child(6)::before { content: "Type"; }
+    #usersTable td:nth-child(7)::before { content: "Status"; }
+    #usersTable td:nth-child(8)::before { content: "Joined"; }
+    #usersTable td:nth-child(9)::before { content: "Last Login"; }
+    #usersTable td:nth-child(10)::before { content: "Actions"; }
+
+    #adminsTable td:nth-child(1)::before { content: "ID"; }
+    #adminsTable td:nth-child(2)::before { content: "Name"; }
+    #adminsTable td:nth-child(3)::before { content: "Email"; }
+    #adminsTable td:nth-child(4)::before { content: "Role"; }
+    #adminsTable td:nth-child(5)::before { content: "Phone"; }
+    #adminsTable td:nth-child(6)::before { content: "Status"; }
+    #adminsTable td:nth-child(7)::before { content: "Created"; }
+    #adminsTable td:nth-child(8)::before { content: "Last Login"; }
+    #adminsTable td:nth-child(9)::before { content: "Actions"; }
+
+    #garagesTable td:nth-child(1)::before { content: "ID"; }
+    #garagesTable td:nth-child(2)::before { content: "Name"; }
+    #garagesTable td:nth-child(3)::before { content: "Owner"; }
+    #garagesTable td:nth-child(4)::before { content: "Location"; }
+    #garagesTable td:nth-child(5)::before { content: "Phone"; }
+    #garagesTable td:nth-child(6)::before { content: "Specialization"; }
+    #garagesTable td:nth-child(7)::before { content: "Status"; }
+    #garagesTable td:nth-child(8)::before { content: "Created"; }
+    #garagesTable td:nth-child(9)::before { content: "Actions"; }
+
+    #dealersTable td:nth-child(1)::before { content: "ID"; }
+    #dealersTable td:nth-child(2)::before { content: "Name"; }
+    #dealersTable td:nth-child(3)::before { content: "Owner"; }
+    #dealersTable td:nth-child(4)::before { content: "Location"; }
+    #dealersTable td:nth-child(5)::before { content: "Phone"; }
+    #dealersTable td:nth-child(6)::before { content: "Brand"; }
+    #dealersTable td:nth-child(7)::before { content: "Status"; }
+    #dealersTable td:nth-child(8)::before { content: "Created"; }
+    #dealersTable td:nth-child(9)::before { content: "Actions"; }
+
+    #carHireTable td:nth-child(1)::before { content: "ID"; }
+    #carHireTable td:nth-child(2)::before { content: "Business"; }
+    #carHireTable td:nth-child(3)::before { content: "Owner"; }
+    #carHireTable td:nth-child(4)::before { content: "Location"; }
+    #carHireTable td:nth-child(5)::before { content: "Phone"; }
+    #carHireTable td:nth-child(6)::before { content: "Fleet"; }
+    #carHireTable td:nth-child(7)::before { content: "Status"; }
+    #carHireTable td:nth-child(8)::before { content: "Created"; }
+    #carHireTable td:nth-child(9)::before { content: "Actions"; }
+
+    #pendingGaragesTable td:nth-child(1)::before { content: "ID"; }
+    #pendingGaragesTable td:nth-child(2)::before { content: "Name"; }
+    #pendingGaragesTable td:nth-child(3)::before { content: "Owner"; }
+    #pendingGaragesTable td:nth-child(4)::before { content: "Location"; }
+    #pendingGaragesTable td:nth-child(5)::before { content: "Phone"; }
+    #pendingGaragesTable td:nth-child(6)::before { content: "Status"; }
+    #pendingGaragesTable td:nth-child(7)::before { content: "Submitted"; }
+    #pendingGaragesTable td:nth-child(8)::before { content: "Actions"; }
+
+    #pendingDealersTable td:nth-child(1)::before { content: "ID"; }
+    #pendingDealersTable td:nth-child(2)::before { content: "Name"; }
+    #pendingDealersTable td:nth-child(3)::before { content: "Owner"; }
+    #pendingDealersTable td:nth-child(4)::before { content: "Location"; }
+    #pendingDealersTable td:nth-child(5)::before { content: "Phone"; }
+    #pendingDealersTable td:nth-child(6)::before { content: "Status"; }
+    #pendingDealersTable td:nth-child(7)::before { content: "Submitted"; }
+    #pendingDealersTable td:nth-child(8)::before { content: "Actions"; }
+
+    #pendingCarHireTable td:nth-child(1)::before { content: "ID"; }
+    #pendingCarHireTable td:nth-child(2)::before { content: "Business"; }
+    #pendingCarHireTable td:nth-child(3)::before { content: "Owner"; }
+    #pendingCarHireTable td:nth-child(4)::before { content: "Location"; }
+    #pendingCarHireTable td:nth-child(5)::before { content: "Phone"; }
+    #pendingCarHireTable td:nth-child(6)::before { content: "Status"; }
+    #pendingCarHireTable td:nth-child(7)::before { content: "Submitted"; }
+    #pendingCarHireTable td:nth-child(8)::before { content: "Actions"; }
+
+    #activityLogsTable td:nth-child(1)::before { content: "Time"; }
+    #activityLogsTable td:nth-child(2)::before { content: "Admin"; }
+    #activityLogsTable td:nth-child(3)::before { content: "Action"; }
+    #activityLogsTable td:nth-child(4)::before { content: "Details"; }
+    #activityLogsTable td:nth-child(5)::before { content: "IP"; }
+
+    /* Generic card label styling */
+    .table-container .data-table td::before {
+        display: block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #00a651;
+        margin-bottom: 4px;
+    }
+
+    /* Denser hero layout for listing-style tables (image + title first) */
+    #carsTable tr,
+    #pendingCarsTable tr,
+    #guestListingsTable tr,
+    #rejectedCarsTable tr,
+    #deletedCarsTable tr {
+        display: grid !important;
+        grid-template-columns: 92px minmax(0, 1fr);
+        column-gap: 10px;
+    }
+
+    #carsTable td,
+    #pendingCarsTable td,
+    #guestListingsTable td,
+    #rejectedCarsTable td,
+    #deletedCarsTable td {
+        grid-column: 1 / -1;
+    }
+
+    #carsTable td:nth-child(1),
+    #pendingCarsTable td:nth-child(1) {
+        grid-column: 1;
+        grid-row: 1;
+        padding-top: 2px;
+    }
+
+    #carsTable td:nth-child(2),
+    #pendingCarsTable td:nth-child(2) {
+        grid-column: 2;
+        grid-row: 1;
+        padding-top: 2px;
+    }
+
+    #carsTable td:nth-child(3),
+    #pendingCarsTable td:nth-child(3) {
+        grid-column: 1;
+        grid-row: 2 / span 2;
+        border-bottom: 0;
+        padding: 4px 0 0;
+    }
+
+    #carsTable td:nth-child(4),
+    #pendingCarsTable td:nth-child(4) {
+        grid-column: 2;
+        grid-row: 2;
+        font-weight: 700;
+        color: #0f172a;
+    }
+
+    #guestListingsTable td:nth-child(1),
+    #rejectedCarsTable td:nth-child(1),
+    #deletedCarsTable td:nth-child(1) {
+        grid-column: 2;
+        grid-row: 1;
+        padding-top: 2px;
+    }
+
+    #guestListingsTable td:nth-child(2),
+    #rejectedCarsTable td:nth-child(2),
+    #deletedCarsTable td:nth-child(2) {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+        border-bottom: 0;
+        padding: 4px 0 0;
+    }
+
+    #guestListingsTable td:nth-child(3),
+    #rejectedCarsTable td:nth-child(3),
+    #deletedCarsTable td:nth-child(3) {
+        grid-column: 2;
+        grid-row: 2;
+        font-weight: 700;
+        color: #0f172a;
+    }
+
+    #carsTable td:nth-child(3)::before,
+    #pendingCarsTable td:nth-child(3)::before,
+    #guestListingsTable td:nth-child(2)::before,
+    #rejectedCarsTable td:nth-child(2)::before,
+    #deletedCarsTable td:nth-child(2)::before,
+    #carsTable td:nth-child(4)::before,
+    #pendingCarsTable td:nth-child(4)::before,
+    #guestListingsTable td:nth-child(3)::before,
+    #rejectedCarsTable td:nth-child(3)::before,
+    #deletedCarsTable td:nth-child(3)::before {
+        display: none;
+    }
+
+    #carsTable td:nth-child(3) img,
+    #pendingCarsTable td:nth-child(3) img,
+    #guestListingsTable td:nth-child(2) img,
+    #rejectedCarsTable td:nth-child(2) img,
+    #deletedCarsTable td:nth-child(2) img {
+        width: 100%;
+        max-width: 92px;
+        height: 86px;
+        object-fit: cover;
+        border-radius: 10px;
+        border: 1px solid #e5e7eb;
+        background: #f8fafc;
     }
     
     /* Action Buttons in Tables */
@@ -2875,8 +3230,9 @@ body {
 
 /* Extra Small Mobile Devices */
 @media (max-width: 480px) {
-    .admin-header h2 {
-        font-size: 1rem;
+    .admin-header #pageTitle {
+        font-size: 0.95rem;
+        max-width: calc(100vw - 130px);
     }
     
     .login-form {
