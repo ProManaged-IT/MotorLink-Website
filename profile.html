@@ -56,6 +56,27 @@
             opacity: 0.9;
         }
 
+        .profile-type-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.25);
+            border: 1px solid rgba(255,255,255,0.45);
+            color: #fff;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 2px 10px;
+            border-radius: 20px;
+            margin-bottom: 6px;
+        }
+
+        .profile-bio-preview {
+            font-style: italic;
+            opacity: 0.85;
+            font-size: 0.9rem;
+            max-width: 480px;
+        }
+
         .profile-tabs {
             display: flex;
             background: white;
@@ -90,7 +111,7 @@
             background: white;
             border-radius: 16px;
             box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-            padding: 40px;
+            padding: 24px;
         }
 
         .tab-content.active {
@@ -146,30 +167,32 @@
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 24px;
-            margin-bottom: 30px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 22px;
         }
 
         .stat-card {
             background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-            padding: 24px;
-            border-radius: 12px;
+            padding: 14px 12px;
+            border-radius: 10px;
             text-align: center;
-            border-left: 4px solid var(--primary-green);
+            border-left: 3px solid var(--primary-green);
         }
 
         .stat-card .number {
-            font-size: 2.5rem;
+            font-size: 1.6rem;
             font-weight: 700;
             color: var(--primary-green);
             display: block;
+            line-height: 1.2;
         }
 
         .stat-card .label {
             color: #666;
             font-weight: 600;
-            margin-top: 8px;
+            font-size: 0.78rem;
+            margin-top: 4px;
         }
 
         .listings-table {
@@ -250,7 +273,67 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Box-sizing baseline */
+        /* Dormant account alert */
+        .dormant-alert {
+            display: none;
+            background: #fffbeb;
+            border: 1.5px solid #f59e0b;
+            border-radius: 12px;
+            padding: 18px 20px;
+            margin-bottom: 20px;
+        }
+        .dormant-alert h4 {
+            margin: 0 0 10px;
+            color: #92400e;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .dormant-todo {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+        .dormant-todo li {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 0.88rem;
+            color: #78350f;
+            line-height: 1.4;
+        }
+        .dormant-todo li .dtodo-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #fde68a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 0.7rem;
+            color: #92400e;
+            margin-top: 1px;
+        }
+        .dormant-todo li a {
+            color: #b45309;
+            font-weight: 600;
+            text-decoration: underline;
+        }
+        .dormant-dismiss {
+            margin-top: 12px;
+            font-size: 0.78rem;
+            color: #b45309;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            text-decoration: underline;
+        }
         *, *::before, *::after { box-sizing: border-box; }
 
         /* Listings table — horizontal scroll on mobile */
@@ -302,7 +385,7 @@
             }
 
             .tab-content {
-                padding: 20px;
+                padding: 16px;
                 border-radius: 12px;
             }
 
@@ -313,15 +396,15 @@
 
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
-                gap: 14px;
+                gap: 10px;
             }
 
             .stat-card {
-                padding: 16px;
+                padding: 12px 10px;
             }
 
             .stat-card .number {
-                font-size: 2rem;
+                font-size: 1.4rem;
             }
 
             .form-section h3 {
@@ -370,29 +453,29 @@
             }
 
             .tab-content {
-                padding: 14px;
+                padding: 12px;
                 border-radius: 10px;
                 box-shadow: 0 1px 8px rgba(0,0,0,0.08);
             }
 
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
-                gap: 10px;
-                margin-bottom: 20px;
+                gap: 8px;
+                margin-bottom: 16px;
             }
 
             .stat-card {
-                padding: 14px 10px;
-                border-radius: 10px;
+                padding: 10px 8px;
+                border-radius: 8px;
             }
 
             .stat-card .number {
-                font-size: 1.7rem;
+                font-size: 1.3rem;
             }
 
             .stat-card .label {
-                font-size: 0.78rem;
-                margin-top: 4px;
+                font-size: 0.72rem;
+                margin-top: 3px;
             }
 
             .form-section {
@@ -465,6 +548,9 @@
                         </a>
                     </div>
                 </div>
+                <button class="tablet-user-menu-toggle" id="tabletUserMenuToggle" aria-label="Toggle account menu">
+                    <i class="fas fa-ellipsis-v"></i>
+                </button>
                 <button class="mobile-menu-toggle" id="mobileToggle">
                     <i class="fas fa-bars"></i>
                 </button>
@@ -476,20 +562,23 @@
     <div class="profile-container">
         <!-- Profile Header -->
         <div class="profile-header">
-            <div class="profile-avatar">
+            <div class="profile-avatar" id="profileAvatar">
                 <i class="fas fa-user"></i>
             </div>
             <div class="profile-info">
                 <h1 id="profileName">Loading...</h1>
+                <span class="profile-type-badge" id="profileTypeBadge" style="display:none"></span>
                 <p><i class="fas fa-envelope"></i> <span id="profileEmail">Loading...</span></p>
                 <p><i class="fas fa-phone"></i> <span id="profilePhone">Loading...</span></p>
+                <p id="profileWhatsappRow" style="display:none"><i class="fab fa-whatsapp"></i> <span id="profileWhatsapp"></span></p>
                 <p><i class="fas fa-map-marker-alt"></i> <span id="profileCity">Loading...</span></p>
+                <p id="profileMemberSince" style="display:none"><i class="fas fa-calendar-alt"></i> <span id="profileJoined"></span></p>
+                <p id="profileBioRow" class="profile-bio-preview" style="display:none"><span id="profileBio"></span></p>
             </div>
         </div>
 
         <!-- Profile Tabs -->
         <div class="profile-tabs">
-            <button class="profile-tab active" onclick="showTab('overview')">
             <button class="profile-tab active" onclick="showTab('overview', this)">
                 <i class="fas fa-chart-line"></i> Overview
             </button>
@@ -528,6 +617,13 @@
                 </div>
             </div>
             
+            <!-- Dormant account to-do (shown by JS for dealer/car_hire with no listings) -->
+            <div class="dormant-alert" id="dormantAlert">
+                <h4><i class="fas fa-exclamation-circle"></i> <span id="dormantTitle">Your account is inactive</span></h4>
+                <ul class="dormant-todo" id="dormantTodos"></ul>
+                <button class="dormant-dismiss" onclick="document.getElementById('dormantAlert').style.display='none'">Dismiss</button>
+            </div>
+
             <h3>Recent Activity</h3>
             <div id="recentActivity">
                 <div class="loading">
@@ -640,6 +736,7 @@
             <div class="form-section">
                 <h3>Change Password</h3>
                 <form id="passwordForm">
+                    <input type="text" name="username" autocomplete="username" style="display:none;" aria-hidden="true">
                     <div class="form-group">
                         <label for="currentPassword">Current Password</label>
                         <div style="position:relative;display:flex;align-items:center;">
@@ -691,15 +788,18 @@
         <div style="background:#fff;border-radius:14px;padding:32px 28px;max-width:420px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.25);">
             <h3 style="margin:0 0 8px;color:#dc3545;"><i class="fas fa-exclamation-triangle"></i> Delete Account</h3>
             <p style="color:#555;margin-bottom:20px;">This will permanently delete all your data and listings. This action <strong>cannot be undone</strong>.</p>
-            <div class="form-group" style="margin-bottom:20px;">
-                <label for="deleteConfirmPwd" style="font-weight:600;">Enter your password to confirm</label>
-                <div style="position:relative;display:flex;align-items:center;margin-top:6px;">
-                    <input type="password" id="deleteConfirmPwd" placeholder="Your current password"
-                        style="flex:1;padding:10px 44px 10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;" autocomplete="current-password">
-                    <button type="button" onclick="togglePwd('deleteConfirmPwd',this)" tabindex="-1"
-                        style="position:absolute;right:10px;background:none;border:none;cursor:pointer;color:#888;font-size:16px;padding:4px;"><i class="fas fa-eye"></i></button>
+            <form id="deleteAccountForm" onsubmit="return false;" autocomplete="on">
+                <input type="text" name="username" autocomplete="username" style="display:none;" aria-hidden="true">
+                <div class="form-group" style="margin-bottom:20px;">
+                    <label for="deleteConfirmPwd" style="font-weight:600;">Enter your password to confirm</label>
+                    <div style="position:relative;display:flex;align-items:center;margin-top:6px;">
+                        <input type="password" id="deleteConfirmPwd" name="confirm_password" placeholder="Your current password"
+                            style="flex:1;padding:10px 44px 10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;" autocomplete="current-password">
+                        <button type="button" onclick="togglePwd('deleteConfirmPwd',this)" tabindex="-1"
+                            style="position:absolute;right:10px;background:none;border:none;cursor:pointer;color:#888;font-size:16px;padding:4px;"><i class="fas fa-eye"></i></button>
+                    </div>
                 </div>
-            </div>
+            </form>
             <div style="display:flex;gap:12px;justify-content:flex-end;">
                 <button type="button" onclick="document.getElementById('deleteAccountModal').style.display='none'"
                     style="padding:10px 22px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-weight:600;">Cancel</button>

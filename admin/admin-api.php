@@ -375,6 +375,14 @@ try {
             handleSaveAdminDbCredentials($db);
             break;
 
+        case 'get_footer_support_settings':
+            handleGetFooterSupportSettings($db);
+            break;
+
+        case 'save_footer_support_settings':
+            handleSaveFooterSupportSettings($db);
+            break;
+
         case 'get_system_info':
             handleGetSystemInfo($db);
             break;
@@ -6457,6 +6465,235 @@ function handleSaveAdminDbCredentials($db) {
         }
         error_log('handleSaveAdminDbCredentials error: ' . $e->getMessage());
         sendAdminError('Failed to save admin DB credentials', 'ADMIN_DB_SAVE_FAILED', 500);
+    }
+}
+
+/**
+ * Footer support setting definitions used for admin load/save validation.
+ */
+function getFooterSupportSettingDefinitions() {
+    return [
+        'footer_support_help_label' => [
+            'default' => 'Help Center',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link label: Help Center',
+            'is_public' => 1
+        ],
+        'footer_support_help_href' => [
+            'default' => 'help.html#top',
+            'group' => 'footer',
+            'type' => 'url',
+            'description' => 'Footer support link target: Help Center',
+            'is_public' => 1
+        ],
+        'footer_support_help_type' => [
+            'default' => 'page',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link type: page|modal (Help Center)',
+            'is_public' => 1
+        ],
+        'footer_support_safety_label' => [
+            'default' => 'Safety Tips',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link label: Safety Tips',
+            'is_public' => 1
+        ],
+        'footer_support_safety_href' => [
+            'default' => 'safety.html#top',
+            'group' => 'footer',
+            'type' => 'url',
+            'description' => 'Footer support link target: Safety Tips',
+            'is_public' => 1
+        ],
+        'footer_support_safety_type' => [
+            'default' => 'page',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link type: page|modal (Safety Tips)',
+            'is_public' => 1
+        ],
+        'footer_support_contact_label' => [
+            'default' => 'Contact Us',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link label: Contact Us',
+            'is_public' => 1
+        ],
+        'footer_support_contact_href' => [
+            'default' => 'contact.html#channels',
+            'group' => 'footer',
+            'type' => 'url',
+            'description' => 'Footer support link target: Contact Us',
+            'is_public' => 1
+        ],
+        'footer_support_contact_type' => [
+            'default' => 'page',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link type: page|modal (Contact Us)',
+            'is_public' => 1
+        ],
+        'footer_support_terms_label' => [
+            'default' => 'Terms of Service',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link label: Terms of Service',
+            'is_public' => 1
+        ],
+        'footer_support_terms_href' => [
+            'default' => 'terms.html',
+            'group' => 'footer',
+            'type' => 'url',
+            'description' => 'Footer support link target: Terms of Service',
+            'is_public' => 1
+        ],
+        'footer_support_terms_type' => [
+            'default' => 'page',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link type: page|modal (Terms of Service)',
+            'is_public' => 1
+        ],
+        'footer_support_cookie_label' => [
+            'default' => 'Cookie Policy',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link label: Cookie Policy',
+            'is_public' => 1
+        ],
+        'footer_support_cookie_href' => [
+            'default' => 'cookie-policy.html',
+            'group' => 'footer',
+            'type' => 'url',
+            'description' => 'Footer support link target: Cookie Policy',
+            'is_public' => 1
+        ],
+        'footer_support_cookie_type' => [
+            'default' => 'page',
+            'group' => 'footer',
+            'type' => 'string',
+            'description' => 'Footer support link type: page|modal (Cookie Policy)',
+            'is_public' => 1
+        ]
+    ];
+}
+
+/**
+ * Return footer support settings from site_settings for admin UI.
+ */
+function handleGetFooterSupportSettings($db) {
+    requireAdmin();
+
+    try {
+        $definitions = getFooterSupportSettingDefinitions();
+        $keys = array_keys($definitions);
+        $placeholders = implode(',', array_fill(0, count($keys), '?'));
+
+        $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
+        $stmt->execute($keys);
+
+        $settings = [];
+        foreach ($definitions as $key => $meta) {
+            $settings[$key] = $meta['default'];
+        }
+
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $settings[$row['setting_key']] = (string)($row['setting_value'] ?? '');
+        }
+
+        echo json_encode([
+            'success' => true,
+            'settings' => $settings
+        ]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleGetFooterSupportSettings error: ' . $e->getMessage());
+        sendAdminError('Failed to load footer support settings', 'FOOTER_SUPPORT_LOAD_FAILED', 500);
+    }
+}
+
+/**
+ * Save footer support settings to site_settings for public footer rendering.
+ */
+function handleSaveFooterSupportSettings($db) {
+    requireAdmin();
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST method required', 'INVALID_METHOD', 405);
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+    $incomingSettings = $input['settings'] ?? null;
+
+    if (!is_array($incomingSettings)) {
+        sendAdminError('Invalid settings payload', 'FOOTER_SUPPORT_INVALID_PAYLOAD', 400);
+    }
+
+    $definitions = getFooterSupportSettingDefinitions();
+
+    try {
+        $db->beginTransaction();
+
+        $stmt = $db->prepare("INSERT INTO site_settings (setting_key, setting_value, setting_group, setting_type, description, is_public)
+                              VALUES (?, ?, ?, ?, ?, ?)
+                              ON DUPLICATE KEY UPDATE
+                              setting_value = VALUES(setting_value),
+                              setting_group = VALUES(setting_group),
+                              setting_type = VALUES(setting_type),
+                              description = VALUES(description),
+                              is_public = VALUES(is_public)");
+
+        $updated = 0;
+
+        foreach ($definitions as $key => $meta) {
+            if (!array_key_exists($key, $incomingSettings)) {
+                continue;
+            }
+
+            $value = trim((string)$incomingSettings[$key]);
+
+            if (str_ends_with($key, '_type')) {
+                $value = in_array($value, ['page', 'modal'], true) ? $value : 'page';
+            }
+
+            if (str_ends_with($key, '_href')) {
+                if (preg_match('/^\s*(javascript:|data:)/i', $value)) {
+                    sendAdminError('Unsafe URL provided for ' . $key, 'FOOTER_SUPPORT_UNSAFE_URL', 400);
+                }
+            }
+
+            if ($value === '') {
+                $value = $meta['default'];
+            }
+
+            $stmt->execute([
+                $key,
+                $value,
+                $meta['group'],
+                $meta['type'],
+                $meta['description'],
+                $meta['is_public']
+            ]);
+            $updated++;
+        }
+
+        $db->commit();
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Footer support settings saved successfully',
+            'updated' => $updated
+        ]);
+        exit();
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('handleSaveFooterSupportSettings error: ' . $e->getMessage());
+        sendAdminError('Failed to save footer support settings', 'FOOTER_SUPPORT_SAVE_FAILED', 500);
     }
 }
 

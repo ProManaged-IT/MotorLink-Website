@@ -169,22 +169,22 @@ class FooterLoader {
         // Build social links HTML
         let socialLinksHTML = '';
         if (social.social_facebook) {
-            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_facebook))}" target="_blank" rel="noopener" aria-label="Follow us on Facebook" title="${siteNameSafe} Facebook"><i class="fab fa-facebook-f"></i></a>`;
+            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_facebook))}" class="soc-facebook" target="_blank" rel="noopener" aria-label="Follow us on Facebook" title="${siteNameSafe} Facebook"><i class="fab fa-facebook-f"></i></a>`;
         }
         if (social.social_twitter) {
-            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_twitter))}" target="_blank" rel="noopener" aria-label="Follow us on Twitter" title="${siteNameSafe} Twitter"><i class="fab fa-twitter"></i></a>`;
+            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_twitter))}" class="soc-twitter" target="_blank" rel="noopener" aria-label="Follow us on Twitter" title="${siteNameSafe} Twitter"><i class="fab fa-twitter"></i></a>`;
         }
         if (social.social_instagram) {
-            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_instagram))}" target="_blank" rel="noopener" aria-label="Follow us on Instagram" title="${siteNameSafe} Instagram"><i class="fab fa-instagram"></i></a>`;
+            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_instagram))}" class="soc-instagram" target="_blank" rel="noopener" aria-label="Follow us on Instagram" title="${siteNameSafe} Instagram"><i class="fab fa-instagram"></i></a>`;
         }
         if (social.social_linkedin) {
-            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_linkedin))}" target="_blank" rel="noopener" aria-label="Connect on LinkedIn" title="${siteNameSafe} LinkedIn"><i class="fab fa-linkedin"></i></a>`;
+            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_linkedin))}" class="soc-linkedin" target="_blank" rel="noopener" aria-label="Connect on LinkedIn" title="${siteNameSafe} LinkedIn"><i class="fab fa-linkedin"></i></a>`;
         }
         if (social.social_whatsapp) {
-            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_whatsapp))}" target="_blank" rel="noopener" aria-label="Contact us on WhatsApp" title="${siteNameSafe} WhatsApp"><i class="fab fa-whatsapp"></i></a>`;
+            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_whatsapp))}" class="soc-whatsapp" target="_blank" rel="noopener" aria-label="Contact us on WhatsApp" title="${siteNameSafe} WhatsApp"><i class="fab fa-whatsapp"></i></a>`;
         }
         if (social.social_youtube) {
-            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_youtube))}" target="_blank" rel="noopener" aria-label="Subscribe on YouTube" title="${siteNameSafe} YouTube"><i class="fab fa-youtube"></i></a>`;
+            socialLinksHTML += `<a href="${this.escapeHtml(this.sanitizeUrl(social.social_youtube))}" class="soc-youtube" target="_blank" rel="noopener" aria-label="Subscribe on YouTube" title="${siteNameSafe} YouTube"><i class="fab fa-youtube"></i></a>`;
         }
 
         const supportLinksHTML = supportLinks.map((link, index) => {

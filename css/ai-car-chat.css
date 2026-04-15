@@ -93,9 +93,15 @@
     }
 }
 
-.ai-car-chat-widget:hover {
+.ai-car-chat-widget:not(.dragging):hover {
     box-shadow: var(--ai-shadow-hover), 0 0 0 1px rgba(0, 200, 83, 0.2);
-    transform: translateY(-2px);
+}
+
+/* Dragging state — no transitions, no hover lift */
+.ai-car-chat-widget.dragging {
+    transition: none !important;
+    user-select: none;
+    cursor: grabbing !important;
 }
 
 .ai-car-chat-widget.minimized {
@@ -295,20 +301,63 @@
     }
 }
 
-/* Chat Header - Modern Glass Effect */
+/* Header action buttons (minimize + close) */
+.ai-chat-header-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+}
+
+.ai-chat-header-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.2s, transform 0.15s;
+    flex-shrink: 0;
+}
+
+.ai-chat-header-btn:hover {
+    background: rgba(255, 255, 255, 0.35);
+    transform: scale(1.1);
+}
+
+.ai-chat-header-btn:active {
+    transform: scale(0.93);
+}
+
+.ai-chat-header-close:hover {
+    background: rgba(239, 68, 68, 0.7);
+}
+
+/* Chat Header - grab cursor for drag */
 .ai-chat-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 20px 24px;
+    padding: 16px 18px;
     background: var(--ai-gradient);
     color: white;
-    cursor: pointer;
+    cursor: grab;
     user-select: none;
     box-shadow: 0 4px 20px rgba(0, 200, 83, 0.3);
     transition: var(--ai-transition);
     position: relative;
     overflow: hidden;
+}
+
+.ai-car-chat-widget.dragging .ai-chat-header {
+    cursor: grabbing;
 }
 
 /* Decorative pattern overlay */
@@ -416,32 +465,6 @@
 @keyframes onlinePulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
-}
-
-.ai-chat-toggle {
-    background: rgba(255, 255, 255, 0.2);
-    border: none;
-    color: white;
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-}
-
-.ai-chat-toggle:hover {
-    background: rgba(255, 255, 255, 0.3);
-    transform: scale(1.1);
-}
-
-.ai-chat-toggle:active {
-    transform: scale(0.95);
-    background: rgba(255, 255, 255, 0.25);
 }
 
 /* Chat Body - Modern Background */

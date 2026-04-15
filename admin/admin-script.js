@@ -6129,6 +6129,86 @@ async function saveSecuritySettings() {
     }
 }
 
+function getFooterSupportSettingsPayload() {
+    return {
+        footer_support_help_label: document.getElementById('footer-help-label')?.value?.trim() || 'Help Center',
+        footer_support_help_href: document.getElementById('footer-help-href')?.value?.trim() || 'help.html#top',
+        footer_support_help_type: document.getElementById('footer-help-type')?.value || 'page',
+
+        footer_support_safety_label: document.getElementById('footer-safety-label')?.value?.trim() || 'Safety Tips',
+        footer_support_safety_href: document.getElementById('footer-safety-href')?.value?.trim() || 'safety.html#top',
+        footer_support_safety_type: document.getElementById('footer-safety-type')?.value || 'page',
+
+        footer_support_contact_label: document.getElementById('footer-contact-label')?.value?.trim() || 'Contact Us',
+        footer_support_contact_href: document.getElementById('footer-contact-href')?.value?.trim() || 'contact.html#channels',
+        footer_support_contact_type: document.getElementById('footer-contact-type')?.value || 'page',
+
+        footer_support_terms_label: document.getElementById('footer-terms-label')?.value?.trim() || 'Terms of Service',
+        footer_support_terms_href: document.getElementById('footer-terms-href')?.value?.trim() || 'terms.html',
+        footer_support_terms_type: document.getElementById('footer-terms-type')?.value || 'page',
+
+        footer_support_cookie_label: document.getElementById('footer-cookie-label')?.value?.trim() || 'Cookie Policy',
+        footer_support_cookie_href: document.getElementById('footer-cookie-href')?.value?.trim() || 'cookie-policy.html',
+        footer_support_cookie_type: document.getElementById('footer-cookie-type')?.value || 'page'
+    };
+}
+
+function applyFooterSupportSettingsToForm(settings = {}) {
+    const setValue = (id, value) => {
+        const el = document.getElementById(id);
+        if (el && value !== undefined && value !== null && String(value) !== '') {
+            el.value = String(value);
+        }
+    };
+
+    setValue('footer-help-label', settings.footer_support_help_label);
+    setValue('footer-help-href', settings.footer_support_help_href);
+    setValue('footer-help-type', settings.footer_support_help_type);
+
+    setValue('footer-safety-label', settings.footer_support_safety_label);
+    setValue('footer-safety-href', settings.footer_support_safety_href);
+    setValue('footer-safety-type', settings.footer_support_safety_type);
+
+    setValue('footer-contact-label', settings.footer_support_contact_label);
+    setValue('footer-contact-href', settings.footer_support_contact_href);
+    setValue('footer-contact-type', settings.footer_support_contact_type);
+
+    setValue('footer-terms-label', settings.footer_support_terms_label);
+    setValue('footer-terms-href', settings.footer_support_terms_href);
+    setValue('footer-terms-type', settings.footer_support_terms_type);
+
+    setValue('footer-cookie-label', settings.footer_support_cookie_label);
+    setValue('footer-cookie-href', settings.footer_support_cookie_href);
+    setValue('footer-cookie-type', settings.footer_support_cookie_type);
+}
+
+async function loadFooterSupportSettings() {
+    try {
+        const response = await admin.apiCall('get_footer_support_settings', 'GET', null);
+        if (response.success && response.settings) {
+            applyFooterSupportSettingsToForm(response.settings);
+        }
+    } catch (error) {
+        debugLog('Failed to load footer support settings:', error);
+    }
+}
+
+async function saveFooterSupportSettings() {
+    const settings = getFooterSupportSettingsPayload();
+
+    try {
+        const response = await admin.apiCall('save_footer_support_settings', 'POST', { settings });
+        if (response.success) {
+            admin.showAlert('success', response.message || 'Footer support links saved successfully');
+            await loadFooterSupportSettings();
+        } else {
+            admin.showAlert('error', response.message || 'Failed to save footer support links');
+        }
+    } catch (error) {
+        admin.showAlert('error', 'Error saving footer support links: ' + error.message);
+    }
+}
+
 function getAdminDbCredentialsPayload() {
     return {
         host: document.getElementById('admin-db-host')?.value?.trim() || '',
@@ -6396,14 +6476,17 @@ async function loadSettings() {
 
             // Admin DB credentials are managed separately in site_settings.
             await loadAdminDbCredentials();
+            await loadFooterSupportSettings();
 
         } else {
             debugLog('No settings found or error loading settings');
             await loadAdminDbCredentials();
+            await loadFooterSupportSettings();
         }
     } catch (error) {
         debugLog('Error loading settings:', error);
         await loadAdminDbCredentials();
+        await loadFooterSupportSettings();
     }
 }
 

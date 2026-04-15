@@ -255,9 +255,12 @@ class DealerDashboard {
                     <div class="car-image">
                         ${imageUrl ?
                             `<img src="${imageUrl}" alt="${car.title}">` :
-                            `<div class="car-placeholder">
-                                <i class="fas fa-car"></i>
-                                <p>No Image</p>
+                            `<div class="car-placeholder no-image-nudge">
+                                <i class="fas fa-camera"></i>
+                                <p>No photos yet</p>
+                                <button class="btn btn-small btn-outline-light nudge-btn" onclick="event.stopPropagation();dealerDashboard.editCar(${car.id})">
+                                    <i class="fas fa-plus"></i> Add Photos
+                                </button>
                             </div>`
                         }
                         <span class="status-badge status-${car.status}">${this.getStatusLabel(car.status)}</span>

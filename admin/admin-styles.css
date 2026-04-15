@@ -3026,7 +3026,8 @@ body {
         display: flex !important;
         position: fixed !important;
         top: 12px !important;
-        left: 12px !important;
+        right: 12px !important;
+        left: auto !important;
         z-index: 13000 !important;
         width: 44px !important;
         height: 44px !important;

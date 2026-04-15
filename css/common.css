@@ -205,7 +205,8 @@ body > div:not(.footer):not(.header) {
         gap: 5px;
         padding: 0 10px;
         flex-wrap: nowrap;
-        overflow: hidden;
+        overflow: visible; /* Allow dropdown to extend below */
+        position: relative; /* Anchor tablet-user-menu dropdown */
     }
     
     .logo {
@@ -292,6 +293,7 @@ body > div:not(.footer):not(.header) {
         height: 34px !important;
         min-width: 34px !important;
         font-size: 13px !important;
+        margin-left: 0 !important;
     }
     
     /* Ensure header items don't overflow but allow nav to shrink if needed */
@@ -299,9 +301,9 @@ body > div:not(.footer):not(.header) {
         min-width: 0;
     }
     
-    /* Prevent any wrapping - force single line */
+    /* Keep single line but allow the dropdown to extend below */
     .header-container {
-        overflow: hidden;
+        overflow: visible;
     }
     
     .header-container .logo {
@@ -734,7 +736,7 @@ body > div:not(.footer):not(.header) {
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     position: static;
     filter: none;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
     line-height: 1;
@@ -1232,6 +1234,21 @@ footer.footer:last-child {
     color: var(--text-white);
     transform: translateY(-2px);
 }
+
+/* Footer social link brand colors */
+.social-links a.soc-facebook  { background: linear-gradient(135deg, #1877f2 0%, #0d5dbf 100%) !important; color: #fff !important; }
+.social-links a.soc-twitter   { background: linear-gradient(135deg, #1DA1F2 0%, #0c85d0 100%) !important; color: #fff !important; }
+.social-links a.soc-instagram { background: linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%) !important; color: #fff !important; }
+.social-links a.soc-linkedin  { background: linear-gradient(135deg, #0077b5 0%, #005885 100%) !important; color: #fff !important; }
+.social-links a.soc-whatsapp  { background: linear-gradient(135deg, #25d366 0%, #128c7e 100%) !important; color: #fff !important; }
+.social-links a.soc-youtube   { background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%) !important; color: #fff !important; }
+
+.social-links a.soc-facebook:hover  { background: linear-gradient(135deg, #1563c9 0%, #0a4a9e 100%) !important; transform: translateY(-3px); }
+.social-links a.soc-twitter:hover   { background: linear-gradient(135deg, #0d8fd8 0%, #0972b0 100%) !important; transform: translateY(-3px); }
+.social-links a.soc-instagram:hover { opacity: 0.85; transform: translateY(-3px); }
+.social-links a.soc-linkedin:hover  { background: linear-gradient(135deg, #005e94 0%, #00446e 100%) !important; transform: translateY(-3px); }
+.social-links a.soc-whatsapp:hover  { background: linear-gradient(135deg, #1db954 0%, #0f7a60 100%) !important; transform: translateY(-3px); }
+.social-links a.soc-youtube:hover   { background: linear-gradient(135deg, #cc0000 0%, #990000 100%) !important; transform: translateY(-3px); }
 
 /* ========================================
    HERO SECTION - Uniform Across All Pages

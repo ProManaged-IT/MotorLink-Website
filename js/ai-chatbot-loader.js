@@ -76,8 +76,14 @@
                         </div>
                     </div>
                 </div>
-                <button class="ai-chat-toggle" id="aiChatToggle">
-                    <i class="fas fa-times" id="aiChatToggleIcon"></i>
+                <div class="ai-chat-header-actions">
+                    <button class="ai-chat-header-btn" id="aiChatMinimizeBtn" title="Minimize">
+                        <i class="fas fa-minus"></i>
+                    </button>
+                    <button class="ai-chat-header-btn ai-chat-header-close" id="aiChatCloseBtn" title="Close AI Chat">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
                 </button>
             </div>
             <div class="ai-chat-body" id="aiChatBody" style="display: none;">
@@ -118,6 +124,9 @@
             <button class="ai-chat-minimized" id="aiChatMinimized">
                 <i class="fas fa-comments"></i>
                 <span>MotorLink AI</span>
+            </button>
+            <button class="ai-chat-dismiss" id="aiChatDismiss" title="Hide AI Assistant for this session">
+                <i class="fas fa-times"></i>
             </button>
         </div>
     `;

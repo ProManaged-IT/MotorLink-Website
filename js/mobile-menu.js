@@ -37,6 +37,95 @@ function cleanupMobileMenuClones(nav) {
     mobileClones.forEach(element => element.remove());
 }
 
+// ============================================================================
+// Build rich tablet account dropdown panel
+// ============================================================================
+function buildTabletPanel(userMenu) {
+    const existing = userMenu.querySelector('.tablet-menu-panel');
+    if (existing) existing.remove();
+
+    const isLoggedIn = localStorage.getItem('motorlink_authenticated') === 'true';
+    let userData = null;
+    try { userData = JSON.parse(localStorage.getItem('motorlink_user') || 'null'); } catch(e) {}
+
+    const panel = document.createElement('div');
+    panel.className = 'tablet-menu-panel';
+
+    if (isLoggedIn && userData) {
+        const name = userData.full_name || userData.name || (userData.email || '').split('@')[0] || 'User';
+        const parts = name.trim().split(/\s+/).filter(n => n.length > 0);
+        const initials = parts.length >= 2
+            ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+            : name.substring(0, 2).toUpperCase();
+
+        const type = userData.type || '';
+        const typeLabel = { dealer: 'Dealer', garage: 'Garage', car_hire: 'Car Hire', admin: 'Admin' }[type] || 'Member';
+
+        // Read live stat counts from the DOM (populated by updateDashboardStats)
+        const msgCount  = parseInt((document.getElementById('messagesCount')  || {}).textContent) || 0;
+        const lstCount  = parseInt((document.getElementById('listingsCount')  || {}).textContent) || 0;
+        const favCount  = parseInt((document.getElementById('favoritesCount') || {}).textContent)
+                       || (JSON.parse(localStorage.getItem('motorlink_favorites') || '[]')).length;
+
+        const dashMap = { dealer: ['dealer-dashboard.html','My Showroom','fas fa-store'], garage: ['garage-dashboard.html','My Garage','fas fa-wrench'], car_hire: ['car-hire-dashboard.html','My Fleet','fas fa-car-side'], admin: ['admin/admin.html','Admin Panel','fas fa-shield-alt'] };
+        const dash = dashMap[type];
+
+        panel.innerHTML = `
+            <div class="tpanel-header">
+                <div class="tpanel-avatar">${initials}</div>
+                <div class="tpanel-identity">
+                    <span class="tpanel-name">${name}</span>
+                    <span class="tpanel-type">${typeLabel}</span>
+                </div>
+            </div>
+            <div class="tpanel-stats">
+                <a href="chat_system.html" class="tpanel-stat">
+                    <i class="fas fa-envelope"></i>
+                    <span>Messages</span>
+                    ${msgCount > 0 ? `<span class="tpanel-badge">${msgCount > 99 ? '99+' : msgCount}</span>` : ''}
+                </a>
+                ${type !== 'dealer' ? `
+                <a href="my-listings.html" class="tpanel-stat">
+                    <i class="fas fa-car"></i>
+                    <span>Listings</span>
+                    ${lstCount > 0 ? `<span class="tpanel-badge">${lstCount}</span>` : ''}
+                </a>` : ''}
+                <a href="favorites.html" class="tpanel-stat">
+                    <i class="fas fa-heart"></i>
+                    <span>Saved</span>
+                    ${favCount > 0 ? `<span class="tpanel-badge">${favCount > 99 ? '99+' : favCount}</span>` : ''}
+                </a>
+            </div>
+            ${dash ? `<a href="${dash[0]}" class="tpanel-link"><i class="${dash[2]}"></i> ${dash[1]}</a>` : ''}
+            <a href="profile.html" class="tpanel-link"><i class="fas fa-user-cog"></i> Profile Settings</a>
+            <button class="tpanel-logout"><i class="fas fa-sign-out-alt"></i> Logout</button>
+        `;
+
+        panel.querySelector('.tpanel-logout').addEventListener('click', function() {
+            if (typeof window.logout === 'function') {
+                window.logout();
+            } else {
+                localStorage.removeItem('motorlink_user');
+                localStorage.removeItem('motorlink_authenticated');
+                localStorage.removeItem('motorlink_favorites');
+                sessionStorage.clear();
+                window.location.href = 'index.html';
+            }
+        });
+    } else {
+        panel.innerHTML = `
+            <div class="tpanel-guest">
+                <i class="fas fa-user-circle"></i>
+                <p>Sign in to your account</p>
+            </div>
+            <a href="login.html" class="tpanel-link tpanel-login"><i class="fas fa-sign-in-alt"></i> Login</a>
+            <a href="register.html" class="tpanel-link tpanel-register"><i class="fas fa-user-plus"></i> Create Account</a>
+        `;
+    }
+
+    userMenu.appendChild(panel);
+}
+
 function initMobileMenu() {
     const toggle = document.getElementById('mobileToggle');
     const nav = document.getElementById('mainNav');
@@ -92,8 +181,6 @@ function initMobileMenu() {
 
     if (tabletUserMenuToggle && userMenu) {
         tabletUserMenuToggle.addEventListener('click', function(e) {
-            if (!isTabletViewport()) return;
-
             e.preventDefault();
             e.stopPropagation();
 
@@ -101,13 +188,14 @@ function initMobileMenu() {
             closeTabletUserMenu();
 
             if (willOpen) {
+                buildTabletPanel(userMenu);
                 userMenu.classList.add('tablet-open');
                 tabletUserMenuToggle.classList.add('active');
             }
         });
 
         document.addEventListener('click', function(e) {
-            if (!isTabletViewport()) return;
+            if (!userMenu.classList.contains('tablet-open')) return;
 
             if (!userMenu.contains(e.target) && !tabletUserMenuToggle.contains(e.target)) {
                 closeTabletUserMenu();

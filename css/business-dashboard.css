@@ -525,6 +525,43 @@
     margin-bottom: 10px;
 }
 
+/* Image encouragement nudge */
+.car-placeholder.no-image-nudge {
+    background: linear-gradient(135deg, rgba(211, 84, 0, 0.08), rgba(232, 131, 58, 0.15));
+    gap: 6px;
+    cursor: default;
+}
+
+.car-placeholder.no-image-nudge i {
+    font-size: 36px;
+    margin-bottom: 4px;
+    color: var(--primary-color, #e8833a);
+}
+
+.car-placeholder.no-image-nudge p {
+    font-size: 13px;
+    margin: 0;
+    font-weight: 500;
+}
+
+.nudge-btn {
+    margin-top: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    border: 1.5px solid rgba(255,255,255,0.6);
+    background: rgba(232, 131, 58, 0.85);
+    color: #fff;
+    border-radius: 20px;
+    cursor: pointer;
+    white-space: nowrap;
+    min-height: 32px;
+}
+
+.nudge-btn:hover {
+    background: var(--primary-color, #e8833a);
+    border-color: transparent;
+}
+
 .car-details {
     padding: 20px;
 }

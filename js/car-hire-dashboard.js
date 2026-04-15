@@ -177,9 +177,12 @@ class CarHireDashboard {
                 <div class="car-image">
                     ${imageUrl ?
                         `<img src="${imageUrl}" alt="${make} ${model}">` :
-                        `<div class="car-placeholder">
-                            <i class="fas fa-car-side"></i>
-                            <p>No Image</p>
+                        `<div class="car-placeholder no-image-nudge">
+                            <i class="fas fa-camera"></i>
+                            <p>No photos yet</p>
+                            <button class="btn btn-small btn-outline-light nudge-btn" onclick="event.stopPropagation();carHireDashboard.editVehicle(${vehicle.id})">
+                                <i class="fas fa-plus"></i> Add Photos
+                            </button>
                         </div>`
                     }
                 </div>

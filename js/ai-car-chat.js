@@ -17,6 +17,7 @@ class AICarChat {
         this.maxRetryDelay = 30000; // Max 30 seconds between retries
         this.currentRetryTimeout = null;
         this.pendingMessage = null;
+        this._lastDragWasMove = false;
         this.init();
     }
 
@@ -81,28 +82,53 @@ class AICarChat {
                 this.isMinimized = true;
                 this.isOpen = false;
             }
+
+            // Restore last drag position (within viewport)
+            const savedPos = sessionStorage.getItem('ai_chat_pos');
+            if (savedPos) {
+                try {
+                    const { left, top } = JSON.parse(savedPos);
+                    const vw = window.innerWidth;
+                    const vh = window.innerHeight;
+                    const safeLeft = Math.max(0, Math.min(left, vw - 80));
+                    const safeTop  = Math.max(0, Math.min(top,  vh - 60));
+                    widget.style.bottom = 'auto';
+                    widget.style.right  = 'auto';
+                    widget.style.left   = safeLeft + 'px';
+                    widget.style.top    = safeTop  + 'px';
+                } catch (e) { /* ignore bad stored value */ }
+            }
         }
     }
 
     bindEvents() {
-        // Toggle chat header click
-        const chatHeader = document.getElementById('aiChatHeader');
-        const chatToggle = document.getElementById('aiChatToggle');
+        const chatHeader  = document.getElementById('aiChatHeader');
+        const minimizeBtn = document.getElementById('aiChatMinimizeBtn');
+        const closeBtn    = document.getElementById('aiChatCloseBtn');
         const chatMinimized = document.getElementById('aiChatMinimized');
-        const chatInput = document.getElementById('aiChatInput');
+        const chatInput   = document.getElementById('aiChatInput');
         const chatSendBtn = document.getElementById('aiChatSendBtn');
 
+        // Header click → toggle (skip when drag moved the widget or a button was clicked)
         if (chatHeader) {
             chatHeader.addEventListener('click', (e) => {
-                if (e.target.closest('.ai-chat-toggle')) return;
+                if (this._lastDragWasMove) return;
+                if (e.target.closest('.ai-chat-header-actions')) return;
                 this.toggleChat();
             });
         }
 
-        if (chatToggle) {
-            chatToggle.addEventListener('click', (e) => {
+        if (minimizeBtn) {
+            minimizeBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.minimizeChat();
+            });
+        }
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.dismissChat();
             });
         }
 
@@ -114,7 +140,7 @@ class AICarChat {
             });
         }
 
-        // Dismiss button - hide AI chat for the session
+        // Dismiss button on minimized bubble
         const dismissBtn = document.getElementById('aiChatDismiss');
         if (dismissBtn) {
             dismissBtn.addEventListener('click', (e) => {
@@ -145,6 +171,75 @@ class AICarChat {
         }
 
         this.ensureInputStatusElement();
+        this.initDrag();
+    }
+
+    initDrag() {
+        const widget = document.getElementById('aiCarChatWidget');
+        const header = document.getElementById('aiChatHeader');
+        if (!widget || !header) return;
+
+        let dragging = false;
+        let hasMoved = false;
+        let startX, startY, startLeft, startTop;
+
+        const begin = (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
+            if (e.target.closest('.ai-chat-header-actions')) return;
+            dragging = true;
+            hasMoved = false;
+
+            const rect = widget.getBoundingClientRect();
+            startLeft = rect.left;
+            startTop  = rect.top;
+            startX    = e.clientX;
+            startY    = e.clientY;
+
+            // Switch from bottom/right anchoring to top/left so transform is predictable
+            widget.style.bottom = 'auto';
+            widget.style.right  = 'auto';
+            widget.style.left   = startLeft + 'px';
+            widget.style.top    = startTop  + 'px';
+            widget.classList.add('dragging');
+            header.setPointerCapture(e.pointerId);
+        };
+
+        const move = (e) => {
+            if (!dragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+
+            if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasMoved = true;
+            if (!hasMoved) return;
+
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            let newLeft = Math.max(0, Math.min(startLeft + dx, vw - widget.offsetWidth));
+            let newTop  = Math.max(0, Math.min(startTop  + dy, vh - widget.offsetHeight));
+
+            widget.style.left = newLeft + 'px';
+            widget.style.top  = newTop  + 'px';
+        };
+
+        const end = () => {
+            if (!dragging) return;
+            dragging = false;
+            widget.classList.remove('dragging');
+
+            if (hasMoved) {
+                sessionStorage.setItem('ai_chat_pos', JSON.stringify({
+                    left: parseInt(widget.style.left),
+                    top:  parseInt(widget.style.top)
+                }));
+                this._lastDragWasMove = true;
+                setTimeout(() => { this._lastDragWasMove = false; }, 100);
+            }
+        };
+
+        header.addEventListener('pointerdown', begin);
+        header.addEventListener('pointermove', move);
+        header.addEventListener('pointerup',   end);
+        header.addEventListener('pointercancel', end);
     }
 
     toggleChat() {
@@ -156,50 +251,33 @@ class AICarChat {
     }
 
     openChat() {
-        const chatBody = document.getElementById('aiChatBody');
-        const widget = document.getElementById('aiCarChatWidget');
-        const toggleIcon = document.getElementById('aiChatToggleIcon');
+        const chatBody    = document.getElementById('aiChatBody');
+        const widget      = document.getElementById('aiCarChatWidget');
         const minimizedBtn = document.getElementById('aiChatMinimized');
 
         if (chatBody && widget) {
             chatBody.style.display = 'flex';
             widget.classList.remove('minimized');
-            if (minimizedBtn) {
-                minimizedBtn.style.display = 'none';
-            }
+            if (minimizedBtn) minimizedBtn.style.display = 'none';
             this.isMinimized = false;
             this.isOpen = true;
 
-            if (toggleIcon) {
-                toggleIcon.className = 'fas fa-times';
-            }
-
-            // Focus input
             const chatInput = document.getElementById('aiChatInput');
-            if (chatInput) {
-                setTimeout(() => chatInput.focus(), 100);
-            }
+            if (chatInput) setTimeout(() => chatInput.focus(), 100);
         }
     }
 
     minimizeChat() {
-        const chatBody = document.getElementById('aiChatBody');
-        const widget = document.getElementById('aiCarChatWidget');
-        const toggleIcon = document.getElementById('aiChatToggleIcon');
+        const chatBody    = document.getElementById('aiChatBody');
+        const widget      = document.getElementById('aiCarChatWidget');
         const minimizedBtn = document.getElementById('aiChatMinimized');
 
         if (chatBody && widget) {
             chatBody.style.display = 'none';
             widget.classList.add('minimized');
-            if (minimizedBtn) {
-                minimizedBtn.style.display = 'flex';
-            }
+            if (minimizedBtn) minimizedBtn.style.display = 'flex';
             this.isMinimized = true;
             this.isOpen = false;
-
-            if (toggleIcon) {
-                toggleIcon.className = 'fas fa-comments';
-            }
         }
     }
 

@@ -14,9 +14,9 @@
     <link rel="stylesheet" href="css/mobile-page-indicator.css">
     <style>
         .contact-page {
-            max-width: 980px;
+            max-width: 1200px;
             margin: 30px auto;
-            padding: 0 16px;
+            padding: 0 20px;
         }
         .contact-hero {
             background: linear-gradient(135deg, #134e4a 0%, #0f766e 100%);
@@ -37,7 +37,8 @@
         .contact-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
+            gap: 16px;
+            padding: 0 4px;
         }
         .contact-card {
             background: #fff;
@@ -86,6 +87,8 @@
         @media (max-width: 768px) {
             .contact-grid {
                 grid-template-columns: 1fr;
+                padding: 0;
+                gap: 12px;
             }
             .contact-hero {
                 padding: 24px 18px;
@@ -115,6 +118,9 @@
                         <a href="register.html" class="btn btn-primary btn-sm"><i class="fas fa-user-plus"></i> Register</a>
                     </div>
                 </div>
+                <button class="tablet-user-menu-toggle" id="tabletUserMenuToggle" aria-label="Toggle account menu">
+                    <i class="fas fa-ellipsis-v"></i>
+                </button>
                 <button class="mobile-menu-toggle" id="mobileToggle" aria-label="Toggle mobile menu">
                     <i class="fas fa-bars"></i>
                 </button>

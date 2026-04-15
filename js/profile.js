@@ -49,8 +49,6 @@ function getPasswordStrength(pwd) {
 }
 
 class ProfileManager {
-
-class ProfileManager {
     constructor() {
         this.currentUser = null;
         this.userListings = [];
@@ -107,23 +105,69 @@ class ProfileManager {
     }
 
     populateProfileHeader(profile) {
-        const profileName = document.getElementById('profileName');
+        const profileName  = document.getElementById('profileName');
         const profileEmail = document.getElementById('profileEmail');
         const profilePhone = document.getElementById('profilePhone');
-        const profileCity = document.getElementById('profileCity');
+        const profileCity  = document.getElementById('profileCity');
 
         const displayName = profile.full_name || profile.name || 'User';
 
-        if (profileName) profileName.textContent = displayName;
-        if (profileEmail) profileEmail.textContent = profile.email || 'No email provided';
-        if (profilePhone) profilePhone.textContent = profile.phone || 'No phone provided';
-        if (profileCity) profileCity.textContent = profile.city || 'Not specified';
+        if (profileName)  profileName.textContent  = displayName;
+        if (profileEmail) profileEmail.textContent  = profile.email || 'No email provided';
+        if (profilePhone) profilePhone.textContent  = profile.phone || 'No phone provided';
+        if (profileCity)  profileCity.textContent   = profile.city  || 'Not specified';
+
+        // WhatsApp row
+        const waRow  = document.getElementById('profileWhatsappRow');
+        const waSpan = document.getElementById('profileWhatsapp');
+        if (waRow && waSpan && profile.whatsapp) {
+            waSpan.textContent  = profile.whatsapp;
+            waRow.style.display = '';
+        }
+
+        // Member since
+        const sinceRow  = document.getElementById('profileMemberSince');
+        const sinceSpan = document.getElementById('profileJoined');
+        if (sinceRow && sinceSpan && profile.created_at) {
+            const d = new Date(profile.created_at);
+            sinceSpan.textContent  = 'Member since ' + d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+            sinceRow.style.display = '';
+        }
+
+        // Bio preview
+        const bioRow  = document.getElementById('profileBioRow');
+        const bioSpan = document.getElementById('profileBio');
+        if (bioRow && bioSpan && profile.bio) {
+            bioSpan.textContent  = profile.bio.length > 120 ? profile.bio.substring(0, 120) + '…' : profile.bio;
+            bioRow.style.display = '';
+        }
+
+        // User type badge
+        const badge = document.getElementById('profileTypeBadge');
+        if (badge && profile.type) {
+            const labels = { individual: 'Member', dealer: 'Dealer', garage: 'Garage', car_hire: 'Car Hire', admin: 'Admin' };
+            badge.textContent      = labels[profile.type] || profile.type;
+            badge.style.display    = 'inline-block';
+        }
 
         // Update navigation elements
         const userName = document.getElementById('userName');
         if (userName) userName.textContent = displayName;
 
-        // Update avatar with initials
+        // Avatar initials in profile-header
+        const avatarDiv = document.getElementById('profileAvatar');
+        if (avatarDiv) {
+            const parts    = displayName.trim().split(/\s+/).filter(n => n.length > 0);
+            let initials   = '';
+            if (parts.length >= 2) initials = parts[0][0] + parts[parts.length - 1][0];
+            else if (parts.length === 1) initials = parts[0].substring(0, 2);
+            initials = initials.toUpperCase();
+            avatarDiv.innerHTML = initials
+                ? `<span style="color:white;font-weight:700;font-size:36px;">${escHtml(initials)}</span>`
+                : '<i class="fas fa-user"></i>';
+        }
+
+        // Update nav avatar with initials
         this.updateUserAvatar(displayName);
     }
 
@@ -285,10 +329,64 @@ class ProfileManager {
                 document.getElementById('pendingListings').textContent = pendingListings;
                 document.getElementById('totalViews').textContent = totalViews;
 
+                this.checkDormantAccount(totalListings);
                 this.loadRecentActivity(listings);
             }
         } catch (error) {
         }
+    }
+
+    checkDormantAccount(totalListings) {
+        const user = this.currentUser;
+        if (!user) return;
+        const type = user.type;
+        if (type !== 'dealer' && type !== 'car_hire') return;
+        if (totalListings > 0) return;
+
+        const alert  = document.getElementById('dormantAlert');
+        const title  = document.getElementById('dormantTitle');
+        const todos  = document.getElementById('dormantTodos');
+        if (!alert || !title || !todos) return;
+
+        const isCarHire  = type === 'car_hire';
+        const typeLabel  = isCarHire ? 'car hire' : 'dealership';
+        const listingUrl = isCarHire ? 'car-hire.html' : 'sell.html';
+        const dashUrl    = isCarHire ? 'car-hire-dashboard.html' : 'dealer-dashboard.html';
+
+        title.textContent = `Your ${typeLabel} account has no ${isCarHire ? 'fleet vehicles' : 'car listings'} yet`;
+
+        const items = [
+            {
+                icon: 'fas fa-plus',
+                html: isCarHire
+                    ? `<a href="${listingUrl}">Add your first hire vehicle</a> so customers can find and book your fleet.`
+                    : `<a href="${listingUrl}">Create your first car listing</a> to start reaching buyers across Malawi.`
+            },
+            {
+                icon: 'fas fa-tachometer-alt',
+                html: `Visit your <a href="${dashUrl}">${isCarHire ? 'Car Hire' : 'Dealer'} Dashboard</a> to manage your ${isCarHire ? 'fleet and bookings' : 'listings and leads'}.`
+            },
+            {
+                icon: 'fas fa-user-edit',
+                html: `Complete your <a href="#" onclick="document.querySelector('[onclick*=\\'edit\\']').click();return false;">profile details</a> — a complete profile attracts more customers.`
+            }
+        ];
+
+        if (!isCarHire) {
+            items.push({
+                icon: 'fas fa-share-alt',
+                html: `Share your dealer profile link with potential buyers on social media to grow your audience.`
+            });
+        }
+
+        todos.innerHTML = items.map(item => `
+            <li>
+                <span class="dtodo-icon"><i class="${escHtml(item.icon)}"></i></span>
+                <span>${item.html}</span>
+            </li>
+        `).join('');
+
+        alert.style.display = 'block';
     }
 
     loadRecentActivity(listings) {
@@ -415,26 +513,24 @@ class ProfileManager {
         const passwordForm = document.getElementById('passwordForm');
         if (passwordForm) {
             passwordForm.addEventListener('submit', (e) => this.handlePasswordChange(e));
-                }
-
-                const newPwd = document.getElementById('newPassword');
-                if (newPwd) newPwd.addEventListener('input', () => this.updatePasswordStrength(newPwd.value));
-            }
-
-            updatePasswordStrength(pwd) {
-                const bar  = document.getElementById('strengthFill');
-                const text = document.getElementById('strengthText');
-                const wrap = document.getElementById('passwordStrengthWrap');
-                if (!bar || !text || !wrap) return;
-                if (!pwd) { wrap.style.display = 'none'; return; }
-                wrap.style.display = 'block';
-                const s = getPasswordStrength(pwd);
-                bar.style.width       = s.width;
-                bar.style.background  = s.colour;
-                text.textContent      = s.label;
-                text.style.color      = s.colour;
-            }
         }
+
+        const newPwd = document.getElementById('newPassword');
+        if (newPwd) newPwd.addEventListener('input', () => this.updatePasswordStrength(newPwd.value));
+    }
+
+    updatePasswordStrength(pwd) {
+        const bar  = document.getElementById('strengthFill');
+        const text = document.getElementById('strengthText');
+        const wrap = document.getElementById('passwordStrengthWrap');
+        if (!bar || !text || !wrap) return;
+        if (!pwd) { wrap.style.display = 'none'; return; }
+        wrap.style.display = 'block';
+        const s = getPasswordStrength(pwd);
+        bar.style.width      = s.width;
+        bar.style.background = s.colour;
+        text.textContent     = s.label;
+        text.style.color     = s.colour;
     }
 
     async handleProfileUpdate(e) {
@@ -573,7 +669,6 @@ function confirmDeleteAccount() {
     }
 }
 
-async function deleteAccount() {
 async function deleteAccount(password) {
     const btn      = document.getElementById('confirmDeleteBtn');
     const origText = btn ? btn.innerHTML : '';

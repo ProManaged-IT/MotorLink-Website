@@ -1742,9 +1742,11 @@
 
 /* Key Features */
 .key-features {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 12px;
+    justify-content: center;
+    align-items: stretch;
 }
 
 .feature-box {
@@ -1757,6 +1759,8 @@
     align-items: center;
     gap: 12px;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex: 0 1 200px;
+    min-width: 150px;
 }
 
 .feature-box:hover {
@@ -2738,8 +2742,9 @@
     
     /* Enhance key features styling on mobile to match showroom-stats - FIX OVERFLOW */
     .key-features {
-        display: grid !important;
-        grid-template-columns: repeat(2, 1fr) !important;
+        display: flex !important;
+        flex-wrap: wrap !important;
+        justify-content: center !important;
         gap: 10px !important;
         margin: 16px auto 0;
         max-width: 100%;
@@ -2969,8 +2974,9 @@
     .key-features {
         gap: 8px;
         max-width: 100%;
-        display: grid !important;
-        grid-template-columns: repeat(2, 1fr) !important;
+        display: flex !important;
+        flex-wrap: wrap !important;
+        justify-content: center !important;
         margin-top: 12px !important;
     }
 
