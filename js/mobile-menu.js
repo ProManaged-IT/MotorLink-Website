@@ -41,6 +41,42 @@ function initMobileMenu() {
     const toggle = document.getElementById('mobileToggle');
     const nav = document.getElementById('mainNav');
     const userMenu = document.getElementById('userMenu');
+    let tabletUserMenuToggle = document.getElementById('tabletUserMenuToggle');
+
+    const MOBILE_MAX_WIDTH = 768;
+    const TABLET_MAX_WIDTH = 1024;
+    const DESKTOP_MIN_WIDTH = 1025;
+
+    const isMobileViewport = () => window.innerWidth <= MOBILE_MAX_WIDTH;
+    const isTabletViewport = () => window.innerWidth > MOBILE_MAX_WIDTH && window.innerWidth <= TABLET_MAX_WIDTH;
+    const isDesktopViewport = () => window.innerWidth >= DESKTOP_MIN_WIDTH;
+
+    const closeTabletUserMenu = () => {
+        if (userMenu) {
+            userMenu.classList.remove('tablet-open');
+        }
+        if (tabletUserMenuToggle) {
+            tabletUserMenuToggle.classList.remove('active');
+        }
+    };
+
+    // Ensure tablet account toggle exists on pages that have user menu but no explicit button.
+    if (!tabletUserMenuToggle && userMenu) {
+        const headerContainer = userMenu.closest('.header-container');
+        if (headerContainer) {
+            tabletUserMenuToggle = document.createElement('button');
+            tabletUserMenuToggle.className = 'tablet-user-menu-toggle';
+            tabletUserMenuToggle.id = 'tabletUserMenuToggle';
+            tabletUserMenuToggle.setAttribute('aria-label', 'Toggle account menu');
+            tabletUserMenuToggle.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
+
+            if (toggle && toggle.parentNode === headerContainer) {
+                headerContainer.insertBefore(tabletUserMenuToggle, toggle);
+            } else {
+                headerContainer.appendChild(tabletUserMenuToggle);
+            }
+        }
+    }
 
     const cleanupTransientOverlayState = () => {
         const staleBackdrop = document.getElementById('menu-backdrop');
@@ -54,6 +90,37 @@ function initMobileMenu() {
     cleanupTransientOverlayState();
     window.addEventListener('pageshow', cleanupTransientOverlayState);
 
+    if (tabletUserMenuToggle && userMenu) {
+        tabletUserMenuToggle.addEventListener('click', function(e) {
+            if (!isTabletViewport()) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const willOpen = !userMenu.classList.contains('tablet-open');
+            closeTabletUserMenu();
+
+            if (willOpen) {
+                userMenu.classList.add('tablet-open');
+                tabletUserMenuToggle.classList.add('active');
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!isTabletViewport()) return;
+
+            if (!userMenu.contains(e.target) && !tabletUserMenuToggle.contains(e.target)) {
+                closeTabletUserMenu();
+            }
+        });
+
+        window.addEventListener('resize', function() {
+            if (!isTabletViewport()) {
+                closeTabletUserMenu();
+            }
+        });
+    }
+
     if (!toggle || !nav) {
         return;
     }
@@ -64,8 +131,8 @@ function initMobileMenu() {
     // Cleanup any existing clones before adding new ones
     cleanupMobileMenuClones(nav);
 
-    // Clone user menu items into nav for mobile and smaller tablets
-    if (userMenu && window.innerWidth <= 950) {
+    // Clone user menu items into nav for mobile drawer only
+    if (userMenu && isMobileViewport()) {
         const userInfo = userMenu.querySelector('#userInfo');
         const guestMenu = userMenu.querySelector('#guestMenu');
 
@@ -211,7 +278,11 @@ function initMobileMenu() {
     window.addEventListener('resize', function() {
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(function() {
-            const isDesktop = window.innerWidth > 950;
+            const isDesktop = isDesktopViewport();
+
+            if (!isTabletViewport()) {
+                closeTabletUserMenu();
+            }
             
             // Close menu if switching to desktop
             if (isDesktop && nav.classList.contains('active')) {
@@ -322,7 +393,7 @@ function initMobileMenu() {
 // ============================================================================
 function moveDescriptionsOnMobile() {
     // Only run on mobile and smaller tablet screens
-    if (window.innerWidth > 950) return;
+    if (window.innerWidth > 1024) return;
 
     // Handle showroom.html - move dealer-description outside header
     const dealerDescription = document.getElementById('dealerDescription');

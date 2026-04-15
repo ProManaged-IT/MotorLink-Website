@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Us - MotorLink Malawi</title>
+    <meta name="description" content="Contact MotorLink Malawi support for help with listings, accounts, and safety reports.">
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/mobile-enhancements.css">
+    <link rel="stylesheet" href="css/mobile-redesign.css">
+    <link rel="stylesheet" href="css/price-redesign.css">
+    <link rel="stylesheet" href="css/mobile-footer-optimization.css">
+    <link rel="stylesheet" href="css/mobile-page-indicator.css">
+    <style>
+        .contact-page {
+            max-width: 980px;
+            margin: 30px auto;
+            padding: 0 16px;
+        }
+        .contact-hero {
+            background: linear-gradient(135deg, #134e4a 0%, #0f766e 100%);
+            color: #fff;
+            border-radius: 14px;
+            padding: 36px 28px;
+            margin-bottom: 20px;
+        }
+        .contact-hero h1 {
+            margin: 0 0 8px 0;
+            font-size: 2rem;
+        }
+        .contact-hero p {
+            margin: 0;
+            line-height: 1.6;
+            opacity: 0.95;
+        }
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .contact-card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            padding: 18px;
+        }
+        .contact-card h2,
+        .contact-card h3 {
+            margin: 0 0 10px 0;
+            color: #115e59;
+        }
+        .contact-card p,
+        .contact-card li {
+            color: #374151;
+            line-height: 1.7;
+        }
+        .contact-card a {
+            color: #0f766e;
+            font-weight: 600;
+        }
+        .contact-full {
+            grid-column: 1 / -1;
+        }
+        .contact-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            gap: 8px;
+        }
+        .anchor-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .anchor-links a {
+            text-decoration: none;
+            border: 1px solid #d1d5db;
+            border-radius: 999px;
+            padding: 8px 14px;
+            color: #1f2937;
+            background: #fff;
+        }
+        @media (max-width: 768px) {
+            .contact-grid {
+                grid-template-columns: 1fr;
+            }
+            .contact-hero {
+                padding: 24px 18px;
+            }
+            .contact-hero h1 {
+                font-size: 1.6rem;
+            }
+        }
+    </style>
+</head>
+<body id="top">
+    <header class="header">
+        <div class="container">
+            <div class="header-container">
+                <a href="index.html" class="logo"><i class="fas fa-car"></i> MotorLink</a>
+                <nav class="nav" id="mainNav">
+                    <a href="index.html">Home</a>
+                    <a href="car-database.html">Know Your Car</a>
+                    <a href="garages.html">Garages</a>
+                    <a href="dealers.html">Dealers</a>
+                    <a href="car-hire.html">Car Hire</a>
+                    <a href="sell.html">Sell Car</a>
+                </nav>
+                <div class="user-menu" id="userMenu">
+                    <div id="guestMenu">
+                        <a href="login.html" class="btn btn-outline-primary btn-sm"><i class="fas fa-sign-in-alt"></i> Login</a>
+                        <a href="register.html" class="btn btn-primary btn-sm"><i class="fas fa-user-plus"></i> Register</a>
+                    </div>
+                </div>
+                <button class="mobile-menu-toggle" id="mobileToggle" aria-label="Toggle mobile menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="contact-page">
+        <section class="contact-hero">
+            <h1><i class="fas fa-headset"></i> Contact MotorLink Support</h1>
+            <p>
+                Reach our team for account support, listing issues, safety reports, and business onboarding guidance.
+            </p>
+        </section>
+
+        <nav class="anchor-links" aria-label="Contact page anchors">
+            <a href="#channels">Support Channels</a>
+            <a href="#hours-location">Hours and Location</a>
+            <a href="#common-requests">Common Requests</a>
+        </nav>
+
+        <section class="contact-grid">
+            <article class="contact-card" id="channels">
+                <h2>Support Channels</h2>
+                <ul class="contact-list">
+                    <li><strong>Support Email:</strong> <a class="js-support-email-link" href="mailto:support@motorlink.mw"><span class="js-support-email-text">support@motorlink.mw</span></a></li>
+                    <li><strong>Main Email:</strong> <a class="js-main-email-link" href="mailto:info@motorlink.mw"><span class="js-main-email-text">info@motorlink.mw</span></a></li>
+                    <li><strong>Phone:</strong> <a class="js-phone-link" href="tel:+265991234567"><span class="js-phone-text">+265 991 234 567</span></a></li>
+                    <li><strong>WhatsApp:</strong> <a class="js-whatsapp-link" href="https://wa.me/265991234567" target="_blank" rel="noopener"><span class="js-whatsapp-text">+265 991 234 567</span></a></li>
+                </ul>
+            </article>
+
+            <article class="contact-card" id="hours-location">
+                <h2>Hours and Location</h2>
+                <ul class="contact-list">
+                    <li><strong>Address:</strong> <span class="js-address-text">MotorLink Malawi</span></li>
+                    <li><strong>Area:</strong> <span class="js-location-text">Malawi</span></li>
+                    <li><strong>Weekdays:</strong> <span class="js-hours-weekday-text">Mon - Fri: 08:00 - 17:00</span></li>
+                    <li><strong>Saturday:</strong> <span class="js-hours-saturday-text">Sat: 09:00 - 13:00</span></li>
+                    <li><strong>Sunday:</strong> <span class="js-hours-sunday-text">Sun: Closed</span></li>
+                </ul>
+            </article>
+
+            <article class="contact-card contact-full" id="common-requests">
+                <h3>What to include when contacting support</h3>
+                <ul>
+                    <li>Listing URL or listing ID if your request is about a vehicle post.</li>
+                    <li>Your account email used for MotorLink login or business registration.</li>
+                    <li>Relevant screenshots for technical issues or suspicious activity.</li>
+                    <li>For urgent fraud reports, include timeline and payment channel details.</li>
+                </ul>
+                <p>
+                    This helps our team resolve issues faster and improve response quality.
+                </p>
+            </article>
+        </section>
+    </main>
+
+    <footer class="footer" role="contentinfo">
+        <div class="container"></div>
+    </footer>
+
+    <script src="config.js"></script>
+    <script src="js/mobile-menu.js"></script>
+    <script src="js/support-pages.js"></script>
+    <script src="js/footer-loader.js"></script>
+    <script src="js/page-transitions.js"></script>
+</body>
+</html>

@@ -1492,6 +1492,7 @@ try {
         case 'mark_read': requireAuth(); markMessagesRead($db); break;
         case 'check_new_messages': requireAuth(); checkNewMessages($db); break;
         case 'delete_conversation': requireAuth(); deleteConversation($db); break;
+        case 'archive_conversation': requireAuth(); archiveConversation($db); break;
         case 'get_auto_reply_settings': requireAuth(); getAutoReplySettings($db); break;
         case 'update_auto_reply_settings': requireAuth(); updateAutoReplySettings($db); break;
         
@@ -2741,35 +2742,34 @@ function serveImage($db) {
 /**
  * Check authentication status
  */
-if (!function_exists('checkAuth')) {
-    function checkAuth() {
-        // Check for session timeout (30 minutes of inactivity)
-        $sessionTimeout = 1800; // 30 minutes in seconds
+function checkAuth() {
+    // Check for session timeout (30 minutes of inactivity)
+    $sessionTimeout = 1800; // 30 minutes in seconds
 
-        if (isLoggedIn()) {
-            // Check for session timeout
-            if (isset($_SESSION['last_activity'])) {
-                $inactiveTime = time() - $_SESSION['last_activity'];
+    if (isLoggedIn()) {
+        // Check for session timeout
+        if (isset($_SESSION['last_activity'])) {
+            $inactiveTime = time() - $_SESSION['last_activity'];
 
-                if ($inactiveTime > $sessionTimeout) {
-                    // Session has expired
-                    session_unset();
-                    session_destroy();
+            if ($inactiveTime > $sessionTimeout) {
+                // Session has expired
+                session_unset();
+                session_destroy();
 
-                    sendSuccess([
-                        'authenticated' => false,
-                        'message' => 'Session expired due to inactivity'
-                    ]);
-                }
+                sendSuccess([
+                    'authenticated' => false,
+                    'message' => 'Session expired due to inactivity'
+                ]);
+                return;
             }
-
-            // Update last activity time
-            $_SESSION['last_activity'] = time();
-
-            sendSuccess(['authenticated' => true, 'user' => getCurrentUser()]);
-        } else {
-            sendSuccess(['authenticated' => false]);
         }
+
+        // Update last activity time
+        $_SESSION['last_activity'] = time();
+
+        sendSuccess(['authenticated' => true, 'user' => getCurrentUser()]);
+    } else {
+        sendSuccess(['authenticated' => false]);
     }
 }
 
@@ -6266,6 +6266,38 @@ function deleteConversation($db) {
         $db->rollBack();
         error_log("deleteConversation error: " . $e->getMessage());
         sendError('Failed to delete conversation', 500);
+    }
+}
+
+function archiveConversation($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendError('POST method required', 405);
+    }
+
+    $user = getCurrentUser();
+    $conversationId = $_GET['conversation_id'] ?? null;
+    $archive = isset($_GET['archive']) ? (int)$_GET['archive'] : 1;
+
+    if (!$conversationId) {
+        sendError('Conversation ID required', 400);
+    }
+
+    try {
+        applyRuntimeSchemaChange($db, "ALTER TABLE conversations ADD COLUMN archived TINYINT(1) DEFAULT 0");
+
+        $stmt = $db->prepare("SELECT id FROM conversations WHERE id = ? AND (buyer_id = ? OR seller_id = ?)");
+        $stmt->execute([$conversationId, $user['id'], $user['id']]);
+        if (!$stmt->fetch()) {
+            sendError('Conversation not found', 404);
+        }
+
+        $stmt = $db->prepare("UPDATE conversations SET archived = ? WHERE id = ?");
+        $stmt->execute([$archive ? 1 : 0, $conversationId]);
+
+        sendSuccess(['message' => $archive ? 'Conversation archived' : 'Conversation unarchived']);
+    } catch (Exception $e) {
+        error_log("archiveConversation error: " . $e->getMessage());
+        sendError('Failed to archive conversation', 500);
     }
 }
 

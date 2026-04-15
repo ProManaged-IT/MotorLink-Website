@@ -4,6 +4,10 @@
     --chat-bottom-gutter: 18px;
 }
 
+.conversation-item.archived {
+    opacity: 0.65;
+}
+
 /* Keep the chat experience fully within the viewport. */
 html,
 body {
@@ -115,6 +119,8 @@ body {
     top: 50%;
     transform: translateY(-50%);
     color: #999;
+    z-index: 2;
+    pointer-events: none;
 }
 
 .search-conversations input {

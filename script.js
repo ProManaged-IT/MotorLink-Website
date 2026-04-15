@@ -4453,6 +4453,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleStickyScroll() {
         const scrollY = window.scrollY || window.pageYOffset;
         const isMobile = window.innerWidth <= 768;
+        const isTabletOrMobile = window.innerWidth <= 1024;
         
         stickyElements.forEach(config => {
             const elements = document.querySelectorAll(config.selector);
@@ -4460,6 +4461,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (element) {
                     // Skip dealers-filters on mobile - it should be hidden
                     if (config.selector === '.dealers-filters' && isMobile) {
+                        return;
+                    }
+
+                    // Tablet/mobile uses drawer/toggle filters; do not attach sticky scrolled class.
+                    if (isTabletOrMobile && (
+                        config.selector === '.sidebar' ||
+                        config.selector === '.dealers-filters' ||
+                        config.selector === '.garage-filters-container' ||
+                        config.selector === '.filter-section'
+                    )) {
+                        element.classList.remove('scrolled');
                         return;
                     }
                     

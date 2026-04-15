@@ -13,8 +13,15 @@
     <link rel="stylesheet" href="../css/mobile-page-indicator.css">
 </head>
 <body>
-    <!-- Login Section -->
-    <div id="loginSection" class="login-container">
+    <!-- Loading spinner shown while checking auth -->
+    <div id="adminAuthLoader" style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f8f9fa;">
+        <div style="text-align:center;">
+            <i class="fas fa-spinner fa-spin" style="font-size:32px;color:#00c853;"></i>
+            <p style="margin-top:12px;color:#666;font-size:14px;">Loading dashboard...</p>
+        </div>
+    </div>
+    <!-- Login Section (hidden until auth check completes) -->
+    <div id="loginSection" class="login-container" style="display: none;">
         <div class="login-form">
             <div class="login-header">
                 <div class="logo">
@@ -106,6 +113,12 @@
 
     <!-- Admin Dashboard -->
     <div id="adminDashboard" style="display: none;">
+        <!-- Mobile sidebar toggle -->
+        <button class="admin-sidebar-toggle" id="mobileSidebarToggle" aria-label="Open menu">
+            <i class="fas fa-bars"></i>
+        </button>
+        <!-- Mobile overlay -->
+        <div class="mobile-overlay" id="mobileOverlay"></div>
         <!-- Sidebar -->
         <div class="admin-sidebar" id="adminSidebar">
             <div class="sidebar-header">

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+
+    <!-- Homepage - Highest Priority -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>1.0</priority>
+    </url>
+
+    <!-- Sell Your Car -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/sell.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.9</priority>
+    </url>
+
+    <!-- Car Dealers Directory -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/dealers.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.9</priority>
+    </url>
+
+    <!-- Garages & Service Centers -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/garages.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.9</priority>
+    </url>
+
+    <!-- Car Hire & Rental -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/car-hire.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.9</priority>
+    </url>
+
+    <!-- Know Your Car / VIN Decoder / Car Database -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/car-database.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+
+    <!-- Car Detail Page (template) -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/car.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.8</priority>
+    </url>
+
+    <!-- Showroom Page -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/showroom.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>daily</changefreq>
+        <priority>0.7</priority>
+    </url>
+
+    <!-- Login -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/login.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.5</priority>
+    </url>
+
+    <!-- Register -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/register.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+
+    <!-- Business Onboarding -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/onboarding/onboarding.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.7</priority>
+    </url>
+
+    <!-- Terms of Service -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/terms.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>yearly</changefreq>
+        <priority>0.3</priority>
+    </url>
+
+    <!-- Cookie Policy -->
+    <url>
+        <loc>https://promanaged-it.com/motorlink/cookie-policy.html</loc>
+        <lastmod>2025-12-01</lastmod>
+        <changefreq>yearly</changefreq>
+        <priority>0.2</priority>
+    </url>
+
+</urlset>

@@ -58,6 +58,21 @@ class AICarChat {
         } else {
             // Show widget for logged-in users
             widget.style.display = 'block';
+            // Check if dismissed this session
+            if (sessionStorage.getItem('ai_chat_dismissed') === '1') {
+                widget.classList.add('dismissed');
+                // Create restore button
+                if (!document.getElementById('aiChatRestore')) {
+                    const restoreBtn = document.createElement('button');
+                    restoreBtn.id = 'aiChatRestore';
+                    restoreBtn.className = 'ai-chat-restore';
+                    restoreBtn.title = 'Show AI Assistant';
+                    restoreBtn.innerHTML = '<i class="fas fa-robot"></i>';
+                    restoreBtn.addEventListener('click', () => this.restoreChat());
+                    document.body.appendChild(restoreBtn);
+                }
+                return;
+            }
             // Ensure initial state is minimized
             const chatBody = document.getElementById('aiChatBody');
             if (chatBody) {
@@ -96,6 +111,16 @@ class AICarChat {
                 e.stopPropagation();
                 e.preventDefault();
                 this.openChat();
+            });
+        }
+
+        // Dismiss button - hide AI chat for the session
+        const dismissBtn = document.getElementById('aiChatDismiss');
+        if (dismissBtn) {
+            dismissBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                this.dismissChat();
             });
         }
 
@@ -176,6 +201,34 @@ class AICarChat {
                 toggleIcon.className = 'fas fa-comments';
             }
         }
+    }
+
+    dismissChat() {
+        const widget = document.getElementById('aiCarChatWidget');
+        if (widget) {
+            widget.classList.add('dismissed');
+            sessionStorage.setItem('ai_chat_dismissed', '1');
+            // Create restore button
+            if (!document.getElementById('aiChatRestore')) {
+                const restoreBtn = document.createElement('button');
+                restoreBtn.id = 'aiChatRestore';
+                restoreBtn.className = 'ai-chat-restore';
+                restoreBtn.title = 'Show AI Assistant';
+                restoreBtn.innerHTML = '<i class="fas fa-robot"></i>';
+                restoreBtn.addEventListener('click', () => this.restoreChat());
+                document.body.appendChild(restoreBtn);
+            }
+        }
+    }
+
+    restoreChat() {
+        const widget = document.getElementById('aiCarChatWidget');
+        if (widget) {
+            widget.classList.remove('dismissed');
+            sessionStorage.removeItem('ai_chat_dismissed');
+        }
+        const restoreBtn = document.getElementById('aiChatRestore');
+        if (restoreBtn) restoreBtn.remove();
     }
 
     updateCharCount(count) {

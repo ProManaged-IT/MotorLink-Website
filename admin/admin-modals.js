@@ -963,3 +963,83 @@ async function submitAddModel() {
         admin.showAlert('error', 'Error adding model: ' + error.message);
     }
 }
+
+// ===== ADD LOCATION MODAL =====
+function showAddLocationModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-map-marker-alt"></i> Add New Location</h3>
+                <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="addLocationForm" class="modal-form">
+                    <div class="form-group">
+                        <label for="add-location-name">Location Name *</label>
+                        <input type="text" id="add-location-name" name="name" required class="form-control" placeholder="e.g., Lilongwe">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="add-location-region">Region</label>
+                            <select id="add-location-region" name="region" class="form-control">
+                                <option value="">Select Region</option>
+                                <option value="Central">Central</option>
+                                <option value="Northern">Northern</option>
+                                <option value="Southern">Southern</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="add-location-type">Type</label>
+                            <select id="add-location-type" name="type" class="form-control">
+                                <option value="city">City</option>
+                                <option value="district">District</option>
+                                <option value="town">Town</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="add-location-district">District (optional)</label>
+                        <input type="text" id="add-location-district" name="district" class="form-control" placeholder="e.g., Lilongwe District">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitAddLocation()"><i class="fas fa-save"></i> Add Location</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+async function submitAddLocation() {
+    const form = document.getElementById('addLocationForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    const formData = {
+        name: document.getElementById('add-location-name').value.trim(),
+        region: document.getElementById('add-location-region').value || null,
+        district: document.getElementById('add-location-district').value.trim() || null,
+        type: document.getElementById('add-location-type').value || 'city'
+    };
+
+    try {
+        const response = await admin.apiCall('add_location', 'POST', formData);
+        if (response.success) {
+            admin.showAlert('success', 'Location added successfully!');
+            document.querySelector('.modal-overlay.active').remove();
+            admin.loadLocations();
+        } else {
+            admin.showAlert('error', response.message || 'Failed to add location');
+        }
+    } catch (error) {
+        admin.showAlert('error', 'Error adding location: ' + error.message);
+    }
+}

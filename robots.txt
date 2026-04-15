@@ -1,0 +1,54 @@
+# MotorLink Malawi - robots.txt
+# https://promanaged-it.com/motorlink/
+
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://promanaged-it.com/motorlink/sitemap.xml
+
+# Allow all key pages
+Allow: /index.html
+Allow: /sell.html
+Allow: /dealers.html
+Allow: /garages.html
+Allow: /car-hire.html
+Allow: /car-database.html
+Allow: /car.html
+Allow: /showroom.html
+Allow: /login.html
+Allow: /register.html
+Allow: /onboarding/
+Allow: /css/
+Allow: /js/
+Allow: /assets/
+
+# Block admin and internal pages from search engines
+Disallow: /admin/
+Disallow: /api.php
+Disallow: /proxy.php
+Disallow: /config.js
+Disallow: /logs/
+Disallow: /scripts/
+Disallow: /database/
+
+# Block user-specific pages (not useful for search)
+Disallow: /profile.html
+Disallow: /my-listings.html
+Disallow: /favorites.html
+Disallow: /chat_system.html
+Disallow: /guest-manage.html
+Disallow: /forgot-password.html
+Disallow: /reset-password.php
+Disallow: /verify-email.php
+Disallow: /verify-listing-email.html
+
+# Block internal dashboards
+Disallow: /dealer-dashboard.html
+Disallow: /garage-dashboard.html
+Disallow: /car-hire-dashboard.html
+Disallow: /car-hire-company.html
+Disallow: /maintenance.html
+
+# Crawl-delay for polite crawling
+Crawl-delay: 1

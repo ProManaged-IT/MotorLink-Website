@@ -173,6 +173,11 @@ class ChatManager {
             deleteBtn.addEventListener('click', () => this.deleteConversation());
         }
 
+        const archiveBtn = document.getElementById('archiveConversationBtn');
+        if (archiveBtn) {
+            archiveBtn.addEventListener('click', () => this.archiveConversation());
+        }
+
         // Modal events
         this.bindModalEvents();
 
@@ -258,7 +263,7 @@ class ChatManager {
         }
 
         conversationsList.innerHTML = this.conversations.map(conv => `
-            <div class="conversation-item ${conv.unread_count > 0 ? 'unread' : ''} ${this.currentConversation?.id === conv.id ? 'active' : ''}"
+            <div class="conversation-item ${conv.unread_count > 0 ? 'unread' : ''} ${this.currentConversation?.id === conv.id ? 'active' : ''} ${conv.archived ? 'archived' : ''}"
                  data-id="${conv.id}"
                  onclick="chatManager.openConversation(${conv.id})">
                 <div class="conversation-avatar">
@@ -268,7 +273,7 @@ class ChatManager {
                 </div>
                 <div class="conversation-details">
                     <div class="conversation-header">
-                        <span class="conversation-name">${this.escapeHtml(conv.other_user_name || 'Unknown User')}</span>
+                        <span class="conversation-name">${conv.archived ? '<i class="fas fa-archive" style="font-size:11px;opacity:0.5;margin-right:4px"></i>' : ''}${this.escapeHtml(conv.other_user_name || 'Unknown User')}</span>
                         <span class="conversation-time">${this.formatTime(conv.last_message_at)}</span>
                     </div>
                     <div class="conversation-preview">${this.escapeHtml(conv.last_message || 'No messages yet')}</div>
@@ -345,6 +350,15 @@ class ChatManager {
 
         // Mark as read
         this.markAsRead(conversationId);
+
+        // Update archive button state
+        const archiveBtn = document.getElementById('archiveConversationBtn');
+        if (archiveBtn) {
+            archiveBtn.title = this.currentConversation.archived ? 'Unarchive Conversation' : 'Archive Conversation';
+            archiveBtn.innerHTML = this.currentConversation.archived
+                ? '<i class="fas fa-box-open"></i>'
+                : '<i class="fas fa-archive"></i>';
+        }
     }
 
     async loadMessages(conversationId) {
@@ -801,6 +815,42 @@ class ChatManager {
             }
         } catch (error) {
             alert('Failed to delete conversation. Please try again.');
+        }
+    }
+
+    async archiveConversation() {
+        if (!this.currentConversation) return;
+
+        const isArchived = this.currentConversation.archived;
+        const action = isArchived ? 'unarchive' : 'archive';
+
+        try {
+            const response = await fetch(`${CONFIG.API_URL}?action=archive_conversation&conversation_id=${this.currentConversation.id}&archive=${isArchived ? 0 : 1}`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.currentConversation.archived = !isArchived;
+                // Update archive button icon
+                const archiveBtn = document.getElementById('archiveConversationBtn');
+                if (archiveBtn) {
+                    archiveBtn.title = this.currentConversation.archived ? 'Unarchive Conversation' : 'Archive Conversation';
+                    archiveBtn.innerHTML = this.currentConversation.archived
+                        ? '<i class="fas fa-box-open"></i>'
+                        : '<i class="fas fa-archive"></i>';
+                }
+                // Update conversation in list
+                const conv = this.conversations.find(c => c.id === this.currentConversation.id);
+                if (conv) conv.archived = this.currentConversation.archived;
+                this.renderConversations();
+            } else {
+                alert(data.message || `Failed to ${action} conversation`);
+            }
+        } catch (error) {
+            alert(`Failed to ${action} conversation. Please try again.`);
         }
     }
 

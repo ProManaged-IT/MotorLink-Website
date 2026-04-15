@@ -1,3 +1,42 @@
+// Sidebar toggle for mobile/tablet
+document.addEventListener('DOMContentLoaded', function() {
+    var sidebar = document.getElementById('adminSidebar');
+    var toggleBtn = document.getElementById('mobileSidebarToggle');
+    var overlay = document.getElementById('mobileOverlay');
+
+    function openSidebar() {
+        if (sidebar) sidebar.classList.add('mobile-open');
+        if (overlay) { overlay.classList.add('active'); overlay.style.display = 'block'; }
+        document.body.style.overflow = 'hidden';
+    }
+    function closeSidebar() {
+        if (sidebar) sidebar.classList.remove('mobile-open');
+        if (overlay) { overlay.classList.remove('active'); overlay.style.display = ''; }
+        document.body.style.overflow = '';
+    }
+
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (sidebar && sidebar.classList.contains('mobile-open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        });
+    }
+    if (overlay) {
+        overlay.addEventListener('click', closeSidebar);
+    }
+    // Close sidebar when clicking outside on mobile
+    document.body.addEventListener('click', function(e) {
+        if (window.innerWidth <= 1024 && sidebar && sidebar.classList.contains('mobile-open')) {
+            if (!sidebar.contains(e.target) && e.target !== toggleBtn && (!toggleBtn || !toggleBtn.contains(e.target))) {
+                closeSidebar();
+            }
+        }
+    });
+});
 // Admin API configuration - works same way as main website
 // Uses proxy to forward requests to production API
 const getAdminAPIUrl = () => {
@@ -105,6 +144,7 @@ class AdminDashboard {
 
         if (overlay) {
             overlay.classList.remove('active');
+            overlay.style.display = '';
         }
 
         document.body.style.overflow = '';
@@ -115,6 +155,7 @@ class AdminDashboard {
         const overlay = document.getElementById('mobileOverlay');
         if (overlay) {
             overlay.classList.remove('active');
+            overlay.style.display = '';
         }
 
         // Clear any modal that may have remained active due to navigation/session flow.
@@ -189,16 +230,26 @@ class AdminDashboard {
         debugLog('Showing login screen');
         const loginSection = document.getElementById('loginSection');
         const adminDashboard = document.getElementById('adminDashboard');
+        const authLoader = document.getElementById('adminAuthLoader');
 
         this.clearBlockingOverlays();
 
+        // Hide auth loader
+        if (authLoader) authLoader.style.display = 'none';
+
         if (loginSection) {
+            loginSection.classList.remove('is-hidden');
             loginSection.style.display = 'flex';
             loginSection.style.visibility = 'visible';
+            loginSection.style.pointerEvents = 'auto';
+            loginSection.style.position = 'fixed';
+            loginSection.style.left = '0';
         }
         if (adminDashboard) {
+            adminDashboard.classList.add('is-hidden');
             adminDashboard.style.display = 'none';
             adminDashboard.style.visibility = 'hidden';
+            adminDashboard.style.pointerEvents = 'none';
         }
 
         this.isLoggedIn = false;
@@ -209,21 +260,29 @@ class AdminDashboard {
 
         const loginSection = document.getElementById('loginSection');
         const adminDashboard = document.getElementById('adminDashboard');
+        const authLoader = document.getElementById('adminAuthLoader');
 
         this.clearBlockingOverlays();
 
+        // Hide auth loader
+        if (authLoader) authLoader.style.display = 'none';
+
         // Completely hide login section
         if (loginSection) {
+            loginSection.classList.add('is-hidden');
             loginSection.style.display = 'none';
             loginSection.style.visibility = 'hidden';
+            loginSection.style.pointerEvents = 'none';
             loginSection.style.position = 'absolute';
             loginSection.style.left = '-9999px';
         }
 
         // Show dashboard
         if (adminDashboard) {
+            adminDashboard.classList.remove('is-hidden');
             adminDashboard.style.display = 'flex';
             adminDashboard.style.visibility = 'visible';
+            adminDashboard.style.pointerEvents = 'auto';
             adminDashboard.style.position = 'relative';
             adminDashboard.style.left = '0';
         }
