@@ -6,142 +6,235 @@ const WIDTH = 1200;
 const HEIGHT = 628;
 const OUTPUT_PATH = path.join(__dirname, 'motorlink-ad-banner.png');
 
-// Build the SVG design - Neutral modern theme with stacking cards aesthetic
+// ─── Neutral palette ──────────────────────────────────────────────────────────
+// Background: very light warm-gray (almost white) — completely neutral
+// Left panel: clean white card
+// Right panel: light gray (#f4f5f7)
+// Accent: MotorLink forest green #2d6a4f  (used sparingly for brand identity only)
+// All text: dark charcoal #1a1a1a / mid-gray #6c757d  (no colored headings)
+
 const svg = `
 <svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Background gradient - neutral dark -->
+    <!-- Neutral warm-gray background -->
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#2c2f33"/>
-      <stop offset="50%" style="stop-color:#3a3d42"/>
-      <stop offset="100%" style="stop-color:#4a4d52"/>
+      <stop offset="0%" style="stop-color:#edeef0"/>
+      <stop offset="100%" style="stop-color:#e4e6ea"/>
     </linearGradient>
 
-    <!-- Card gradient - white to light gray -->
+    <!-- White card -->
     <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" style="stop-color:#ffffff"/>
-      <stop offset="100%" style="stop-color:#f8f9fa"/>
+      <stop offset="100%" style="stop-color:#fafbfc"/>
     </linearGradient>
 
-    <!-- Accent green gradient -->
-    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <!-- Right-panel light gray -->
+    <linearGradient id="rightGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f4f5f7"/>
+      <stop offset="100%" style="stop-color:#edeef0"/>
+    </linearGradient>
+
+    <!-- Brand green for logo & CTA only -->
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="135%" y2="135%">
       <stop offset="0%" style="stop-color:#2d6a4f"/>
       <stop offset="100%" style="stop-color:#40916c"/>
     </linearGradient>
 
-    <!-- Teal gradient -->
-    <linearGradient id="tealGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#2a9d8f"/>
-      <stop offset="100%" style="stop-color:#52b788"/>
+    <!-- Divider line between left/right panels -->
+    <linearGradient id="divGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#dee2e6;stop-opacity:0"/>
+      <stop offset="50%" style="stop-color:#dee2e6;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#dee2e6;stop-opacity:0"/>
     </linearGradient>
 
-    <!-- Soft shadow filter -->
-    <filter id="shadow" x="-10%" y="-10%" width="130%" height="140%">
-      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000000" flood-opacity="0.25"/>
+    <!-- Subtle card shadow -->
+    <filter id="cardShadow" x="-4%" y="-4%" width="108%" height="115%">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#000000" flood-opacity="0.10"/>
     </filter>
 
-    <!-- Subtle pattern -->
-    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
-      <path d="M 50 0 L 0 0 0 50" fill="none" stroke="white" stroke-width="0.5" stroke-opacity="0.03"/>
-    </pattern>
+    <!-- Stat-box shadow (lighter) -->
+    <filter id="statShadow" x="-5%" y="-5%" width="115%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#000000" flood-opacity="0.07"/>
+    </filter>
 
-    <!-- Dot pattern -->
-    <pattern id="dots" width="30" height="30" patternUnits="userSpaceOnUse">
-      <circle cx="15" cy="15" r="1.5" fill="white" opacity="0.04"/>
+    <!-- CTA button shadow -->
+    <filter id="btnShadow" x="-10%" y="-20%" width="130%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#2d6a4f" flood-opacity="0.30"/>
+    </filter>
+
+    <!-- Subtle dot pattern on background -->
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="14" cy="14" r="1.2" fill="#c8cdd4" opacity="0.45"/>
     </pattern>
   </defs>
 
-  <!-- Background -->
+  <!-- ── Background ── -->
   <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#bgGrad)"/>
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#grid)"/>
   <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#dots)"/>
 
-  <!-- Decorative circles -->
-  <circle cx="1100" cy="100" r="300" fill="white" opacity="0.02"/>
-  <circle cx="-50" cy="550" r="350" fill="white" opacity="0.02"/>
+  <!-- ══════════════════════════════════════════════════════════════════════
+       MAIN CARD  x=56 y=44  w=1088 h=540
+       Left white panel: x=56..702  Right gray panel: x=702..1144
+  ══════════════════════════════════════════════════════════════════════ -->
 
-  <!-- CARD 1: Main Hero Card -->
-  <rect x="80" y="60" width="1040" height="508" rx="28" fill="url(#cardGrad)" filter="url(#shadow)"/>
-  
-  <!-- Top accent line -->
-  <rect x="80" y="60" width="1040" height="4" rx="2" fill="url(#accentGrad)"/>
+  <!-- Card base (white, full) -->
+  <rect x="56" y="44" width="1088" height="540" rx="24" fill="url(#cardGrad)" filter="url(#cardShadow)"/>
 
-  <!-- LEFT SECTION: Brand and Content -->
+  <!-- Right-panel gray overlay (clip right half only) -->
+  <clipPath id="rightClip">
+    <rect x="702" y="44" width="442" height="540" rx="0"/>
+  </clipPath>
+  <!-- Right clip with rounded right corners -->
+  <clipPath id="cardClip">
+    <rect x="56" y="44" width="1088" height="540" rx="24"/>
+  </clipPath>
+  <rect x="702" y="44" width="442" height="540" fill="url(#rightGrad)" clip-path="url(#cardClip)"/>
 
-  <!-- Brand logo box -->
-  <rect x="120" y="100" width="64" height="64" rx="18" fill="url(#accentGrad)"/>
-  <text x="152" y="142" font-family="Segoe UI, Arial, sans-serif" font-size="28" fill="white" text-anchor="middle" font-weight="700">🚗</text>
+  <!-- Divider line between panels -->
+  <rect x="701" y="44" width="1" height="540" fill="url(#divGrad)" clip-path="url(#cardClip)"/>
 
-  <!-- Brand name -->
-  <text x="200" y="130" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="900" fill="#1a1a1a" letter-spacing="-0.5">MotorLink</text>
-  <text x="200" y="152" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600" fill="#6c757d" letter-spacing="1">MALAWI'S CAR MARKETPLACE</text>
+  <!-- Top brand accent bar (full width, thin) -->
+  <rect x="56" y="44" width="1088" height="4" rx="2" fill="url(#greenGrad)" clip-path="url(#cardClip)"/>
 
-  <!-- Main headline -->
-  <text x="120" y="220" font-family="Segoe UI, Arial, sans-serif" font-size="44" font-weight="900" fill="#1a1a1a" letter-spacing="-1.5">The modern way to buy, sell &amp; rent</text>
-  <text x="120" y="268" font-family="Segoe UI, Arial, sans-serif" font-size="44" font-weight="900" fill="#2d6a4f" letter-spacing="-1.5">vehicles in Malawi</text>
+  <!-- ──────────────────────────────────────────────────────────────────
+       LEFT PANEL  (x 56–702, usable from x 88)
+  ────────────────────────────────────────────────────────────────────── -->
 
-  <!-- Subtitle -->
-  <text x="120" y="310" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#495057">A complete automotive ecosystem — from finding your perfect car to connecting</text>
-  <text x="120" y="332" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#495057">with verified dealers, garages, and rental companies across all 28 districts.</text>
+  <!-- LOGO MARK -->
+  <rect x="88" y="84" width="58" height="58" rx="16" fill="url(#greenGrad)"/>
+  <!-- Car icon (simple geometric car silhouette in white) -->
+  <!-- Car body -->
+  <rect x="96" y="102" width="42" height="22" rx="5" fill="white" opacity="0.95"/>
+  <!-- Windshield cutout illusion — roof -->
+  <rect x="100" y="95" width="28" height="14" rx="4" fill="white" opacity="0.8"/>
+  <!-- Wheels -->
+  <circle cx="102" cy="126" r="6" fill="#2d6a4f" stroke="white" stroke-width="2"/>
+  <circle cx="130" cy="126" r="6" fill="#2d6a4f" stroke="white" stroke-width="2"/>
 
-  <!-- Service badges -->
-  <rect x="120" y="360" width="80" height="36" rx="18" fill="#f1f3f5"/>
-  <text x="160" y="383" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#343a40" text-anchor="middle">🛒 Buy</text>
+  <!-- BRAND NAME -->
+  <text x="158" y="112" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="900" fill="#1a1a1a" letter-spacing="-0.5">MotorLink</text>
+  <text x="159" y="131" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" fill="#6c757d" letter-spacing="1.8">MALAWI'S CAR MARKETPLACE</text>
 
-  <rect x="210" y="360" width="80" height="36" rx="18" fill="#f1f3f5"/>
-  <text x="250" y="383" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#343a40" text-anchor="middle">🏷 Sell</text>
+  <!-- HORIZONTAL RULE under brand -->
+  <rect x="88" y="154" width="200" height="2" rx="1" fill="#2d6a4f" opacity="0.25"/>
 
-  <rect x="300" y="360" width="90" height="36" rx="18" fill="#f1f3f5"/>
-  <text x="345" y="383" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#343a40" text-anchor="middle">🔑 Rent</text>
+  <!-- HEADLINE  (neutral charcoal — no green in headline) -->
+  <text x="88" y="200" font-family="Segoe UI, Arial, sans-serif" font-size="38" font-weight="900" fill="#1a1a1a" letter-spacing="-1.2">Buy, Sell &amp; Rent Vehicles</text>
+  <text x="88" y="244" font-family="Segoe UI, Arial, sans-serif" font-size="38" font-weight="900" fill="#3a3d42" letter-spacing="-1.2">Across All of Malawi</text>
 
-  <rect x="400" y="360" width="100" height="36" rx="18" fill="#f1f3f5"/>
-  <text x="450" y="383" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#343a40" text-anchor="middle">🔧 Service</text>
+  <!-- SUBTITLE  -->
+  <text x="88" y="282" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#545b62" letter-spacing="0">Connect with verified dealers, garages &amp; car hire companies</text>
+  <text x="88" y="302" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#545b62">in every district — powered by AI-driven search and matching.</text>
 
-  <rect x="510" y="360" width="110" height="36" rx="18" fill="#f1f3f5"/>
-  <text x="565" y="383" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#343a40" text-anchor="middle">🤖 AI-Powered</text>
+  <!-- FEATURE PILLS  (neutral dark fill, no colored text) -->
+  <!-- Pill 1: Buy -->
+  <rect x="88" y="326" width="90" height="32" rx="16" fill="#1a1a1a"/>
+  <text x="133" y="347" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="white" text-anchor="middle">Buy a Car</text>
 
-  <!-- CTA Button -->
-  <rect x="120" y="420" width="220" height="52" rx="26" fill="url(#accentGrad)" filter="url(#shadow)"/>
-  <text x="230" y="453" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="800" fill="white" text-anchor="middle">Explore MotorLink →</text>
+  <!-- Pill 2: Sell -->
+  <rect x="186" y="326" width="90" height="32" rx="16" fill="#343a40"/>
+  <text x="231" y="347" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="white" text-anchor="middle">Sell a Car</text>
 
-  <!-- RIGHT SECTION: Stats and Powered By -->
+  <!-- Pill 3: Rent -->
+  <rect x="284" y="326" width="100" height="32" rx="16" fill="#495057"/>
+  <text x="334" y="347" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="white" text-anchor="middle">Car Hire</text>
 
-  <!-- Stats boxes -->
-  <rect x="760" y="100" width="150" height="90" rx="16" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
-  <text x="835" y="140" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="900" fill="#2d6a4f" text-anchor="middle">5,000+</text>
-  <text x="835" y="168" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#6c757d" text-anchor="middle">Active Listings</text>
+  <!-- Pill 4: Service -->
+  <rect x="393" y="326" width="100" height="32" rx="16" fill="#6c757d"/>
+  <text x="443" y="347" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="white" text-anchor="middle">Garages</text>
 
-  <rect x="930" y="100" width="150" height="90" rx="16" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
-  <text x="1005" y="140" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="900" fill="#2d6a4f" text-anchor="middle">200+</text>
-  <text x="1005" y="168" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#6c757d" text-anchor="middle">Verified Dealers</text>
+  <!-- Pill 5: AI -->
+  <rect x="501" y="326" width="116" height="32" rx="16" fill="#868e96"/>
+  <text x="559" y="347" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="white" text-anchor="middle">AI-Powered</text>
 
-  <rect x="760" y="210" width="150" height="90" rx="16" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
-  <text x="835" y="250" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="900" fill="#2d6a4f" text-anchor="middle">28</text>
-  <text x="835" y="278" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#6c757d" text-anchor="middle">Districts</text>
+  <!-- CTA BUTTON  (brand green — the ONE green element in left panel) -->
+  <rect x="88" y="380" width="216" height="50" rx="25" fill="url(#greenGrad)" filter="url(#btnShadow)"/>
+  <text x="196" y="411" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="800" fill="white" text-anchor="middle">Explore MotorLink  →</text>
 
-  <rect x="930" y="210" width="150" height="90" rx="16" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
-  <text x="1005" y="250" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="900" fill="#2d6a4f" text-anchor="middle">FREE</text>
-  <text x="1005" y="278" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#6c757d" text-anchor="middle">To Start</text>
+  <!-- URL below CTA -->
+  <text x="88" y="452" font-family="Segoe UI, Arial, sans-serif" font-size="13" fill="#6c757d">promanaged-it.com/motorlink</text>
 
-  <!-- Powered by ProManaged IT section -->
-  <rect x="760" y="330" width="320" height="160" rx="20" fill="#1a1a1a"/>
-  
-  <text x="920" y="370" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700" fill="#6c757d" text-anchor="middle" letter-spacing="2">PLATFORM BUILT &amp; MANAGED BY</text>
+  <!-- ──────────────────────────────────────────────────────────────────
+       RIGHT PANEL  (x 702–1144, center = 923)
+       Layout: 4 stat boxes top, "POWERED BY" panel bottom
+  ────────────────────────────────────────────────────────────────────── -->
 
-  <!-- ProManaged IT Logo -->
-  <rect x="870" y="390" width="48" height="48" rx="14" fill="url(#tealGrad)"/>
-  <text x="894" y="422" font-family="Segoe UI, Arial, sans-serif" font-size="22" fill="white" text-anchor="middle" font-weight="700">⚙</text>
-  <text x="935" y="422" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="900" fill="white">ProManaged IT</text>
+  <!-- ── Section label ── -->
+  <text x="923" y="84" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700" fill="#9ca3af" text-anchor="middle" letter-spacing="2">PLATFORM AT A GLANCE</text>
 
-  <text x="920" y="460" font-family="Segoe UI, Arial, sans-serif" font-size="13" fill="#adb5bd" text-anchor="middle">Professional IT solutions &amp; managed hosting</text>
+  <!-- ── 4 stat boxes in 2×2 grid ──
+       Each box: 186 wide × 90 tall  gap: 14
+       Col 1 x=722  Col 2 x=922   Row 1 y=98  Row 2 y=202 -->
 
-  <text x="920" y="482" font-family="Segoe UI, Arial, sans-serif" font-size="13" fill="#2a9d8f" font-weight="700" text-anchor="middle">promanaged-it.com →</text>
+  <!-- Stat 1: Active Listings -->
+  <rect x="722" y="98" width="186" height="90" rx="14" fill="white" filter="url(#statShadow)" stroke="#e9ecef" stroke-width="1"/>
+  <!-- Left accent bar -->
+  <rect x="722" y="98" width="4" height="90" rx="2" fill="url(#greenGrad)" clip-path="url(#cardClip)"/>
+  <text x="918" y="145" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="900" fill="#1a1a1a" text-anchor="end" letter-spacing="-1">5,000+</text>
+  <text x="918" y="170" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#6c757d" text-anchor="end">Active Car Listings</text>
 
-  <!-- Footer bar -->
-  <rect x="80" y="528" width="1040" height="40" rx="0" fill="#f1f3f5"/>
-  <rect x="80" y="528" width="1040" height="1" fill="#dee2e6"/>
-  <text x="110" y="553" font-family="Segoe UI, Arial, sans-serif" font-size="13" fill="#6c757d">MotorLink Malawi — Connecting Malawi's automotive community since 2025. Built with love by ProManaged IT.</text>
-  <text x="1090" y="553" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#2d6a4f" text-anchor="end">promanaged-it.com/motorlink</text>
+  <!-- Stat 2: Verified Dealers -->
+  <rect x="922" y="98" width="186" height="90" rx="14" fill="white" filter="url(#statShadow)" stroke="#e9ecef" stroke-width="1"/>
+  <rect x="922" y="98" width="4" height="90" rx="2" fill="#495057" clip-path="url(#cardClip)"/>
+  <text x="1118" y="145" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="900" fill="#1a1a1a" text-anchor="end" letter-spacing="-1">200+</text>
+  <text x="1118" y="170" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#6c757d" text-anchor="end">Verified Dealers</text>
+
+  <!-- Stat 3: Districts -->
+  <rect x="722" y="202" width="186" height="90" rx="14" fill="white" filter="url(#statShadow)" stroke="#e9ecef" stroke-width="1"/>
+  <rect x="722" y="202" width="4" height="90" rx="2" fill="#343a40" clip-path="url(#cardClip)"/>
+  <text x="918" y="248" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="900" fill="#1a1a1a" text-anchor="end" letter-spacing="-1">28</text>
+  <text x="918" y="273" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#6c757d" text-anchor="end">Districts Covered</text>
+
+  <!-- Stat 4: Free to start -->
+  <rect x="922" y="202" width="186" height="90" rx="14" fill="white" filter="url(#statShadow)" stroke="#e9ecef" stroke-width="1"/>
+  <rect x="922" y="202" width="4" height="90" rx="2" fill="#868e96" clip-path="url(#cardClip)"/>
+  <text x="1118" y="248" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="900" fill="#1a1a1a" text-anchor="end" letter-spacing="-1">FREE</text>
+  <text x="1118" y="273" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#6c757d" text-anchor="end">To Get Started</text>
+
+  <!-- ── POWERED BY panel ──
+       x=722 y=310 w=386 h=240  (fills right panel bottom) -->
+  <rect x="722" y="310" width="386" height="240" rx="18" fill="#1f2329" clip-path="url(#cardClip)"/>
+
+  <!-- Subtle grid lines inside panel -->
+  <rect x="722" y="310" width="386" height="1" fill="white" opacity="0.06"/>
+
+  <!-- Label -->
+  <text x="922" y="346" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700" fill="#6c757d" text-anchor="middle" letter-spacing="2.5">PLATFORM BUILT &amp; MANAGED BY</text>
+
+  <!-- Horizontal rule -->
+  <rect x="760" y="358" width="324" height="1" fill="white" opacity="0.10"/>
+
+  <!-- ProManaged IT logo icon -->
+  <rect x="782" y="374" width="44" height="44" rx="12" fill="#2d6a4f"/>
+  <!-- Gear icon (simple circle + spokes) -->
+  <circle cx="804" cy="396" r="10" fill="none" stroke="white" stroke-width="2.5"/>
+  <circle cx="804" cy="396" r="4" fill="white"/>
+  <!-- Gear teeth (8 spokes) -->
+  <line x1="804" y1="382" x2="804" y2="386" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="804" y1="406" x2="804" y2="410" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="790" y1="396" x2="794" y2="396" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="814" y1="396" x2="818" y2="396" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="794" y1="386" x2="797" y2="389" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="811" y1="403" x2="814" y2="406" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="794" y1="406" x2="797" y2="403" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="811" y1="389" x2="814" y2="386" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Company name — fits within panel, right of icon -->
+  <text x="838" y="389" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="900" fill="white" letter-spacing="-0.3">ProManaged IT</text>
+  <text x="838" y="410" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="#9ca3af" letter-spacing="0.5">Digital &amp; IT Solutions</text>
+
+  <!-- Description -->
+  <text x="782" y="442" font-family="Segoe UI, Arial, sans-serif" font-size="13.5" fill="#d1d5db">Professional IT solutions, web development</text>
+  <text x="782" y="462" font-family="Segoe UI, Arial, sans-serif" font-size="13.5" fill="#d1d5db">and managed hosting for Malawi businesses.</text>
+
+  <!-- Link -->
+  <text x="782" y="490" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#40916c" letter-spacing="0.2">promanaged-it.com  →</text>
+
+  <!-- ── FOOTER BAR ── (inside card, bottom strip) -->
+  <rect x="56" y="544" width="1088" height="40" rx="0" fill="#f1f3f5" clip-path="url(#cardClip)"/>
+  <rect x="56" y="544" width="1088" height="1" fill="#dee2e6"/>
+  <text x="84" y="569" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" fill="#6c757d">MotorLink Malawi — Connecting Malawi's automotive community since 2025.  Built by ProManaged IT.</text>
+  <text x="1124" y="569" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#2d6a4f" text-anchor="end">promanaged-it.com/motorlink</text>
 </svg>
 `;
 
