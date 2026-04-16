@@ -176,7 +176,7 @@ function getDesktopSvg() {
   <rect x="204" y="420" width="240" height="52" rx="26" fill="url(#greenGrad)" filter="url(#ctaShadow)"/>
   <text x="324" y="453" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="800" fill="white" text-anchor="middle">Explore MotorLink  →</text>
 
-  <text x="324" y="492" font-family="Segoe UI, Arial, sans-serif" font-size="13.5" fill="#6c757d" text-anchor="middle">promanaged-it.com/motorlink</text>
+  <text x="324" y="492" font-family="Segoe UI, Arial, sans-serif" font-size="13.5" fill="#6c757d" text-anchor="middle">motorlink.mw</text>
 
   <!-- Right panel centered -->
   <text x="876" y="86" font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="700" fill="#99a1ab" text-anchor="middle" letter-spacing="2.3">PLATFORM AT A GLANCE</text>
@@ -208,18 +208,13 @@ function getDesktopSvg() {
   <rect x="852" y="382" width="48" height="48" rx="13" fill="url(#greenGrad)"/>
   <text x="876" y="416" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="900" fill="white" text-anchor="middle">P</text>
 
-  <text x="876" y="454" font-family="Segoe UI, Arial, sans-serif" font-size="35" font-weight="900" fill="white" text-anchor="middle" letter-spacing="-0.3">ProManaged IT</text>
-  <text x="876" y="478" font-family="Segoe UI, Arial, sans-serif" font-size="14" fill="#a3abb4" text-anchor="middle">Digital &amp; IT Solutions</text>
-
-  <text x="876" y="505" font-family="Segoe UI, Arial, sans-serif" font-size="13.8" fill="#d3d8dd" text-anchor="middle">Professional IT solutions, web development</text>
-  <text x="876" y="525" font-family="Segoe UI, Arial, sans-serif" font-size="13.8" fill="#d3d8dd" text-anchor="middle">and managed hosting for Malawi businesses.</text>
-
-  <text x="876" y="545" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700" fill="#40916c" text-anchor="middle">promanaged-it.com  →</text>
+  <text x="876" y="454" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#a3abb4" text-anchor="middle" letter-spacing="-0.3">ProManaged IT</text>
+  <text x="876" y="474" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="#7b838d" text-anchor="middle">IT Solutions, Malawi</text>
 
   <rect x="48" y="548" width="1104" height="48" fill="#f2f4f6" clip-path="url(#cardClip)"/>
   <rect x="48" y="548" width="1104" height="1" fill="#dce2e8"/>
   <text x="84" y="578" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" fill="#6c757d">MotorLink Malawi — Connecting Malawi's automotive community.</text>
-  <text x="1120" y="578" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#2d6a4f" text-anchor="end">promanaged-it.com/motorlink</text>
+  <text x="1120" y="578" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#2d6a4f" text-anchor="end">motorlink.mw</text>
 </svg>
 `;
 }
@@ -290,7 +285,7 @@ function getMobileSvg() {
   <rect x="290" y="672" width="500" height="86" rx="43" fill="url(#mobileGreen)"/>
   <text x="540" y="725" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="800" fill="white" text-anchor="middle">Explore MotorLink  →</text>
 
-  <text x="540" y="788" font-family="Segoe UI, Arial, sans-serif" font-size="22" fill="#6c757d" text-anchor="middle">promanaged-it.com/motorlink</text>
+  <text x="540" y="788" font-family="Segoe UI, Arial, sans-serif" font-size="22" fill="#6c757d" text-anchor="middle">motorlink.mw</text>
 
   <text x="540" y="834" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" fill="#99a1ab" text-anchor="middle" letter-spacing="2.6">PLATFORM AT A GLANCE</text>
 
@@ -312,9 +307,8 @@ function getMobileSvg() {
 
   <rect x="110" y="1092" width="860" height="176" rx="24" fill="#1f2329"/>
   <text x="540" y="1130" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700" fill="#7f8790" text-anchor="middle" letter-spacing="2.6">BUILT &amp; MANAGED BY</text>
-  <text x="540" y="1186" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="900" fill="white" text-anchor="middle">ProManaged IT</text>
-  <text x="540" y="1218" font-family="Segoe UI, Arial, sans-serif" font-size="23" fill="#acb4bc" text-anchor="middle">Digital &amp; IT Solutions</text>
-  <text x="540" y="1248" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#40916c" text-anchor="middle">promanaged-it.com</text>
+  <text x="540" y="1186" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#a3abb4" text-anchor="middle">ProManaged IT</text>
+  <text x="540" y="1218" font-family="Segoe UI, Arial, sans-serif" font-size="20" fill="#7f8790" text-anchor="middle">IT Solutions, Malawi</text>
 </svg>
 `;
 }
