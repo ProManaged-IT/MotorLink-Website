@@ -13,6 +13,7 @@ class CarDetailManager {
         this.currentImageIndex = 0;
         this.listingImages = [];
         this.isFullscreen = false;
+        this.recommendationsLoaded = false;
         this.init();
     }
 
@@ -423,6 +424,13 @@ class CarDetailManager {
                 <div class="showroom-grid" id="showroomGrid"></div>
             </div>
             ` : ''}
+
+            <div class="dealer-showroom-section" id="recommendedCarsSection" style="display:none;">
+                <div class="showroom-header">
+                    <h2><i class="fas fa-magic"></i> Recommended For You</h2>
+                </div>
+                <div class="showroom-grid" id="recommendedCarsGrid"></div>
+            </div>
         `;
 
         // Set up event listeners for the gallery
@@ -432,6 +440,190 @@ class CarDetailManager {
         if (listing.user_id && (listing.seller_type === 'dealer' || listing.seller_type === 'garage' || listing.seller_type === 'car_hire')) {
             this.loadDealerOtherListings(listing.user_id);
         }
+
+        // Learn from this view and show personalized options frequently.
+        this.trackViewAndLoadRecommendations(listing);
+    }
+
+    getRecommendationApiUrl() {
+        if (CONFIG && CONFIG.RECOMMENDATION_API_URL) {
+            return CONFIG.RECOMMENDATION_API_URL;
+        }
+
+        if (CONFIG && CONFIG.API_URL && CONFIG.API_URL.includes('api.php')) {
+            return CONFIG.API_URL.replace('api.php', 'recommendation_engine.php');
+        }
+
+        return 'recommendation_engine.php';
+    }
+
+    getOrCreateSessionId() {
+        let sessionId = localStorage.getItem('motorlink_session_id');
+        if (!sessionId) {
+            sessionId = 'guest_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);
+            localStorage.setItem('motorlink_session_id', sessionId);
+        }
+        return sessionId;
+    }
+
+    updateLocalPreferenceSnapshot(listing) {
+        try {
+            const prefs = JSON.parse(localStorage.getItem('motorlink_user_preferences') || '{}');
+
+            if (!prefs.makes) prefs.makes = {};
+            if (!prefs.models) prefs.models = {};
+            if (!prefs.fuel_types) prefs.fuel_types = {};
+            if (!prefs.transmissions) prefs.transmissions = {};
+            if (!prefs.body_types) prefs.body_types = {};
+            if (!prefs.price_range) prefs.price_range = { min: Number.MAX_SAFE_INTEGER, max: 0, total: 0, count: 0, avg: 0 };
+            if (!prefs.year_range) prefs.year_range = { min: Number.MAX_SAFE_INTEGER, max: 0, total: 0, count: 0, avg: 0 };
+            if (!prefs.mileage_range) prefs.mileage_range = { min: Number.MAX_SAFE_INTEGER, max: 0, total: 0, count: 0, avg: 0 };
+
+            if (listing.make_name) prefs.makes[listing.make_name] = (prefs.makes[listing.make_name] || 0) + 2;
+            if (listing.model_name) prefs.models[listing.model_name] = (prefs.models[listing.model_name] || 0) + 2;
+            if (listing.fuel_type) prefs.fuel_types[listing.fuel_type] = (prefs.fuel_types[listing.fuel_type] || 0) + 2;
+            if (listing.transmission) prefs.transmissions[listing.transmission] = (prefs.transmissions[listing.transmission] || 0) + 2;
+            if (listing.body_type) prefs.body_types[listing.body_type] = (prefs.body_types[listing.body_type] || 0) + 1;
+
+            const price = parseInt(listing.price, 10);
+            if (Number.isFinite(price) && price > 0) {
+                prefs.price_range.min = Math.min(Number(prefs.price_range.min) || Number.MAX_SAFE_INTEGER, price);
+                prefs.price_range.max = Math.max(Number(prefs.price_range.max) || 0, price);
+                prefs.price_range.total = (Number(prefs.price_range.total) || 0) + price;
+                prefs.price_range.count = (Number(prefs.price_range.count) || 0) + 1;
+                prefs.price_range.avg = prefs.price_range.total / prefs.price_range.count;
+            }
+
+            const year = parseInt(listing.year, 10);
+            if (Number.isFinite(year) && year > 1900) {
+                prefs.year_range.min = Math.min(Number(prefs.year_range.min) || Number.MAX_SAFE_INTEGER, year);
+                prefs.year_range.max = Math.max(Number(prefs.year_range.max) || 0, year);
+                prefs.year_range.total = (Number(prefs.year_range.total) || 0) + year;
+                prefs.year_range.count = (Number(prefs.year_range.count) || 0) + 1;
+                prefs.year_range.avg = prefs.year_range.total / prefs.year_range.count;
+            }
+
+            const mileage = parseInt(listing.mileage, 10);
+            if (Number.isFinite(mileage) && mileage >= 0) {
+                prefs.mileage_range.min = Math.min(Number(prefs.mileage_range.min) || Number.MAX_SAFE_INTEGER, mileage);
+                prefs.mileage_range.max = Math.max(Number(prefs.mileage_range.max) || 0, mileage);
+                prefs.mileage_range.total = (Number(prefs.mileage_range.total) || 0) + mileage;
+                prefs.mileage_range.count = (Number(prefs.mileage_range.count) || 0) + 1;
+                prefs.mileage_range.avg = prefs.mileage_range.total / prefs.mileage_range.count;
+            }
+
+            prefs.last_updated = Date.now();
+            localStorage.setItem('motorlink_user_preferences', JSON.stringify(prefs));
+            return prefs;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    trackViewAndLoadRecommendations(listing) {
+        if (!listing || !listing.id) return;
+
+        const sessionId = this.getOrCreateSessionId();
+        const recommendationUrl = this.getRecommendationApiUrl();
+        const preferences = this.updateLocalPreferenceSnapshot(listing);
+
+        const payload = {
+            action: 'track_view',
+            listing_id: listing.id,
+            session_id: sessionId,
+            preferences: preferences || undefined,
+            timestamp: Date.now()
+        };
+
+        try {
+            if (navigator.sendBeacon) {
+                const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+                navigator.sendBeacon(`${recommendationUrl}?action=track_view`, blob);
+            } else {
+                fetch(recommendationUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    keepalive: true,
+                    body: JSON.stringify(payload)
+                }).catch(() => {});
+            }
+        } catch (error) {
+            // Silently ignore tracking errors.
+        }
+
+        this.loadPersonalizedRecommendations(listing.id);
+    }
+
+    async loadPersonalizedRecommendations(currentListingId) {
+        if (this.recommendationsLoaded) return;
+
+        const recommendationUrl = this.getRecommendationApiUrl();
+        const sessionId = this.getOrCreateSessionId();
+
+        try {
+            let endpoint = `${recommendationUrl}?action=get_recommendations&type=personalized&limit=6&session_id=${encodeURIComponent(sessionId)}&exclude_listing_id=${encodeURIComponent(currentListingId)}`;
+            let response = await fetch(endpoint, { credentials: 'include' });
+            let data = await response.json();
+
+            let recommendations = Array.isArray(data?.recommendations) ? data.recommendations : [];
+
+            if (recommendations.length === 0) {
+                endpoint = `${recommendationUrl}?action=get_recommendations&type=trending&limit=6&session_id=${encodeURIComponent(sessionId)}&exclude_listing_id=${encodeURIComponent(currentListingId)}`;
+                response = await fetch(endpoint, { credentials: 'include' });
+                data = await response.json();
+                recommendations = Array.isArray(data?.recommendations) ? data.recommendations : [];
+            }
+
+            recommendations = recommendations.filter(item => parseInt(item.id, 10) !== parseInt(currentListingId, 10)).slice(0, 6);
+
+            if (recommendations.length > 0) {
+                this.renderPersonalizedRecommendations(recommendations);
+                this.recommendationsLoaded = true;
+            }
+        } catch (error) {
+            // Recommendation loading is best-effort.
+        }
+    }
+
+    renderPersonalizedRecommendations(listings) {
+        const section = document.getElementById('recommendedCarsSection');
+        const grid = document.getElementById('recommendedCarsGrid');
+        if (!section || !grid || !Array.isArray(listings) || listings.length === 0) {
+            return;
+        }
+
+        const inlinePlaceholder = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22 viewBox=%220 0 400 300%22%3E%3Crect width=%22400%22 height=%22300%22 fill=%22%23f3f4f6%22/%3E%3Ctext x=%22200%22 y=%22150%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2216%22 fill=%226b7280%22%3EImage unavailable%3C/text%3E%3C/svg%3E';
+
+        grid.innerHTML = listings.map(listing => {
+            const imageUrl = listing.featured_image_id
+                ? `${CONFIG.API_URL}?action=image&id=${listing.featured_image_id}`
+                : inlinePlaceholder;
+            const formattedPrice = listing.price ? `MWK ${parseInt(listing.price, 10).toLocaleString()}` : 'Price on request';
+
+            return `
+                <div class="showroom-card" onclick="window.location.href='car.html?id=${listing.id}'">
+                    <div class="showroom-card-image">
+                        <img src="${imageUrl}" alt="${this.escapeHtml(listing.title || '')}" onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
+                        <span class="listing-badge premium">Recommended</span>
+                    </div>
+                    <div class="showroom-card-content">
+                        <h3 class="showroom-card-title">${this.escapeHtml(listing.title || '')}</h3>
+                        <div class="showroom-card-price">${formattedPrice}</div>
+                        <div class="showroom-card-details">
+                            <span><i class="fas fa-calendar"></i> ${listing.year || 'N/A'}</span>
+                            <span><i class="fas fa-road"></i> ${listing.mileage ? this.formatNumber(listing.mileage) + ' km' : 'N/A'}</span>
+                        </div>
+                        <div class="showroom-card-footer">
+                            <span><i class="fas fa-gas-pump"></i> ${listing.fuel_type ? this.capitalize(listing.fuel_type) : 'N/A'}</span>
+                            <span><i class="fas fa-map-marker-alt"></i> ${this.escapeHtml(listing.location_name || 'N/A')}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        section.style.display = 'block';
     }
 
     setupGalleryEvents() {

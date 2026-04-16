@@ -1,469 +1,941 @@
 <?php
 /**
  * MotorLink AI Recommendation Engine
- * Provides personalized car recommendations based on user behavior
+ * Learns from user preferences + browsing history for both logged-in and guest sessions.
  */
+
+if (!defined('MOTORLINK_CONSTANTS_ONLY')) {
+    define('MOTORLINK_CONSTANTS_ONLY', true);
+}
+require_once __DIR__ . '/api.php';
 
 class RecommendationEngine {
     private $db;
     private $userId;
-    
-    public function __construct($db, $userId = null) {
+    private $sessionId;
+
+    public function __construct($db, $userId = null, $sessionId = null) {
         $this->db = $db;
-        $this->userId = $userId;
+        $this->userId = $userId ? (int)$userId : null;
+        $this->sessionId = $sessionId ? trim((string)$sessionId) : null;
     }
-    
+
     /**
-     * Get personalized recommendations based on user behavior
+     * Get personalized recommendations based on browsing behavior and saved preferences.
      */
-    public function getPersonalizedRecommendations($limit = 10) {
-        $recommendations = [];
-        
-        // Get user preferences from browsing history
-        $userPreferences = $this->analyzeUserPreferences();
-        
-        // Get collaborative filtering results
-        $collaborativeResults = $this->collaborativeFiltering();
-        
-        // Get content-based filtering results
-        $contentResults = $this->contentBasedFiltering($userPreferences);
-        
-        // Merge and rank recommendations
-        $recommendations = $this->mergeAndRank(
-            $collaborativeResults, 
-            $contentResults,
-            $userPreferences
-        );
-        
+    public function getPersonalizedRecommendations($limit = 10, $excludeListingId = null) {
+        $limit = max(1, min(30, (int)$limit));
+        $excludeListingId = $excludeListingId ? (int)$excludeListingId : null;
+
+        $preferences = $this->analyzeUserPreferences();
+        $collaborative = $this->collaborativeFiltering();
+        $content = $this->contentBasedFiltering($preferences, max($limit * 3, 24));
+
+        $recommendations = $this->mergeAndRank($collaborative, $content, $preferences);
+
+        if ($excludeListingId) {
+            $recommendations = array_values(array_filter($recommendations, function ($item) use ($excludeListingId) {
+                return (int)($item['id'] ?? 0) !== $excludeListingId;
+            }));
+        }
+
+        if (empty($recommendations)) {
+            $recommendations = $this->getTrendingCars(max($limit * 2, 12), $excludeListingId);
+        }
+
         return array_slice($recommendations, 0, $limit);
     }
-    
+
     /**
-     * Analyze user's browsing patterns and preferences
+     * Analyze user preferences from behavior + stored preference snapshots.
      */
     private function analyzeUserPreferences() {
-        if (!$this->userId) return $this->getDefaultPreferences();
-        
-        $sql = "
-            SELECT 
-                AVG(cl.price) as avg_price,
-                AVG(cl.year) as avg_year,
-                AVG(cl.mileage) as avg_mileage,
-                GROUP_CONCAT(DISTINCT cm.name) as preferred_makes,
-                GROUP_CONCAT(DISTINCT cmo.body_type) as preferred_body_types,
-                COUNT(DISTINCT vh.listing_id) as total_views
-            FROM viewing_history vh
-            JOIN car_listings cl ON vh.listing_id = cl.id
-            JOIN car_makes cm ON cl.make_id = cm.id
-            JOIN car_models cmo ON cl.model_id = cmo.id
-            WHERE vh.user_id = ?
-            AND vh.viewed_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
-        ";
-        
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([$this->userId]);
-        $preferences = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        // Add weighted scoring based on interaction types
-        $interactionScore = $this->calculateInteractionScore();
-        $preferences['interaction_score'] = $interactionScore;
-        
-        return $preferences;
+        $defaults = $this->getDefaultPreferences();
+        $historyPrefs = $this->loadHistoryPreferences();
+        $storedPrefs = $this->loadStoredPreferences();
+
+        $defaults['avg_price'] = $this->pickNumericPreference($historyPrefs['avg_price'] ?? null, $storedPrefs['avg_price'] ?? null, $defaults['avg_price']);
+        $defaults['avg_year'] = $this->pickNumericPreference($historyPrefs['avg_year'] ?? null, $storedPrefs['avg_year'] ?? null, $defaults['avg_year']);
+        $defaults['avg_mileage'] = $this->pickNumericPreference($historyPrefs['avg_mileage'] ?? null, $storedPrefs['avg_mileage'] ?? null, $defaults['avg_mileage']);
+
+        $defaults['preferred_makes'] = $this->mergePreferenceLists(
+            $defaults['preferred_makes'],
+            $historyPrefs['preferred_makes'] ?? [],
+            $storedPrefs['preferred_makes'] ?? []
+        );
+
+        $defaults['preferred_body_types'] = $this->mergePreferenceLists(
+            $defaults['preferred_body_types'],
+            $historyPrefs['preferred_body_types'] ?? [],
+            $storedPrefs['preferred_body_types'] ?? []
+        );
+
+        $defaults['interaction_score'] = $this->calculateInteractionScore();
+
+        return $defaults;
     }
-    
+
     /**
-     * Calculate interaction score based on user actions
+     * Preference averages and dominant attributes from recent views.
      */
-    private function calculateInteractionScore() {
-        $sql = "
-            SELECT 
-                SUM(CASE 
-                    WHEN action_type = 'view' THEN 1
-                    WHEN action_type = 'favorite' THEN 3
-                    WHEN action_type = 'inquiry' THEN 5
-                    WHEN action_type = 'share' THEN 2
-                    ELSE 0
-                END) as score
-            FROM user_interactions
-            WHERE user_id = ?
-            AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
-        ";
-        
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([$this->userId]);
-        return $stmt->fetchColumn() ?: 0;
+    private function loadHistoryPreferences() {
+        $identity = null;
+        $param = null;
+        $historyTable = null;
+
+        if ($this->userId) {
+            $identity = 'user_id';
+            $param = $this->userId;
+            $historyTable = 'viewing_history';
+        } elseif ($this->sessionId) {
+            $identity = 'session_id';
+            $param = $this->sessionId;
+            $historyTable = 'guest_viewing_history';
+        } else {
+            return [];
+        }
+
+        try {
+            $sql = "
+                SELECT
+                    AVG(cl.price) AS avg_price,
+                    AVG(cl.year) AS avg_year,
+                    AVG(cl.mileage) AS avg_mileage,
+                    GROUP_CONCAT(DISTINCT cm.name) AS preferred_makes,
+                    GROUP_CONCAT(DISTINCT cmo.body_type) AS preferred_body_types,
+                    COUNT(DISTINCT vh.listing_id) AS total_views
+                FROM {$historyTable} vh
+                JOIN car_listings cl ON vh.listing_id = cl.id
+                JOIN car_makes cm ON cl.make_id = cm.id
+                JOIN car_models cmo ON cl.model_id = cmo.id
+                WHERE vh.{$identity} = ?
+                AND vh.last_viewed > DATE_SUB(NOW(), INTERVAL 45 DAY)
+            ";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$param]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$row) {
+                return [];
+            }
+
+            return [
+                'avg_price' => !empty($row['avg_price']) ? (float)$row['avg_price'] : null,
+                'avg_year' => !empty($row['avg_year']) ? (float)$row['avg_year'] : null,
+                'avg_mileage' => !empty($row['avg_mileage']) ? (float)$row['avg_mileage'] : null,
+                'preferred_makes' => $this->normalizePreferenceList($row['preferred_makes'] ?? ''),
+                'preferred_body_types' => $this->normalizePreferenceList($row['preferred_body_types'] ?? '')
+            ];
+        } catch (Exception $e) {
+            error_log('Recommendation history preference query failed: ' . $e->getMessage());
+            return [];
+        }
     }
-    
+
     /**
-     * Collaborative filtering - find similar users and their preferences
+     * Pull client-snapshotted preferences (sent by frontend) for better cold-start quality.
      */
-    private function collaborativeFiltering() {
-        if (!$this->userId) return [];
-        
-        // Find users with similar viewing patterns
-        $sql = "
-            SELECT 
-                other.user_id,
-                COUNT(DISTINCT other.listing_id) as common_views,
-                GROUP_CONCAT(DISTINCT recommended.listing_id) as recommendations
-            FROM viewing_history vh
-            JOIN viewing_history other ON vh.listing_id = other.listing_id
-            JOIN viewing_history recommended ON other.user_id = recommended.user_id
-            LEFT JOIN viewing_history already_seen 
-                ON already_seen.listing_id = recommended.listing_id 
-                AND already_seen.user_id = ?
-            WHERE vh.user_id = ?
-            AND other.user_id != ?
-            AND already_seen.id IS NULL
-            GROUP BY other.user_id
-            HAVING common_views >= 3
-            ORDER BY common_views DESC
-            LIMIT 10
-        ";
-        
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([$this->userId, $this->userId, $this->userId]);
-        
-        $recommendations = [];
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $listingIds = explode(',', $row['recommendations']);
-            foreach ($listingIds as $id) {
-                if (!isset($recommendations[$id])) {
-                    $recommendations[$id] = 0;
+    private function loadStoredPreferences() {
+        try {
+            if ($this->userId) {
+                $stmt = $this->db->prepare("SELECT preferences FROM user_preferences WHERE user_id = ? LIMIT 1");
+                $stmt->execute([$this->userId]);
+            } elseif ($this->sessionId) {
+                $stmt = $this->db->prepare("SELECT preferences FROM guest_preferences WHERE session_id = ? LIMIT 1");
+                $stmt->execute([$this->sessionId]);
+            } else {
+                return [];
+            }
+
+            $raw = $stmt->fetchColumn();
+            if (!$raw) {
+                return [];
+            }
+
+            $decoded = json_decode($raw, true);
+            if (!is_array($decoded)) {
+                return [];
+            }
+
+            $stored = [
+                'preferred_makes' => $this->normalizePreferenceList($decoded['preferred_makes'] ?? ($decoded['makes'] ?? [])),
+                'preferred_body_types' => $this->normalizePreferenceList($decoded['preferred_body_types'] ?? ($decoded['body_types'] ?? [])),
+                'avg_price' => null,
+                'avg_year' => null,
+                'avg_mileage' => null
+            ];
+
+            if (!empty($decoded['price_range']['avg'])) {
+                $stored['avg_price'] = (float)$decoded['price_range']['avg'];
+            } elseif (!empty($decoded['avgPrice'])) {
+                $stored['avg_price'] = (float)$decoded['avgPrice'];
+            }
+
+            if (!empty($decoded['year_range']['avg'])) {
+                $stored['avg_year'] = (float)$decoded['year_range']['avg'];
+            } elseif (!empty($decoded['avgYear'])) {
+                $stored['avg_year'] = (float)$decoded['avgYear'];
+            }
+
+            if (!empty($decoded['mileage_range']['avg'])) {
+                $stored['avg_mileage'] = (float)$decoded['mileage_range']['avg'];
+            }
+
+            return $stored;
+        } catch (Exception $e) {
+            error_log('Recommendation stored preference query failed: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    private function pickNumericPreference($primary, $secondary, $fallback) {
+        if (is_numeric($primary) && (float)$primary > 0) {
+            return (float)$primary;
+        }
+
+        if (is_numeric($secondary) && (float)$secondary > 0) {
+            return (float)$secondary;
+        }
+
+        return (float)$fallback;
+    }
+
+    private function mergePreferenceLists(...$lists) {
+        $counts = [];
+
+        foreach ($lists as $list) {
+            foreach ($this->normalizePreferenceList($list) as $item) {
+                if ($item === '') {
+                    continue;
                 }
-                $recommendations[$id] += $row['common_views'];
+
+                if (!isset($counts[$item])) {
+                    $counts[$item] = 0;
+                }
+                $counts[$item]++;
             }
         }
-        
-        return $this->fetchListingDetails(array_keys($recommendations));
+
+        arsort($counts);
+        return array_slice(array_keys($counts), 0, 8);
     }
-    
+
+    private function normalizePreferenceList($value) {
+        if (is_string($value)) {
+            $parts = array_map('trim', explode(',', $value));
+            $parts = array_values(array_filter($parts, function ($item) {
+                return $item !== '';
+            }));
+            return array_slice($parts, 0, 8);
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        if (array_values($value) === $value) {
+            $normalized = array_values(array_filter(array_map('trim', $value), function ($item) {
+                return $item !== '';
+            }));
+            return array_slice($normalized, 0, 8);
+        }
+
+        arsort($value);
+        $keys = array_map('trim', array_keys($value));
+        $keys = array_values(array_filter($keys, function ($item) {
+            return $item !== '';
+        }));
+        return array_slice($keys, 0, 8);
+    }
+
     /**
-     * Content-based filtering - find similar cars based on features
+     * Interaction score from explicit user actions.
      */
-    private function contentBasedFiltering($preferences) {
+    private function calculateInteractionScore() {
+        if (!$this->userId) {
+            return 0;
+        }
+
+        try {
+            $sql = "
+                SELECT
+                    SUM(CASE
+                        WHEN action_type = 'view' THEN 1
+                        WHEN action_type = 'favorite' THEN 3
+                        WHEN action_type = 'inquiry' THEN 5
+                        WHEN action_type = 'share' THEN 2
+                        ELSE 0
+                    END) AS score
+                FROM user_interactions
+                WHERE user_id = ?
+                AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+            ";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$this->userId]);
+            return (float)($stmt->fetchColumn() ?: 0);
+        } catch (Exception $e) {
+            // Table may not be available in all environments.
+            return 0;
+        }
+    }
+
+    /**
+     * Collaborative filtering for logged-in users.
+     */
+    private function collaborativeFiltering() {
+        if (!$this->userId) {
+            return [];
+        }
+
+        try {
+            $sql = "
+                SELECT
+                    other.user_id,
+                    COUNT(DISTINCT other.listing_id) AS common_views,
+                    GROUP_CONCAT(DISTINCT recommended.listing_id) AS recommendations
+                FROM viewing_history vh
+                JOIN viewing_history other ON vh.listing_id = other.listing_id
+                JOIN viewing_history recommended ON other.user_id = recommended.user_id
+                LEFT JOIN viewing_history already_seen
+                    ON already_seen.listing_id = recommended.listing_id
+                    AND already_seen.user_id = ?
+                WHERE vh.user_id = ?
+                AND other.user_id != ?
+                AND already_seen.id IS NULL
+                GROUP BY other.user_id
+                HAVING common_views >= 2
+                ORDER BY common_views DESC
+                LIMIT 12
+            ";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$this->userId, $this->userId, $this->userId]);
+
+            $recommendationMap = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                if (empty($row['recommendations'])) {
+                    continue;
+                }
+
+                $listingIds = array_filter(array_map('trim', explode(',', $row['recommendations'])));
+                foreach ($listingIds as $id) {
+                    $key = (int)$id;
+                    if (!isset($recommendationMap[$key])) {
+                        $recommendationMap[$key] = 0;
+                    }
+                    $recommendationMap[$key] += (int)$row['common_views'];
+                }
+            }
+
+            if (empty($recommendationMap)) {
+                return [];
+            }
+
+            $details = $this->fetchListingDetails(array_keys($recommendationMap));
+            foreach ($details as &$item) {
+                $id = (int)($item['id'] ?? 0);
+                $item['_collab_weight'] = (float)($recommendationMap[$id] ?? 0);
+            }
+            unset($item);
+
+            return $details;
+        } catch (Exception $e) {
+            error_log('Collaborative filtering failed: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Content-based filtering from preferences.
+     */
+    private function contentBasedFiltering($preferences, $limit = 24) {
+        $limit = max(8, min(60, (int)$limit));
+
+        $avgPrice = max(1, (float)($preferences['avg_price'] ?? 5000000));
+        $avgYear = max(1990, (float)($preferences['avg_year'] ?? 2018));
+        $avgMileage = max(1, (float)($preferences['avg_mileage'] ?? 50000));
+
+        $preferredMakes = $this->normalizePreferenceList($preferences['preferred_makes'] ?? []);
+        $preferredBodyTypes = $this->normalizePreferenceList($preferences['preferred_body_types'] ?? []);
+
+        $scoreSql = "
+            ABS(COALESCE(cl.price, ?) - ?) / ? * 0.36 +
+            ABS(COALESCE(cl.year, ?) - ?) / 12 * 0.22 +
+            ABS(COALESCE(cl.mileage, ?) - ?) / ? * 0.18
+        ";
+
+        $params = [
+            $avgPrice, $avgPrice, $avgPrice,
+            $avgYear, $avgYear,
+            $avgMileage, $avgMileage, $avgMileage
+        ];
+
+        if (!empty($preferredMakes)) {
+            $placeholders = implode(',', array_fill(0, count($preferredMakes), '?'));
+            $scoreSql .= " + CASE WHEN cm.name IN ({$placeholders}) THEN -0.22 ELSE 0 END";
+            $params = array_merge($params, $preferredMakes);
+        }
+
+        if (!empty($preferredBodyTypes)) {
+            $placeholders = implode(',', array_fill(0, count($preferredBodyTypes), '?'));
+            $scoreSql .= " + CASE WHEN cmo.body_type IN ({$placeholders}) THEN -0.12 ELSE 0 END";
+            $params = array_merge($params, $preferredBodyTypes);
+        }
+
         $sql = "
-            SELECT 
+            SELECT
                 cl.*,
-                cm.name as make_name,
-                cmo.name as model_name,
-                loc.name as location_name,
-                (
-                    ABS(cl.price - :avg_price) / :avg_price * 0.3 +
-                    ABS(cl.year - :avg_year) / 10 * 0.2 +
-                    ABS(cl.mileage - :avg_mileage) / :avg_mileage * 0.2 +
-                    CASE WHEN cm.name IN (:preferred_makes) THEN -0.2 ELSE 0 END +
-                    CASE WHEN cmo.body_type IN (:preferred_body_types) THEN -0.1 ELSE 0 END
-                ) as similarity_score
+                cm.name AS make_name,
+                cmo.name AS model_name,
+                cmo.body_type AS body_type,
+                loc.name AS location_name,
+                ({$scoreSql}) AS similarity_score
             FROM car_listings cl
             JOIN car_makes cm ON cl.make_id = cm.id
             JOIN car_models cmo ON cl.model_id = cmo.id
             JOIN locations loc ON cl.location_id = loc.id
             WHERE cl.status = 'active'
             AND cl.approval_status = 'approved'
-            ORDER BY similarity_score ASC
-            LIMIT 20
+            ORDER BY similarity_score ASC, cl.created_at DESC
+            LIMIT {$limit}
         ";
-        
-        $params = [
-            'avg_price' => $preferences['avg_price'] ?? 5000000,
-            'avg_year' => $preferences['avg_year'] ?? 2018,
-            'avg_mileage' => $preferences['avg_mileage'] ?? 50000,
-            'preferred_makes' => $preferences['preferred_makes'] ?? '',
-            'preferred_body_types' => $preferences['preferred_body_types'] ?? ''
-        ];
-        
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        try {
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            error_log('Content filtering failed: ' . $e->getMessage());
+            return [];
+        }
     }
-    
+
     /**
-     * Merge and rank recommendations from different algorithms
+     * Merge and rank recommendations from different signals.
      */
     private function mergeAndRank($collaborative, $content, $preferences) {
         $merged = [];
-        
-        // Weight collaborative filtering results
+        $preferredMakes = $this->normalizePreferenceList($preferences['preferred_makes'] ?? []);
+        $preferredBodyTypes = $this->normalizePreferenceList($preferences['preferred_body_types'] ?? []);
+
         foreach ($collaborative as $item) {
-            $id = $item['id'];
+            $id = (int)($item['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+
             if (!isset($merged[$id])) {
                 $merged[$id] = $item;
-                $merged[$id]['score'] = 0;
+                $merged[$id]['score'] = 0.0;
             }
-            $merged[$id]['score'] += 0.4; // Collaborative weight
+
+            $collabWeight = (float)($item['_collab_weight'] ?? 1);
+            $merged[$id]['score'] += 0.45 + min($collabWeight / 20, 0.20);
         }
-        
-        // Weight content-based results
+
         foreach ($content as $item) {
-            $id = $item['id'];
+            $id = (int)($item['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+
             if (!isset($merged[$id])) {
                 $merged[$id] = $item;
-                $merged[$id]['score'] = 0;
+                $merged[$id]['score'] = 0.0;
             }
-            $merged[$id]['score'] += 0.3 * (1 - $item['similarity_score']); // Content weight
+
+            $similarity = (float)($item['similarity_score'] ?? 3.0);
+            $normalized = max(0, 1 - min($similarity, 3.0) / 3.0);
+            $merged[$id]['score'] += 0.40 * $normalized;
+
+            if (!empty($item['make_name']) && in_array($item['make_name'], $preferredMakes, true)) {
+                $merged[$id]['score'] += 0.06;
+            }
+
+            if (!empty($item['body_type']) && in_array($item['body_type'], $preferredBodyTypes, true)) {
+                $merged[$id]['score'] += 0.04;
+            }
         }
-        
-        // Add recency bonus
+
+        $engagementBoost = min(((float)($preferences['interaction_score'] ?? 0)) / 220, 0.08);
+        foreach ($merged as &$item) {
+            $item['score'] += $engagementBoost;
+        }
+        unset($item);
+
         $this->addRecencyBonus($merged);
-        
-        // Add popularity bonus
         $this->addPopularityBonus($merged);
-        
-        // Sort by final score
-        usort($merged, function($a, $b) {
-            return $b['score'] <=> $a['score'];
+
+        uasort($merged, function ($a, $b) {
+            return ((float)$b['score']) <=> ((float)$a['score']);
         });
-        
+
         return array_values($merged);
     }
-    
-    /**
-     * Add bonus score for recently listed items
-     */
+
     private function addRecencyBonus(&$items) {
         foreach ($items as &$item) {
-            $daysOld = (time() - strtotime($item['created_at'])) / 86400;
-            if ($daysOld < 7) {
-                $item['score'] += 0.15;
-            } elseif ($daysOld < 14) {
-                $item['score'] += 0.1;
-            } elseif ($daysOld < 30) {
-                $item['score'] += 0.05;
+            if (empty($item['created_at'])) {
+                continue;
+            }
+
+            $ageSeconds = time() - strtotime((string)$item['created_at']);
+            $daysOld = $ageSeconds / 86400;
+
+            if ($daysOld <= 3) {
+                $item['score'] += 0.14;
+            } elseif ($daysOld <= 10) {
+                $item['score'] += 0.08;
+            } elseif ($daysOld <= 21) {
+                $item['score'] += 0.04;
             }
         }
+        unset($item);
     }
-    
-    /**
-     * Add bonus score for popular items
-     */
+
     private function addPopularityBonus(&$items) {
-        $ids = array_column($items, 'id');
-        if (empty($ids)) return;
-        
-        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
-        $sql = "
-            SELECT 
-                listing_id,
-                COUNT(*) as view_count,
-                COUNT(DISTINCT user_id) as unique_viewers
-            FROM viewing_history
-            WHERE listing_id IN ($placeholders)
-            AND viewed_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
-            GROUP BY listing_id
-        ";
-        
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($ids);
-        
+        $ids = array_values(array_filter(array_map('intval', array_column($items, 'id'))));
+        if (empty($ids)) {
+            return;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $popularity = [];
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $popularity[$row['listing_id']] = $row;
-        }
-        
-        foreach ($items as &$item) {
-            if (isset($popularity[$item['id']])) {
-                $viewScore = min($popularity[$item['id']]['view_count'] / 100, 0.1);
-                $item['score'] += $viewScore;
+
+        try {
+            $sql = "
+                SELECT listing_id, COUNT(*) AS views, COUNT(DISTINCT user_id) AS unique_views
+                FROM viewing_history
+                WHERE listing_id IN ({$placeholders})
+                AND last_viewed > DATE_SUB(NOW(), INTERVAL 10 DAY)
+                GROUP BY listing_id
+            ";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($ids);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $listingId = (int)$row['listing_id'];
+                $popularity[$listingId] = [
+                    'views' => (int)$row['views'],
+                    'unique' => (int)$row['unique_views']
+                ];
             }
+        } catch (Exception $e) {
+            // Optional table.
         }
+
+        try {
+            $sql = "
+                SELECT listing_id, COUNT(*) AS views, COUNT(DISTINCT session_id) AS unique_views
+                FROM guest_viewing_history
+                WHERE listing_id IN ({$placeholders})
+                AND last_viewed > DATE_SUB(NOW(), INTERVAL 10 DAY)
+                GROUP BY listing_id
+            ";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($ids);
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $listingId = (int)$row['listing_id'];
+                if (!isset($popularity[$listingId])) {
+                    $popularity[$listingId] = ['views' => 0, 'unique' => 0];
+                }
+                $popularity[$listingId]['views'] += (int)$row['views'];
+                $popularity[$listingId]['unique'] += (int)$row['unique_views'];
+            }
+        } catch (Exception $e) {
+            // Optional table.
+        }
+
+        foreach ($items as &$item) {
+            $id = (int)($item['id'] ?? 0);
+            if (!isset($popularity[$id])) {
+                continue;
+            }
+
+            $views = (int)$popularity[$id]['views'];
+            $unique = (int)$popularity[$id]['unique'];
+            $item['score'] += min(($views / 120), 0.10) + min(($unique / 80), 0.06);
+        }
+        unset($item);
     }
-    
-    /**
-     * Fetch full listing details
-     */
+
     private function fetchListingDetails($listingIds) {
-        if (empty($listingIds)) return [];
-        
-        $placeholders = str_repeat('?,', count($listingIds) - 1) . '?';
+        $listingIds = array_values(array_filter(array_map('intval', $listingIds)));
+        if (empty($listingIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($listingIds), '?'));
         $sql = "
-            SELECT 
+            SELECT
                 cl.*,
-                cm.name as make_name,
-                cmo.name as model_name,
-                loc.name as location_name
+                cm.name AS make_name,
+                cmo.name AS model_name,
+                cmo.body_type AS body_type,
+                loc.name AS location_name
             FROM car_listings cl
             JOIN car_makes cm ON cl.make_id = cm.id
             JOIN car_models cmo ON cl.model_id = cmo.id
             JOIN locations loc ON cl.location_id = loc.id
-            WHERE cl.id IN ($placeholders)
+            WHERE cl.id IN ({$placeholders})
             AND cl.status = 'active'
             AND cl.approval_status = 'approved'
         ";
-        
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($listingIds);
-        
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        try {
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($listingIds);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            error_log('fetchListingDetails failed: ' . $e->getMessage());
+            return [];
+        }
     }
-    
-    /**
-     * Get default preferences for non-logged users
-     */
+
     private function getDefaultPreferences() {
         return [
             'avg_price' => 5000000,
             'avg_year' => 2018,
             'avg_mileage' => 50000,
-            'preferred_makes' => 'Toyota,Nissan,Mazda',
-            'preferred_body_types' => 'Sedan,SUV',
+            'preferred_makes' => ['Toyota', 'Nissan', 'Mazda'],
+            'preferred_body_types' => ['Sedan', 'SUV'],
             'interaction_score' => 0
         ];
     }
-    
+
     /**
-     * Track user viewing history (supports both logged-in and guest users)
+     * Track listing view (guest or authenticated).
      */
     public function trackView($listingId, $sessionId = null) {
-        // For logged-in users
+        $listingId = (int)$listingId;
+        $sessionId = $sessionId ? trim((string)$sessionId) : $this->sessionId;
+
+        if ($listingId <= 0) {
+            return false;
+        }
+
         if ($this->userId) {
-            $sql = "
-                INSERT INTO viewing_history (user_id, listing_id, viewed_at, view_count, last_viewed)
-                VALUES (?, ?, NOW(), 1, NOW())
-                ON DUPLICATE KEY UPDATE 
-                    view_count = view_count + 1,
-                    last_viewed = NOW()
-            ";
-            
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$this->userId, $listingId]);
-        } 
-        // For guest users with session ID
-        else if ($sessionId) {
+            try {
+                $sql = "
+                    INSERT INTO viewing_history (user_id, listing_id, viewed_at, view_count, last_viewed)
+                    VALUES (?, ?, NOW(), 1, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        view_count = view_count + 1,
+                        last_viewed = NOW(),
+                        viewed_at = NOW()
+                ";
+
+                $stmt = $this->db->prepare($sql);
+                $stmt->execute([$this->userId, $listingId]);
+                return true;
+            } catch (Exception $e) {
+                try {
+                    $fallback = $this->db->prepare("INSERT INTO viewing_history (user_id, listing_id, viewed_at, view_count, last_viewed) VALUES (?, ?, NOW(), 1, NOW())");
+                    $fallback->execute([$this->userId, $listingId]);
+                    return true;
+                } catch (Exception $inner) {
+                    error_log('trackView user failed: ' . $inner->getMessage());
+                    return false;
+                }
+            }
+        }
+
+        if (!$sessionId) {
+            return false;
+        }
+
+        try {
             $sql = "
                 INSERT INTO guest_viewing_history (session_id, listing_id, viewed_at, view_count, last_viewed)
                 VALUES (?, ?, NOW(), 1, NOW())
-                ON DUPLICATE KEY UPDATE 
+                ON DUPLICATE KEY UPDATE
                     view_count = view_count + 1,
-                    last_viewed = NOW()
+                    last_viewed = NOW(),
+                    viewed_at = NOW()
             ";
-            
+
             $stmt = $this->db->prepare($sql);
             $stmt->execute([$sessionId, $listingId]);
+            return true;
+        } catch (Exception $e) {
+            try {
+                $fallback = $this->db->prepare("INSERT INTO guest_viewing_history (session_id, listing_id, viewed_at, view_count, last_viewed) VALUES (?, ?, NOW(), 1, NOW())");
+                $fallback->execute([$sessionId, $listingId]);
+                return true;
+            } catch (Exception $inner) {
+                error_log('trackView guest failed: ' . $inner->getMessage());
+                return false;
+            }
         }
     }
-    
+
     /**
-     * Store user preferences for both logged-in and guest users
+     * Store learned preference snapshot from client behavior.
      */
     public function storePreferences($preferences, $sessionId = null) {
-        $preferencesJson = json_encode($preferences);
-        
-        // For logged-in users
-        if ($this->userId) {
-            $sql = "
-                INSERT INTO user_preferences (user_id, preferences, updated_at)
-                VALUES (?, ?, NOW())
-                ON DUPLICATE KEY UPDATE 
-                    preferences = ?,
-                    updated_at = NOW()
-            ";
-            
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$this->userId, $preferencesJson, $preferencesJson]);
+        if (!is_array($preferences) || empty($preferences)) {
+            return false;
         }
-        // For guest users
-        else if ($sessionId) {
+
+        $sessionId = $sessionId ? trim((string)$sessionId) : $this->sessionId;
+        $payload = json_encode($preferences, JSON_UNESCAPED_UNICODE);
+        if ($payload === false) {
+            return false;
+        }
+
+        if ($this->userId) {
+            try {
+                $sql = "
+                    INSERT INTO user_preferences (user_id, preferences, updated_at)
+                    VALUES (?, ?, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        preferences = VALUES(preferences),
+                        updated_at = NOW()
+                ";
+                $stmt = $this->db->prepare($sql);
+                $stmt->execute([$this->userId, $payload]);
+                return true;
+            } catch (Exception $e) {
+                try {
+                    $update = $this->db->prepare("UPDATE user_preferences SET preferences = ?, updated_at = NOW() WHERE user_id = ?");
+                    $update->execute([$payload, $this->userId]);
+                    if ($update->rowCount() > 0) {
+                        return true;
+                    }
+
+                    $insert = $this->db->prepare("INSERT INTO user_preferences (user_id, preferences, updated_at) VALUES (?, ?, NOW())");
+                    $insert->execute([$this->userId, $payload]);
+                    return true;
+                } catch (Exception $inner) {
+                    error_log('storePreferences user failed: ' . $inner->getMessage());
+                    return false;
+                }
+            }
+        }
+
+        if (!$sessionId) {
+            return false;
+        }
+
+        try {
             $sql = "
                 INSERT INTO guest_preferences (session_id, preferences, updated_at)
                 VALUES (?, ?, NOW())
-                ON DUPLICATE KEY UPDATE 
-                    preferences = ?,
+                ON DUPLICATE KEY UPDATE
+                    preferences = VALUES(preferences),
                     updated_at = NOW()
             ";
-            
             $stmt = $this->db->prepare($sql);
-            $stmt->execute([$sessionId, $preferencesJson, $preferencesJson]);
+            $stmt->execute([$sessionId, $payload]);
+            return true;
+        } catch (Exception $e) {
+            try {
+                $update = $this->db->prepare("UPDATE guest_preferences SET preferences = ?, updated_at = NOW() WHERE session_id = ?");
+                $update->execute([$payload, $sessionId]);
+                if ($update->rowCount() > 0) {
+                    return true;
+                }
+
+                $insert = $this->db->prepare("INSERT INTO guest_preferences (session_id, preferences, updated_at) VALUES (?, ?, NOW())");
+                $insert->execute([$sessionId, $payload]);
+                return true;
+            } catch (Exception $inner) {
+                error_log('storePreferences guest failed: ' . $inner->getMessage());
+                return false;
+            }
         }
     }
-    
+
     /**
-     * Get trending cars based on recent activity
+     * Fallback recommendations based on platform popularity.
      */
-    public function getTrendingCars($limit = 10) {
+    public function getTrendingCars($limit = 10, $excludeListingId = null) {
+        $limit = max(1, min(30, (int)$limit));
+        $params = [];
+
+        $excludeSql = '';
+        if ($excludeListingId) {
+            $excludeSql = ' AND cl.id != ?';
+            $params[] = (int)$excludeListingId;
+        }
+
         $sql = "
-            SELECT 
+            SELECT
                 cl.*,
-                cm.name as make_name,
-                cmo.name as model_name,
-                loc.name as location_name,
-                COUNT(DISTINCT vh.user_id) as unique_views,
-                COUNT(vh.id) as total_views,
-                AVG(CASE WHEN vh.viewed_at > DATE_SUB(NOW(), INTERVAL 1 DAY) THEN 1 ELSE 0 END) as recent_activity
+                cm.name AS make_name,
+                cmo.name AS model_name,
+                cmo.body_type AS body_type,
+                loc.name AS location_name,
+                COALESCE(vh.total_views, 0) + COALESCE(gvh.total_views, 0) AS total_views,
+                COALESCE(vh.unique_views, 0) + COALESCE(gvh.unique_views, 0) AS unique_viewers
             FROM car_listings cl
             JOIN car_makes cm ON cl.make_id = cm.id
             JOIN car_models cmo ON cl.model_id = cmo.id
             JOIN locations loc ON cl.location_id = loc.id
-            LEFT JOIN viewing_history vh ON cl.id = vh.listing_id
+            LEFT JOIN (
+                SELECT listing_id, COUNT(*) AS total_views, COUNT(DISTINCT user_id) AS unique_views
+                FROM viewing_history
+                WHERE last_viewed > DATE_SUB(NOW(), INTERVAL 10 DAY)
+                GROUP BY listing_id
+            ) vh ON vh.listing_id = cl.id
+            LEFT JOIN (
+                SELECT listing_id, COUNT(*) AS total_views, COUNT(DISTINCT session_id) AS unique_views
+                FROM guest_viewing_history
+                WHERE last_viewed > DATE_SUB(NOW(), INTERVAL 10 DAY)
+                GROUP BY listing_id
+            ) gvh ON gvh.listing_id = cl.id
             WHERE cl.status = 'active'
             AND cl.approval_status = 'approved'
-            AND vh.viewed_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
-            GROUP BY cl.id
-            ORDER BY recent_activity DESC, unique_views DESC
-            LIMIT ?
+            {$excludeSql}
+            ORDER BY total_views DESC, unique_viewers DESC, cl.created_at DESC
+            LIMIT {$limit}
         ";
-        
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([$limit]);
-        
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-}
 
-// API Endpoint for recommendations
-if (isset($_GET['action']) && $_GET['action'] === 'get_recommendations') {
-    require_once 'api.php';
-    
-    $userId = $_SESSION['user_id'] ?? null;
-    $engine = new RecommendationEngine(getDB(), $userId);
-    
-    $type = $_GET['type'] ?? 'personalized';
-    
-    switch ($type) {
-        case 'personalized':
-            $recommendations = $engine->getPersonalizedRecommendations();
-            break;
-        case 'trending':
-            $recommendations = $engine->getTrendingCars();
-            break;
-        default:
-            $recommendations = [];
-    }
-    
-    sendSuccess(['recommendations' => $recommendations]);
-}
+        try {
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// API Endpoint for tracking views
-if (isset($_POST['action']) || isset($_GET['action'])) {
-    $action = $_POST['action'] ?? $_GET['action'];
-    
-    if ($action === 'track_view') {
-        require_once 'api.php';
-        
-        // Get POST data (supports both JSON and form data)
-        $data = json_decode(file_get_contents('php://input'), true) ?: $_POST;
-        
-        $listingId = $data['listing_id'] ?? null;
-        $preferences = $data['preferences'] ?? null;
-        $sessionId = $data['session_id'] ?? null;
-        
-        if ($listingId) {
-            $userId = $_SESSION['user_id'] ?? null;
-            $engine = new RecommendationEngine(getDB(), $userId);
-            
-            // Track the view
-            $engine->trackView($listingId, $sessionId);
-            
-            // Store preferences if provided
-            if ($preferences) {
-                $engine->storePreferences($preferences, $sessionId);
+            if (!empty($rows)) {
+                return $rows;
             }
-            
-            sendSuccess(['message' => 'View tracked successfully']);
-        } else {
-            sendError('Missing listing_id');
+        } catch (Exception $e) {
+            // Continue to newest fallback.
+        }
+
+        try {
+            $fallbackSql = "
+                SELECT
+                    cl.*,
+                    cm.name AS make_name,
+                    cmo.name AS model_name,
+                    cmo.body_type AS body_type,
+                    loc.name AS location_name
+                FROM car_listings cl
+                JOIN car_makes cm ON cl.make_id = cm.id
+                JOIN car_models cmo ON cl.model_id = cmo.id
+                JOIN locations loc ON cl.location_id = loc.id
+                WHERE cl.status = 'active'
+                AND cl.approval_status = 'approved'
+                {$excludeSql}
+                ORDER BY cl.created_at DESC
+                LIMIT {$limit}
+            ";
+
+            $stmt = $this->db->prepare($fallbackSql);
+            $stmt->execute($params);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            error_log('getTrendingCars failed: ' . $e->getMessage());
+            return [];
         }
     }
 }
-?>
+
+// -----------------------------------------------------------------------------
+// Endpoint handler
+// -----------------------------------------------------------------------------
+
+try {
+    $rawInput = file_get_contents('php://input');
+    $jsonInput = json_decode($rawInput, true);
+    if (!is_array($jsonInput)) {
+        $jsonInput = [];
+    }
+
+    $action = $_GET['action'] ?? $_POST['action'] ?? ($jsonInput['action'] ?? '');
+    if (!$action) {
+        sendError('No action specified', 400);
+    }
+
+    $sessionId = trim((string)($_GET['session_id'] ?? $_POST['session_id'] ?? ($jsonInput['session_id'] ?? '')));
+    if ($sessionId === '') {
+        $sessionId = null;
+    }
+
+    $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+    $engine = new RecommendationEngine(getDB(), $userId, $sessionId);
+
+    switch ($action) {
+        case 'get_recommendations':
+            $type = strtolower((string)($_GET['type'] ?? $_POST['type'] ?? ($jsonInput['type'] ?? 'personalized')));
+            $limit = (int)($_GET['limit'] ?? $_POST['limit'] ?? ($jsonInput['limit'] ?? 10));
+            $excludeListingId = (int)($_GET['exclude_listing_id'] ?? $_POST['exclude_listing_id'] ?? ($jsonInput['exclude_listing_id'] ?? 0));
+            if ($excludeListingId <= 0) {
+                $excludeListingId = null;
+            }
+
+            if ($type === 'trending') {
+                $recommendations = $engine->getTrendingCars($limit, $excludeListingId);
+            } else {
+                $recommendations = $engine->getPersonalizedRecommendations($limit, $excludeListingId);
+                if (empty($recommendations)) {
+                    $recommendations = $engine->getTrendingCars($limit, $excludeListingId);
+                }
+                $type = 'personalized';
+            }
+
+            sendSuccess([
+                'recommendations' => $recommendations,
+                'meta' => [
+                    'type' => $type,
+                    'count' => count($recommendations),
+                    'session_tracking' => $sessionId ? true : false
+                ]
+            ]);
+            break;
+
+        case 'track_view':
+            $listingId = (int)($_GET['listing_id'] ?? $_POST['listing_id'] ?? ($jsonInput['listing_id'] ?? 0));
+            if ($listingId <= 0) {
+                sendError('Missing listing_id', 400);
+            }
+
+            $tracked = $engine->trackView($listingId, $sessionId);
+
+            $preferences = $jsonInput['preferences'] ?? $_POST['preferences'] ?? null;
+            if (is_string($preferences)) {
+                $decoded = json_decode($preferences, true);
+                if (is_array($decoded)) {
+                    $preferences = $decoded;
+                }
+            }
+
+            if (is_array($preferences) && !empty($preferences)) {
+                $engine->storePreferences($preferences, $sessionId);
+            }
+
+            sendSuccess([
+                'message' => 'View tracking processed',
+                'tracked' => $tracked
+            ]);
+            break;
+
+        case 'store_preferences':
+            $preferences = $jsonInput['preferences'] ?? $_POST['preferences'] ?? null;
+            if (is_string($preferences)) {
+                $decoded = json_decode($preferences, true);
+                if (is_array($decoded)) {
+                    $preferences = $decoded;
+                }
+            }
+
+            if (!is_array($preferences) || empty($preferences)) {
+                sendError('Missing preferences payload', 400);
+            }
+
+            $saved = $engine->storePreferences($preferences, $sessionId);
+            sendSuccess([
+                'message' => 'Preferences processed',
+                'saved' => $saved
+            ]);
+            break;
+
+        default:
+            sendError('Invalid action: ' . $action, 400);
+    }
+} catch (Exception $e) {
+    error_log('Recommendation engine fatal error: ' . $e->getMessage());
+    sendError('Internal server error', 500);
+}

@@ -853,41 +853,191 @@
       gap: 12px;
     }
 
-    /* Footer */
-    .ad-footer {
+    /* Modern Site Footer */
+    .site-footer {
       background: var(--neutral-900);
-      padding: 32px 60px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      color: white;
     }
 
-    .footer-left {
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 64px 48px 48px;
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1.5fr;
+      gap: 48px;
+    }
+
+    .footer-brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .footer-logo-mark {
+      width: 46px;
+      height: 46px;
+      background: linear-gradient(135deg, var(--primary-green), var(--primary-green-light));
+      border-radius: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .footer-brand-name {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: white;
+    }
+
+    .footer-brand-tag {
+      font-size: 11px;
+      color: var(--neutral-500);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .footer-brand-desc {
       font-size: 14px;
       color: var(--neutral-500);
+      line-height: 1.7;
+      margin-bottom: 24px;
     }
 
-    .footer-left strong {
-      color: var(--neutral-300);
-    }
-
-    .footer-right {
+    .footer-social {
       display: flex;
-      gap: 24px;
+      gap: 10px;
     }
 
-    .footer-link {
+    .footer-social-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--neutral-400);
+      font-size: 15px;
+      text-decoration: none;
+      transition: all 0.3s;
+    }
+
+    .footer-social-btn:hover {
+      background: var(--primary-green);
+      border-color: var(--primary-green);
+      color: white;
+      transform: translateY(-2px);
+    }
+
+    .footer-col-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--neutral-500);
+      margin: 0 0 20px;
+    }
+
+    .footer-nav-link {
+      display: block;
       color: var(--neutral-400);
       text-decoration: none;
       font-size: 14px;
-      font-weight: 600;
-      transition: color 0.3s;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      transition: color 0.2s;
     }
 
-    .footer-link:hover {
+    .footer-nav-link:hover {
+      color: white;
+    }
+
+    .footer-builder-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .builder-icon {
+      width: 46px;
+      height: 46px;
+      background: linear-gradient(135deg, var(--primary-green), var(--primary-green-light));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 900;
+      color: white;
+      flex-shrink: 0;
+    }
+
+    .builder-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 2px;
+    }
+
+    .builder-sub {
+      font-size: 12px;
+      color: var(--neutral-500);
+    }
+
+    .builder-desc {
+      font-size: 13px;
+      color: var(--neutral-500);
+      line-height: 1.65;
+      margin-bottom: 16px;
+    }
+
+    .builder-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--primary-green-light);
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: gap 0.3s;
+    }
+
+    .builder-cta:hover {
+      gap: 10px;
+    }
+
+    .footer-bar {
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
+      padding: 20px 48px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto;
+      font-size: 13px;
+      color: var(--neutral-600);
+    }
+
+    .footer-bar a {
+      color: var(--primary-green-light);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .footer-bar a:hover {
       color: white;
     }
 
@@ -936,6 +1086,15 @@
       .nav-dots {
         display: none;
       }
+
+      .footer-inner {
+        grid-template-columns: 1fr 1fr;
+        gap: 36px;
+      }
+
+      .footer-brand-col {
+        grid-column: span 2;
+      }
     }
 
     @media (max-width: 768px) {
@@ -975,19 +1134,28 @@
         gap: 24px;
       }
 
-      .ad-footer {
-        flex-direction: column;
-        gap: 20px;
-        text-align: center;
-        padding: 24px;
-      }
-
       .cta-buttons {
         flex-direction: column;
       }
 
       .btn {
         justify-content: center;
+      }
+
+      .footer-inner {
+        grid-template-columns: 1fr;
+        padding: 40px 24px 32px;
+      }
+
+      .footer-brand-col {
+        grid-column: auto;
+      }
+
+      .footer-bar {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 18px 24px;
       }
     }
   </style>
@@ -1053,8 +1221,8 @@
           <div class="hero-right">
             <div class="stat-grid">
               <div class="stat-box">
-                <div class="stat-number">5,000+</div>
-                <div class="stat-label">Active Car Listings</div>
+                <div class="stat-number">24/7</div>
+                <div class="stat-label">Always Available</div>
               </div>
               <div class="stat-box">
                 <div class="stat-number">200+</div>
@@ -1311,27 +1479,68 @@
             </div>
           </div>
         </div>
-
-        <div class="ad-footer">
-          <div class="footer-left">
-            <strong>MotorLink Malawi</strong> — Connecting Malawi's automotive community since 2025. 
-            Built with love by <strong>ProManaged IT</strong>.
-          </div>
-          <div class="footer-right">
-            <a href="https://promanaged-it.com/motorlink/" target="_blank" class="footer-link">
-              <i class="fas fa-globe"></i>
-              <span>Visit Site</span>
-            </a>
-            <a href="https://promanaged-it.com" target="_blank" class="footer-link">
-              <i class="fas fa-server"></i>
-              <span>ProManaged IT</span>
-            </a>
-          </div>
-        </div>
       </div>
     </section>
 
   </div>
+
+  <!-- Modern Site Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand-col">
+        <div class="footer-brand-logo">
+          <div class="footer-logo-mark"><i class="fas fa-car"></i></div>
+          <div>
+            <div class="footer-brand-name">MotorLink</div>
+            <div class="footer-brand-tag">Malawi's Car Marketplace</div>
+          </div>
+        </div>
+        <p class="footer-brand-desc">Connecting Malawi's automotive community. The modern way to buy, sell, and rent vehicles across all 28 districts.</p>
+        <div class="footer-social">
+          <a href="#" class="footer-social-btn" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
+          <a href="#" class="footer-social-btn" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+          <a href="#" class="footer-social-btn" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+        </div>
+      </div>
+
+      <div class="footer-links-col">
+        <h6 class="footer-col-title">Platform</h6>
+        <a href="https://promanaged-it.com/motorlink/" target="_blank" class="footer-nav-link">Browse Cars</a>
+        <a href="https://promanaged-it.com/motorlink/sell.html" target="_blank" class="footer-nav-link">List Your Car</a>
+        <a href="https://promanaged-it.com/motorlink/car-hire.html" target="_blank" class="footer-nav-link">Car Hire</a>
+        <a href="https://promanaged-it.com/motorlink/garages.html" target="_blank" class="footer-nav-link">Garages</a>
+        <a href="https://promanaged-it.com/motorlink/dealers.html" target="_blank" class="footer-nav-link">Dealers</a>
+      </div>
+
+      <div class="footer-links-col">
+        <h6 class="footer-col-title">Company</h6>
+        <a href="https://promanaged-it.com/motorlink/terms.html" target="_blank" class="footer-nav-link">Terms of Service</a>
+        <a href="https://promanaged-it.com/motorlink/cookie-policy.html" target="_blank" class="footer-nav-link">Cookie Policy</a>
+        <a href="https://promanaged-it.com/motorlink/login.html" target="_blank" class="footer-nav-link">Sign In</a>
+        <a href="https://promanaged-it.com" target="_blank" class="footer-nav-link">ProManaged IT</a>
+      </div>
+
+      <div class="footer-builder-col">
+        <h6 class="footer-col-title">Built By</h6>
+        <div class="footer-builder-card">
+          <div class="builder-icon">P</div>
+          <div>
+            <div class="builder-name">ProManaged IT</div>
+            <div class="builder-sub">Digital &amp; IT Solutions</div>
+          </div>
+        </div>
+        <p class="builder-desc">Professional IT solutions, web development &amp; managed hosting for Malawi businesses.</p>
+        <a href="https://promanaged-it.com" target="_blank" class="builder-cta">
+          Visit promanaged-it.com <i class="fas fa-arrow-right"></i>
+        </a>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <span>&copy; 2025 MotorLink Malawi. All rights reserved.</span>
+      <span>Powered by <a href="https://promanaged-it.com" target="_blank">ProManaged IT</a></span>
+    </div>
+  </footer>
 
   <script>
     // Scroll progress indicator
@@ -1399,6 +1608,6 @@
     });
   </script>
 
-    <script src="js/page-transitions.js"></script>
+    <script src="../js/page-transitions.js"></script>
 </body>
 </html>

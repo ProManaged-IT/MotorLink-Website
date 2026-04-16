@@ -22,6 +22,7 @@
         DEBUG: false,
         BASE_URL: normalizedBase,
         API_URL: `${origin}${normalizedBase}api.php`,
+        RECOMMENDATION_API_URL: `${origin}${normalizedBase}recommendation_engine.php`,
         USE_CREDENTIALS: true
     };
 
@@ -42,6 +43,7 @@ class MotorLink {
         this.authChecked = false;
         this.userLocation = null; // Store user location for distance sorting
         this.searchDebounceTimer = null; // For debouncing search input
+        this.serverRecommendationCache = { ids: [], expiresAt: 0 };
         this.init();
     }
     
@@ -1127,6 +1129,7 @@ class MotorLink {
                     // Only boost relevance on "newest" default browsing so explicit sorts remain exact.
                     if (activeSort === 'newest') {
                         listings = this.applyRecommendationBoosting(listings);
+                        listings = await this.applyServerRecommendationBoosting(listings);
                     }
                     
                     // Always render (replace) listings for pagination
@@ -1253,6 +1256,91 @@ class MotorLink {
         }
 
         /**
+         * Resolve recommendation endpoint with safe fallback to avoid broken learning flow.
+         */
+        getRecommendationApiUrl() {
+            if (CONFIG && CONFIG.RECOMMENDATION_API_URL) {
+                return CONFIG.RECOMMENDATION_API_URL;
+            }
+
+            if (CONFIG && CONFIG.API_URL && CONFIG.API_URL.includes('api.php')) {
+                return CONFIG.API_URL.replace('api.php', 'recommendation_engine.php');
+            }
+
+            return 'recommendation_engine.php';
+        }
+
+        /**
+         * Fetch recommendation IDs from server and cache briefly to reduce network usage.
+         */
+        async getServerRecommendationIds(forceRefresh = false) {
+            const now = Date.now();
+            if (!forceRefresh && this.serverRecommendationCache.expiresAt > now && this.serverRecommendationCache.ids.length > 0) {
+                return this.serverRecommendationCache.ids;
+            }
+
+            const recommendationUrl = this.getRecommendationApiUrl();
+            const sessionId = this.getOrCreateSessionId();
+
+            try {
+                const endpoint = `${recommendationUrl}?action=get_recommendations&type=personalized&limit=20&session_id=${encodeURIComponent(sessionId)}`;
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+                const data = await response.json();
+
+                const ids = Array.isArray(data?.recommendations)
+                    ? data.recommendations.map(item => String(item.id)).filter(Boolean)
+                    : [];
+
+                this.serverRecommendationCache = {
+                    ids,
+                    expiresAt: now + 2 * 60 * 1000
+                };
+
+                return ids;
+            } catch (error) {
+                this.serverRecommendationCache = { ids: [], expiresAt: now + 30 * 1000 };
+                return [];
+            }
+        }
+
+        /**
+         * Boost listings that the recommendation API ranks highly.
+         */
+        async applyServerRecommendationBoosting(listings) {
+            if (!Array.isArray(listings) || listings.length === 0) {
+                return listings;
+            }
+
+            const recommendedIds = await this.getServerRecommendationIds(false);
+            if (!recommendedIds.length) {
+                return listings;
+            }
+
+            const idPriority = new Map();
+            recommendedIds.forEach((id, index) => {
+                idPriority.set(String(id), recommendedIds.length - index);
+            });
+
+            const enriched = listings.map((listing, index) => ({
+                ...listing,
+                _serverBoost: idPriority.get(String(listing.id)) || 0,
+                _originalOrder: index
+            }));
+
+            enriched.sort((a, b) => {
+                if (b._serverBoost === a._serverBoost) {
+                    return a._originalOrder - b._originalOrder;
+                }
+                return b._serverBoost - a._serverBoost;
+            });
+
+            return enriched.map(({ _serverBoost, _originalOrder, ...listing }) => listing);
+        }
+
+        /**
          * Get user preferences from localStorage
          */
         getUserPreferences() {
@@ -1369,6 +1457,8 @@ class MotorLink {
          * Send view tracking data to server for both guest and logged-in users
          */
         sendViewTrackingToServer(listingId, preferences) {
+            const recommendationUrl = this.getRecommendationApiUrl();
+
             // Don't block the main thread - use beacon API or async fetch
             const trackingData = {
                 action: 'track_view',
@@ -1381,10 +1471,10 @@ class MotorLink {
             // Use sendBeacon for reliability (works even when page is closing)
             if (navigator.sendBeacon) {
                 const blob = new Blob([JSON.stringify(trackingData)], { type: 'application/json' });
-                navigator.sendBeacon(`${CONFIG.API_URL}`, blob);
+                navigator.sendBeacon(`${recommendationUrl}?action=track_view`, blob);
             } else {
                 // Fallback to fetch
-                fetch(CONFIG.API_URL, {
+                fetch(recommendationUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(trackingData),

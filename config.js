@@ -96,6 +96,26 @@ const getAPIUrl = () => {
     return 'api.php';
 };
 
+// Dedicated recommendation endpoint URL
+const getRecommendationApiUrl = () => {
+    // Production environment: same server path
+    if (isProduction) {
+        return '/motorlink/recommendation_engine.php';
+    }
+
+    // Local development with static servers should target local PHP server
+    if (isLocal && protocol !== 'file:' && port && port !== '80' && port !== '443' && port !== '8000') {
+        return `${window.location.protocol}//${window.location.hostname}:8000/recommendation_engine.php`;
+    }
+
+    if (protocol === 'file:') {
+        return 'http://127.0.0.1:8000/recommendation_engine.php';
+    }
+
+    // UAT/Local development: relative path
+    return 'recommendation_engine.php';
+};
+
 // Determine the base URL
 const getBaseURL = () => {
     // Production: use relative paths (same server)
@@ -118,6 +138,7 @@ const CONFIG = {
     DEBUG: DEBUG,
     BASE_URL: getBaseURL(),
     API_URL: getAPIUrl(),
+    RECOMMENDATION_API_URL: getRecommendationApiUrl(),
     SITE_NAME: 'MotorLink Malawi',
     VERSION: '4.1.0',
     // Always use credentials for session management

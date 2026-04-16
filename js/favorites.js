@@ -225,34 +225,49 @@ class FavoritesManager {
     }
     
     async loadRecommendations() {
-        // Only load recommendations if user has saved cars
-        if (this.listings.length === 0) {
-            return;
-        }
-        
         try {
-            // Analyze saved cars to find patterns
+            const recommendationUrl = this.getRecommendationApiUrl();
+            const sessionId = this.getOrCreateSessionId();
+
+            // Analyze saved cars to find patterns and persist as an explicit preference hint.
             const patterns = this.analyzePatterns();
-            
-            if (!patterns) {
-                return; // No clear pattern found
+
+            if (patterns) {
+                await fetch(recommendationUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        action: 'store_preferences',
+                        session_id: sessionId,
+                        preferences: patterns
+                    })
+                }).catch(() => {});
             }
-            
-            // Get recommendations from API based on patterns
-            const response = await fetch(`${CONFIG.API_URL}?action=get_recommendations&source=favorites&limit=3`, {
+
+            // Always fetch recommendations (personalized first, trending fallback).
+            let response = await fetch(`${recommendationUrl}?action=get_recommendations&type=personalized&limit=6&session_id=${encodeURIComponent(sessionId)}`, {
                 credentials: 'include'
             });
-            const data = await response.json();
-            
-            if (data.success && data.recommendations && data.recommendations.length > 0) {
-                // Filter out cars that are already in favorites
-                const recommendations = data.recommendations.filter(
-                    rec => !this.savedListings.includes(parseInt(rec.id))
-                );
-                
-                if (recommendations.length > 0) {
-                    this.renderRecommendations(recommendations);
-                }
+
+            let data = await response.json();
+            let recommendations = (data.success && Array.isArray(data.recommendations)) ? data.recommendations : [];
+
+            if (recommendations.length === 0) {
+                response = await fetch(`${recommendationUrl}?action=get_recommendations&type=trending&limit=6&session_id=${encodeURIComponent(sessionId)}`, {
+                    credentials: 'include'
+                });
+                data = await response.json();
+                recommendations = (data.success && Array.isArray(data.recommendations)) ? data.recommendations : [];
+            }
+
+            // Filter out cars already in favorites and limit visual payload.
+            const filtered = recommendations
+                .filter(rec => !this.savedListings.includes(parseInt(rec.id)))
+                .slice(0, 3);
+
+            if (filtered.length > 0) {
+                this.renderRecommendations(filtered);
             }
         } catch (error) {
             console.error('Failed to load recommendations:', error);
@@ -317,6 +332,27 @@ class FavoritesManager {
                 ? Object.keys(transmissions).reduce((a, b) => transmissions[a] > transmissions[b] ? a : b)
                 : null
         };
+    }
+
+    getRecommendationApiUrl() {
+        if (CONFIG && CONFIG.RECOMMENDATION_API_URL) {
+            return CONFIG.RECOMMENDATION_API_URL;
+        }
+
+        if (CONFIG && CONFIG.API_URL && CONFIG.API_URL.includes('api.php')) {
+            return CONFIG.API_URL.replace('api.php', 'recommendation_engine.php');
+        }
+
+        return 'recommendation_engine.php';
+    }
+
+    getOrCreateSessionId() {
+        let sessionId = localStorage.getItem('motorlink_session_id');
+        if (!sessionId) {
+            sessionId = 'guest_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);
+            localStorage.setItem('motorlink_session_id', sessionId);
+        }
+        return sessionId;
     }
     
     renderRecommendations(recommendations) {
