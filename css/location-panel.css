@@ -1,0 +1,209 @@
+/* ============================================================
+   UNIFIED LOCATION PANEL
+   Shared across garage / dealer / company cards
+   ============================================================ */
+
+/* ── Panel container ─────────────────────────────────────────── */
+.loc-panel {
+  display: grid;
+  gap: 0;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 6px 8px;
+  margin: 6px 0 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ── Row 1: Location + Distance — equal 2-col grid ──────────── */
+.loc-chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  align-items: stretch;
+}
+
+/* Single chip fallback (no distance) */
+.loc-chips:has(> :only-child) {
+  grid-template-columns: 1fr;
+}
+
+/* ── Row 2: Stats — equal 2-col grid with divider ────────────── */
+.loc-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  align-items: stretch;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* ── Chip — unified pill for every item ──────────────────────── */
+.loc-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  min-width: 0;
+  transition: border-color 0.2s ease;
+}
+
+.loc-chip i {
+  font-size: 0.6rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+/* Location chip icon — warm map color */
+.loc-chip i.fa-map-marker-alt {
+  color: #ef4444;
+}
+
+/* Distance chip icon — green directional */
+.loc-chip.distance-info i {
+  color: #22c55e;
+}
+
+/* Stats icons — subtle blue/gray */
+.loc-stats .loc-chip i.fa-history {
+  color: #6366f1;
+}
+
+.loc-stats .loc-chip i.fa-car {
+  color: #0ea5e9;
+}
+
+/* ── Featured dealer — golden theme ──────────────────────────── */
+.featured-dealer .loc-panel,
+.featured-company .loc-panel {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: #fcd34d;
+}
+
+.featured-dealer .loc-chip,
+.featured-company .loc-chip {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: #fcd34d;
+  color: #92400e;
+  font-weight: 600;
+}
+
+.featured-dealer .loc-chip i,
+.featured-company .loc-chip i {
+  color: #f59e0b;
+}
+
+.featured-dealer .loc-chip.distance-info i,
+.featured-company .loc-chip.distance-info i {
+  color: #22c55e;
+}
+
+/* ── Featured garage — green theme ───────────────────────────── */
+.garage-service-card.featured .loc-panel {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-color: #86efac;
+}
+
+.garage-service-card.featured .loc-chip {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: #86efac;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+/* Tablet ≤768px */
+@media (max-width: 768px) {
+  .loc-panel {
+    padding: 5px 7px;
+    margin: 4px 0 2px;
+  }
+
+  .loc-chip {
+    font-size: 0.65rem;
+    padding: 4px 8px;
+    gap: 4px;
+  }
+
+  .loc-chip i {
+    font-size: 0.55rem;
+  }
+
+  .loc-chips,
+  .loc-stats {
+    gap: 5px;
+  }
+}
+
+/* Small phones ≤480px */
+@media (max-width: 480px) {
+  .loc-panel {
+    padding: 4px 6px;
+    border-radius: 8px;
+    margin: 3px 0 2px;
+  }
+
+  .loc-chips,
+  .loc-stats {
+    gap: 4px;
+  }
+
+  .loc-stats {
+    margin-top: 4px;
+    padding-top: 4px;
+  }
+
+  .loc-chip {
+    font-size: 0.6rem;
+    padding: 3px 6px;
+    border-radius: 6px;
+    gap: 3px;
+  }
+
+  .loc-chip i {
+    font-size: 0.52rem;
+  }
+}
+
+/* Very small ≤360px */
+@media (max-width: 360px) {
+  .loc-panel {
+    padding: 3px 5px;
+  }
+
+  .loc-chip {
+    font-size: 0.56rem;
+    padding: 2px 5px;
+    gap: 3px;
+  }
+
+  .loc-chip i {
+    font-size: 0.48rem;
+  }
+}
+
+/* Compact 2-col range: 481px – 640px */
+@media (min-width: 481px) and (max-width: 640px) {
+  .loc-chip {
+    font-size: 0.62rem;
+    padding: 3px 7px;
+  }
+
+  .loc-chip i {
+    font-size: 0.52rem;
+  }
+}

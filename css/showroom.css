@@ -327,7 +327,8 @@
 
 .car-gallery-main {
     width: 100%;
-    height: 240px;
+    aspect-ratio: 16/10;
+    height: auto;
     position: relative;
     overflow: hidden;
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
@@ -363,7 +364,8 @@
 }
 
 .gallery-thumb {
-    height: 80px;
+    aspect-ratio: 16/7;
+    height: auto;
     overflow: hidden;
     cursor: pointer;
     position: relative;
@@ -394,15 +396,13 @@
     .gallery-thumb-3 {
         display: block;
     }
-    .car-gallery-main {
-        height: 220px;
-    }
 }
 
 /* Legacy .car-image kept for dealer showroom single-image cards */
 .car-image {
     width: 100%;
-    height: 220px;
+    aspect-ratio: 16/10;
+    height: auto;
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
     display: flex;
     align-items: center;
@@ -659,7 +659,7 @@
     transform: translateY(-1px);
 }
 
-/* Medium mobile devices - 2 column grid for cars */
+/* Medium mobile / small tablets - 2 column grid */
 @media (min-width: 481px) and (max-width: 768px) {
     .cars-grid {
         grid-template-columns: repeat(2, 1fr) !important;
@@ -670,28 +670,26 @@
         min-height: auto;
     }
     
-    .car-image {
-        height: 190px;
-    }
-    
-    .car-gallery-main {
-        height: 200px;
-    }
-    
-    .gallery-thumb {
-        height: 72px;
-    }
-    
     .car-content {
-        padding: 12px 14px 14px;
+        padding: 10px 12px 12px;
     }
     
     .car-title {
-        font-size: 0.9rem;
+        font-size: 0.88rem;
     }
     
     .car-price {
-        font-size: 1.1rem;
+        font-size: 1.05rem;
+    }
+
+    .car-details {
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+        font-size: 0.78rem;
+    }
+
+    .car-seller-info {
+        font-size: 0.76rem;
     }
 }
 
@@ -763,18 +761,6 @@
         margin-bottom: 30px;
     }
 
-    .car-image {
-        height: 200px;
-    }
-
-    .car-gallery-main {
-        height: 210px;
-    }
-    
-    .gallery-thumb {
-        height: 76px;
-    }
-
     .car-content {
         padding: 14px 16px 16px;
     }
@@ -788,8 +774,8 @@
     }
 
     .car-details {
-        grid-template-columns: 1fr;
-        gap: 6px;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px;
         font-size: 0.82rem;
     }
 
@@ -835,20 +821,8 @@
         font-size: 1.3rem;
     }
 
-    .dealer-stat-label {
+    .car-stat-label {
         font-size: 0.75rem;
-    }
-
-    .car-image {
-        height: 185px;
-    }
-
-    .car-gallery-main {
-        height: 200px;
-    }
-
-    .gallery-thumb {
-        height: 68px;
     }
 
     .car-content {

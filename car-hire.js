@@ -274,12 +274,7 @@ function renderCompanies(data) {
                 parseFloat(company.latitude),
                 parseFloat(company.longitude)
             );
-            distanceInfo = `
-                <span class="distance-info">
-                    <i class="fas fa-location-arrow"></i>
-                    ${distance.toFixed(1)} km away
-                </span>
-            `;
+            distanceInfo = `<span class="loc-chip distance-info"><i class="fas fa-location-arrow"></i> ${distance.toFixed(1)} km away</span>`;
         }
 
         return `
@@ -296,11 +291,15 @@ function renderCompanies(data) {
                     ` : ''}
                 </div>
 
-                <div class="company-location-meta">
-                    <span><i class="fas fa-map-marker-alt"></i> ${company.location_name}</span>
-                    ${distanceInfo}
-                    <span>${company.years_established ? 'Est. ' + company.years_established : 'Newly Established'}</span>
-                    <span>${company.total_vehicles || 0} vehicles</span>
+                <div class="loc-panel">
+                    <div class="loc-chips">
+                        <span class="loc-chip"><i class="fas fa-map-marker-alt"></i> ${company.location_name}</span>
+                        ${distanceInfo}
+                    </div>
+                    <div class="loc-stats">
+                        <span class="loc-chip"><i class="fas fa-history"></i> ${company.years_established ? 'Est. ' + company.years_established : 'New'}</span>
+                        <span class="loc-chip"><i class="fas fa-car"></i> ${company.total_vehicles || 0} vehicles</span>
+                    </div>
                 </div>
                 ${company.address ? `
                     <div class="company-address">

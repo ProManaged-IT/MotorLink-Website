@@ -630,65 +630,143 @@ select.garage-filter-input {
 }
 
 /* ── Mobile / Tablet hero search bar (shared: garages, dealers, car-hire) ── */
+.mobile-hero-search {
+    display: none;
+}
+
 @media (max-width: 1024px) {
     .mobile-hero-search {
         display: block;
         width: 100%;
-        padding: 0 1rem 1.25rem;
-        margin-top: 36px;
+        max-width: 520px;
+        margin: 28px auto 0;
+        padding: 0 16px;
     }
 
     .mobile-search-wrapper {
         display: flex;
-        gap: 0;
-        background: rgba(255, 255, 255, 0.12);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 10px;
+        align-items: stretch;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1.5px solid rgba(255, 255, 255, 0.28);
+        border-radius: 14px;
         overflow: hidden;
-        backdrop-filter: blur(6px);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        box-shadow:
+            0 4px 20px rgba(0, 0, 0, 0.15),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        transition: border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .mobile-search-wrapper:focus-within {
+        border-color: rgba(255, 255, 255, 0.5);
+        box-shadow:
+            0 4px 24px rgba(0, 0, 0, 0.2),
+            0 0 0 3px rgba(0, 166, 81, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.15);
     }
 
     .mobile-search-input {
         flex: 1;
-        padding: 12px 14px;
+        min-width: 0;
+        padding: 14px 16px;
         background: transparent;
         border: none;
         outline: none;
         color: #fff;
-        font-size: 15px;
-        min-width: 0;
+        font-size: 0.95rem;
+        font-weight: 400;
+        letter-spacing: 0.01em;
+        caret-color: #00e676;
     }
 
     .mobile-search-input::placeholder {
-        color: rgba(255, 255, 255, 0.65);
+        color: rgba(255, 255, 255, 0.55);
+        font-weight: 400;
     }
 
     .mobile-search-btn {
         flex-shrink: 0;
-        padding: 12px 18px;
-        background: #00a651;
-        border: none;
-        color: #fff;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
         display: flex;
         align-items: center;
+        justify-content: center;
         gap: 6px;
-        min-height: 44px;
-        transition: background 0.2s;
+        padding: 0 20px;
+        min-height: 48px;
+        border: none;
+        background: linear-gradient(135deg, #00c853 0%, #00a651 100%);
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        touch-action: manipulation;
+        transition: background 0.2s ease, transform 0.15s ease;
+        white-space: nowrap;
+    }
+
+    .mobile-search-btn i {
+        font-size: 0.8rem;
     }
 
     .mobile-search-btn:hover,
-    .mobile-search-btn:focus {
-        background: #008f45;
-        outline: none;
+    .mobile-search-btn:active {
+        background: linear-gradient(135deg, #00a651 0%, #008f45 100%);
+    }
+
+    .mobile-search-btn:active {
+        transform: scale(0.97);
     }
 }
 
-@media (min-width: 1025px) {
+/* ── Small phone refinements ≤480px ── */
+@media (max-width: 480px) {
     .mobile-hero-search {
-        display: none;
+        margin-top: 20px;
+        padding: 0 12px;
+    }
+
+    .mobile-search-wrapper {
+        border-radius: 12px;
+    }
+
+    .mobile-search-input {
+        padding: 12px 14px;
+        font-size: 0.88rem;
+    }
+
+    .mobile-search-btn {
+        padding: 0 16px;
+        min-height: 44px;
+        font-size: 0.8rem;
+        gap: 5px;
+    }
+
+    .mobile-search-btn i {
+        font-size: 0.75rem;
+    }
+}
+
+/* ── Very small phones ≤360px ── */
+@media (max-width: 360px) {
+    .mobile-hero-search {
+        margin-top: 16px;
+        padding: 0 10px;
+    }
+
+    .mobile-search-input {
+        padding: 11px 12px;
+        font-size: 0.82rem;
+    }
+
+    .mobile-search-input::placeholder {
+        font-size: 0.78rem;
+    }
+
+    .mobile-search-btn {
+        padding: 0 14px;
+        min-height: 42px;
+        font-size: 0.75rem;
     }
 }
 

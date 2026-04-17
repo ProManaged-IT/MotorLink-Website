@@ -2641,12 +2641,7 @@ class DealersManager {
         // Calculate distance info (same logic as car-hire.js)
         let distanceInfo = '';
         if (hasDistance) {
-            distanceInfo = `
-                <span class="distance-info">
-                    <i class="fas fa-location-arrow"></i>
-                    ${dealer.distance.toFixed(1)} km away
-                </span>
-            `;
+            distanceInfo = `<span class="loc-chip distance-info"><i class="fas fa-location-arrow"></i> ${dealer.distance.toFixed(1)} km away</span>`;
         }
 
         // Generate star rating
@@ -2666,11 +2661,15 @@ class DealersManager {
                         </div>
                     </div>
 
-                    <div class="dealer-location-meta">
-                        <span><i class="fas fa-map-marker-alt"></i> ${this.escapeHtml(dealer.location_name)}</span>
-                        ${distanceInfo}
-                        <span>${yearsEstablished > 0 ? 'Est. ' + yearsEstablished : 'Newly Established'}</span>
-                        <span>${totalCars > 0 ? totalCars + ' cars available' : 'No cars listed'}</span>
+                    <div class="loc-panel">
+                        <div class="loc-chips">
+                            <span class="loc-chip"><i class="fas fa-map-marker-alt"></i> ${this.escapeHtml(dealer.location_name)}</span>
+                            ${distanceInfo}
+                        </div>
+                        <div class="loc-stats">
+                            <span class="loc-chip"><i class="fas fa-history"></i> ${yearsEstablished > 0 ? 'Est. ' + yearsEstablished : 'New'}</span>
+                            <span class="loc-chip"><i class="fas fa-car"></i> ${totalCars > 0 ? totalCars + ' cars' : 'No cars'}</span>
+                        </div>
                     </div>
                     ${hasAddress ? `
                         <div class="dealer-address">

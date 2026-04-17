@@ -1287,6 +1287,15 @@ body {
     font-size: 12px;
     color: var(--text-tertiary);
     font-weight: 500;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.car-detail span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .car-detail.distance-detail {

@@ -102,16 +102,24 @@
     display: none !important;
   }
 
-  /* Single-column grid on mobile */
+  /* Single-column grid on phones ≤480px only */
   .dealers-page-wrapper .dealers-grid {
     grid-template-columns: 1fr !important;
-    gap: 16px !important;
+    gap: 14px !important;
   }
 
   /* Results header breathing room */
   .dealers-page-wrapper .results-header {
     margin-top: 8px;
     margin-bottom: 16px;
+  }
+}
+
+/* Large phones & small tablets: 2-column grid (481px–768px) */
+@media (min-width: 481px) and (max-width: 768px) {
+  .dealers-page-wrapper .dealers-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 14px !important;
   }
 }
 

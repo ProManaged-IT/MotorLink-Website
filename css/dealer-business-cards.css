@@ -83,59 +83,8 @@
   letter-spacing: -0.02em;
 }
 
-/* Modern 2-row grid layout: district+distance / years+cars - ALL SCREENS */
-.dealer-business-card .dealer-location-meta {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: flex-start;
-  width: 100%;
-  margin-top: 8px;
-  margin-bottom: 6px;
-  font-size: 0.75rem;
-  color: #374151;
-  font-weight: 500;
-  line-height: 1.3;
-}
+/* Panel styles moved to css/location-panel.css */
 
-.dealer-business-card .dealer-location-meta span,
-.dealer-business-card .dealer-location-meta .distance-info {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 4px 10px;
-  background: #f3f4f6;
-  border-radius: 4px;
-  border: 1px solid #e5e7eb;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  color: #374151;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  flex: 0 0 calc(50% - 3px);
-  max-width: calc(50% - 3px);
-  transition: all 0.2s ease;
-}
-
-.dealer-business-card .dealer-location-meta span:hover,
-.dealer-business-card .dealer-location-meta .distance-info:hover {
-  background: #e5e7eb;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-}
-
-.dealer-business-card .dealer-location-meta i {
-  font-size: 0.7rem;
-  flex-shrink: 0;
-}
-
-/* Distance info inherits pill styling but keeps green color */
-.dealer-business-card .dealer-location-meta .distance-info {
-  color: #374151;
-}
-
-/* Modern badge-style address - ALL SCREENS */
 .dealer-business-card .dealer-address {
   display: inline-flex;
   flex-direction: row;
@@ -171,33 +120,6 @@
 .dealer-business-card .dealer-address span {
   color: #92400e;
   font-weight: 700;
-}
-
-/* Distance info inherits all span styling - only icon color differs */
-.dealer-business-card .dealer-location-meta .distance-info i {
-  color: #00c853 !important;
-}
-
-/* Add clock icon for years established - ALL SCREENS */
-.dealer-business-card .dealer-location-meta span:nth-child(3)::before {
-  content: '\f017' !important;
-  font-family: 'Font Awesome 5 Free' !important;
-  font-weight: 900 !important;
-  margin-right: 4px;
-  font-size: 0.7rem;
-  color: #00c853;
-  display: inline-block;
-}
-
-/* Add car icon for cars available - ALL SCREENS */
-.dealer-business-card .dealer-location-meta span:nth-child(4)::before {
-  content: '\f1b9' !important;
-  font-family: 'Font Awesome 5 Free' !important;
-  font-weight: 900 !important;
-  margin-right: 4px;
-  font-size: 0.7rem;
-  color: #00c853;
-  display: inline-block;
 }
 
 /* Pill Badge Style */
@@ -455,15 +377,6 @@
     margin-bottom: 4px;
   }
   
-  .dealer-business-card .dealer-location-meta {
-    font-size: 0.72rem;
-    gap: 8px;
-  }
-  
-  .dealer-business-card .dealer-location-meta i {
-    font-size: 0.7rem;
-  }
-  
   /* Pill badges - smaller on mobile */
   .dealer-business-card .dealer-status-tag {
     font-size: 0.58rem;
@@ -540,23 +453,6 @@
     padding-right: 50px;
   }
 
-  .dealer-business-card .dealer-location-meta {
-    gap: 5px;
-    margin-top: 6px;
-  }
-
-  .dealer-business-card .dealer-location-meta span,
-  .dealer-business-card .dealer-location-meta .distance-info {
-    font-size: 0.7rem;
-    padding: 3px 8px;
-    flex: 0 0 calc(50% - 2.5px);
-    max-width: calc(50% - 2.5px);
-  }
-
-  .dealer-business-card .dealer-location-meta i {
-    font-size: 0.65rem;
-  }
-
   .dealer-business-card .dealer-address {
     font-size: 0.7rem;
     padding: 3px 8px;
@@ -620,112 +516,6 @@
   .dealer-business-card .dealer-header-right,
   .dealer-business-card.featured-dealer .dealer-header-right {
     gap: 4px;
-  }
-
-  /* 🌟 STUNNING LOCATION META - Ultra-Modern Badge Design - FORCE GRID LAYOUT */
-  .dealer-business-card .dealer-location-meta,
-  .dealer-business-card.featured-dealer .dealer-location-meta {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    grid-template-rows: auto auto !important;
-    gap: 8px !important;
-    margin-top: 12px;
-    margin-bottom: 14px;
-    width: 100%;
-    flex-direction: unset !important;
-    flex-wrap: unset !important;
-  }
-
-  .dealer-business-card .dealer-location-meta span,
-  .dealer-business-card .dealer-location-meta .distance-info,
-  .dealer-business-card.featured-dealer .dealer-location-meta span,
-  .dealer-business-card.featured-dealer .dealer-location-meta .distance-info {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 2px;
-    padding: 5px 6px;
-    background: transparent;
-    border-radius: 6px;
-    font-size: 0.62rem;
-    color: #374151;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    line-height: 1.25;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    word-break: break-word;
-    min-width: 0;
-    flex: 1;
-    max-width: 100%;
-  }
-
-  @keyframes badgeShine {
-    0%, 100% { left: -100%; }
-    50% { left: 100%; }
-  }
-
-  /* 📍 Perfect grid positioning - EXPLICIT PLACEMENT */
-  .dealer-business-card .dealer-location-meta span:nth-child(1),
-  .dealer-business-card.featured-dealer .dealer-location-meta span:nth-child(1) {
-    grid-column: 1 / 2 !important;
-    grid-row: 1 / 2 !important;
-  }
-
-  .dealer-business-card .dealer-location-meta .distance-info,
-  .dealer-business-card .dealer-location-meta span:nth-child(2),
-  .dealer-business-card.featured-dealer .dealer-location-meta .distance-info,
-  .dealer-business-card.featured-dealer .dealer-location-meta span:nth-child(2) {
-    grid-column: 2 / 3 !important;
-    grid-row: 1 / 2 !important;
-  }
-
-  .dealer-business-card .dealer-location-meta span:nth-child(3),
-  .dealer-business-card.featured-dealer .dealer-location-meta span:nth-child(3) {
-    grid-column: 1 / 2 !important;
-    grid-row: 2 / 3 !important;
-  }
-
-  .dealer-business-card .dealer-location-meta span:nth-child(4),
-  .dealer-business-card.featured-dealer .dealer-location-meta span:nth-child(4) {
-    grid-column: 2 / 3 !important;
-    grid-row: 2 / 3 !important;
-  }
-
-  .dealer-business-card .dealer-location-meta i {
-    font-size: 0.65rem;
-    flex-shrink: 0;
-    margin-bottom: 1px;
-  }
-
-  /* ❌ HIDE fa-location-arrow icon on mobile - takes up too much space */
-  .dealer-business-card .dealer-location-meta .distance-info i,
-  .dealer-business-card.featured-dealer .dealer-location-meta .distance-info i {
-    display: none !important;
-  }
-
-  /* 📍 Make distance-info PROMINENT without icon - easier to read */
-  .dealer-business-card .dealer-location-meta .distance-info,
-  .dealer-business-card.featured-dealer .dealer-location-meta .distance-info {
-    font-weight: 700 !important;
-    font-size: 0.78rem !important;
-    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%) !important;
-    border: 2px solid #10b981 !important;
-    color: #047857 !important;
-    padding: 8px 10px !important;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2) !important;
-  }
-
-  /* ⚡ Dynamic active state with spring animation */
-  .dealer-business-card .dealer-location-meta span:active,
-  .dealer-business-card .dealer-location-meta .distance-info:active,
-  .dealer-business-card.featured-dealer .dealer-location-meta span:active,
-  .dealer-business-card.featured-dealer .dealer-location-meta .distance-info:active {
-    transform: scale(0.94) translateY(1px);
-    background: linear-gradient(135deg, #cbd5e1 0%, #e2e8f0 100%);
-    border-color: #94a3b8;
-    box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.1);
   }
 
   /* 🏢 STUNNING ADDRESS BADGE - Vibrant Green with Glow */
@@ -859,39 +649,6 @@
     letter-spacing: 0.2px;
     margin-bottom: 4px;
     line-height: 1.2;
-  }
-
-  /* Featured dealer uses CSS Grid too - golden theme */
-  .dealer-business-card.featured-dealer .dealer-location-meta {
-    gap: 4px;
-  }
-
-  .dealer-business-card.featured-dealer .dealer-location-meta span,
-  .dealer-business-card.featured-dealer .dealer-location-meta .distance-info {
-    background: transparent;
-    color: #92400e;
-    font-size: 0.62rem;
-    padding: 5px 6px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    line-height: 1.25;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-  }
-
-  .dealer-business-card.featured-dealer .dealer-location-meta span:active,
-  .dealer-business-card.featured-dealer .dealer-location-meta .distance-info:active {
-    opacity: 0.7;
-  }
-
-  .dealer-business-card.featured-dealer .dealer-location-meta i {
-    color: #f59e0b;
-    font-size: 0.65rem;
-    margin-bottom: 1px;
-  }
-
-  .dealer-business-card.featured-dealer .dealer-location-meta .distance-info i {
-    color: #00c853 !important;
   }
 
   /* Premium featured address styling */
@@ -1058,4 +815,46 @@
   }
 
   /* 🎉 End of ULTRA-MODERN mobile styles - All cards unified with stunning design */
+}
+
+/* ── 2-col compact view: 481px – 640px ─────────────────────────── */
+@media (min-width: 481px) and (max-width: 640px) {
+  .dealer-business-card {
+    padding: 10px;
+    gap: 8px;
+    min-height: auto;
+  }
+
+  .dealer-business-card .dealer-business-name {
+    font-size: 0.88rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .dealer-business-card .dealer-status-tag {
+    font-size: 0.56rem;
+    padding: 3px 7px;
+  }
+
+  .dealer-business-card .dealer-card-body {
+    min-height: auto;
+    gap: 6px;
+    padding: 8px 0;
+  }
+
+  .dealer-business-card .dealer-rating-display {
+    padding: 4px 6px;
+  }
+
+  .dealer-business-card .dealer-action-btn {
+    padding: 9px 12px;
+    font-size: 0.74rem;
+  }
+
+  .dealer-business-card .dealer-spec-tag {
+    font-size: 0.54rem;
+    padding: 2px 5px;
+  }
 }

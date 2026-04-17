@@ -1283,12 +1283,7 @@ function createGarageCard(garage) {
     // Calculate distance info (same logic as car-hire.js)
     let distanceInfo = '';
     if (hasDistance) {
-        distanceInfo = `
-            <span class="distance-info">
-                <i class="fas fa-location-arrow"></i>
-                ${garage.distance.toFixed(1)} km away
-            </span>
-        `;
+        distanceInfo = `<span class="loc-chip distance-info"><i class="fas fa-location-arrow"></i> ${garage.distance.toFixed(1)} km away</span>`;
     }
 
     // Start building card HTML
@@ -1301,19 +1296,16 @@ function createGarageCard(garage) {
     html += `<div class="garage-header-left">`;
     html += `<h3 class="garage-service-name">${escapeHtml(garage.name)}</h3>`;
     
-    // Location meta - display like dealers and car-hire (only if there's data to show)
-    if (displayDistrict || hasDistance || hasYearsExperience) {
-        html += `<div class="garage-location-meta">`;
+    // Location meta — only if there's data to show
+    if (displayDistrict || hasDistance) {
+        html += `<div class="loc-panel"><div class="loc-chips">`;
         if (displayDistrict) {
-            html += `<span><i class="fas fa-map-marker-alt"></i> ${escapeHtml(displayDistrict)}</span>`;
+            html += `<span class="loc-chip"><i class="fas fa-map-marker-alt"></i> ${escapeHtml(displayDistrict)}</span>`;
         }
         if (hasDistance) {
             html += distanceInfo;
         }
-        if (hasYearsExperience) {
-            html += `<span><i class="fas fa-award"></i> ${garage.years_experience} years experience</span>`;
-        }
-        html += `</div>`;
+        html += `</div></div>`;
     }
     html += `</div>`; // Close left side
     
@@ -1452,6 +1444,13 @@ function createGarageCard(garage) {
         dataAddress: fullAddress || '',
         extraAttrs: addressClickHandler,
         title: hasAddress ? 'Click to open in Google Maps' : ''
+    });
+
+    html += buildGarageInfoRow({
+        hasData: hasYearsExperience,
+        icon: 'fas fa-award',
+        label: 'Experience',
+        value: hasYearsExperience ? `${garage.years_experience} yr${garage.years_experience > 1 ? 's' : ''}` : ''
     });
     
     // Car brands specialization
