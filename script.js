@@ -1614,49 +1614,27 @@ class MotorLink {
 
             // Generate carousel HTML
             const hasMultipleImages = images.length > 1;
-            const carouselId = `carousel-${listing.id}`;
             // Use image_count from API if available, otherwise use images array length
             const totalImageCount = listing.image_count || listing.images_count || images.length;
 
-            let carouselHTML;
-            if (hasMultipleImages) {
-                const slidesHTML = images.map((img, idx) => `
-                    <div class="car-image-slide" data-index="${idx}">
-                        <img src="${img}" alt="${this.escapeHtml(listing.title)}"
-                             onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
-                    </div>
-                `).join('');
-
-                const dotsHTML = images.map((_, idx) => `
-                    <span class="carousel-dot ${idx === 0 ? 'active' : ''}" data-index="${idx}"></span>
-                `).join('');
-
-                carouselHTML = `
-                    <div class="car-image-carousel" id="${carouselId}" data-current="0">
-                        <div class="car-image-slides">
-                            ${slidesHTML}
-                        </div>
-                        <button class="carousel-nav prev" onclick="event.stopPropagation(); window.slideCarousel('${carouselId}', -1)">
-                            <i class="fas fa-chevron-left"></i>
-                        </button>
-                        <button class="carousel-nav next" onclick="event.stopPropagation(); window.slideCarousel('${carouselId}', 1)">
-                            <i class="fas fa-chevron-right"></i>
-                        </button>
-                        <div class="carousel-dots">
-                            ${dotsHTML}
-                        </div>
-                    </div>
-                `;
-            } else {
-                carouselHTML = `
-                    <img src="${images[0]}" alt="${this.escapeHtml(listing.title)}"
-                         style="width: 100%; height: 100%; object-fit: cover;"
-                         onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
-                `;
-            }
-
             // Show image count if there are multiple images (either loaded or indicated by API)
             const showImageCount = hasMultipleImages || totalImageCount > 1;
+            const imageCountBadge = showImageCount
+                ? `<div class="image-count" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${this.escapeHtml(listing.title).replace(/'/g, "\\'")}')"><i class="fas fa-images"></i> ${totalImageCount}</div>`
+                : '';
+
+            // DoneDeal-style gallery: main image + strip of up to 3 extra thumbs
+            const thumbs = images.slice(1, 4); // up to 3 non-featured extras
+            const galleryStripHTML = thumbs.length > 0 ? `
+                <div class="car-gallery-strip">
+                    ${thumbs.map((img, idx) => `
+                        <div class="gallery-thumb${idx === 2 ? ' gallery-thumb-3' : ''}" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${this.escapeHtml(listing.title).replace(/'/g, "\\'")}')">
+                            <img src="${img}" alt="${this.escapeHtml(listing.title)}" loading="lazy"
+                                 onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '';
 
             // Determine seller type based on user_type field
             // Business types: dealer, garage, car_hire are displayed as "Dealer"
@@ -1677,10 +1655,14 @@ class MotorLink {
                     fuel_type: listing.fuel_type,
                     transmission: listing.transmission
                 })}'>
-                    <div class="car-image">
-                        ${carouselHTML}
-                        ${badgeHTML}
-                        ${showImageCount ? `<div class="image-count" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${this.escapeHtml(listing.title).replace(/'/g, "\\'")}')"><i class="fas fa-images"></i> ${totalImageCount}</div>` : ''}
+                    <div class="car-gallery">
+                        <div class="car-gallery-main">
+                            <img src="${images[0]}" alt="${this.escapeHtml(listing.title)}"
+                                 onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
+                            ${badgeHTML}
+                            ${imageCountBadge}
+                        </div>
+                        ${galleryStripHTML}
                     </div>
                     <div class="car-info">
                         <h3 class="car-title">${this.escapeHtml(listing.title)}</h3>
@@ -3206,10 +3188,6 @@ class ShowroomManager {
             const nameText = document.createTextNode(dealer.business_name);
             dealerName.innerHTML = '';
             dealerName.appendChild(nameText);
-            
-            // Add badges
-            const badges = dealerName.querySelectorAll('.verified-badge, .featured-badge, .certified-badge');
-            badges.forEach(badge => dealerName.appendChild(badge));
         }
 
         // Show trust badges
@@ -3737,14 +3715,15 @@ class ShowroomManager {
 
             return `
                 <div class="car-card" data-id="${car.id}">
-                    <div class="car-image">
-                        ${imageUrl ? 
-                            `<img src="${imageUrl}" alt="${car.title}" onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
-                             <i class="fas fa-car" style="display: none;"></i>` :
-                            '<i class="fas fa-car"></i>'
-                        }
-                        ${badgeHTML}
-                        ${car.image_count > 1 ? `<div class="image-count" onclick="event.stopPropagation(); openImageGallery(${car.id}, '${(car.title || `${car.year} ${car.make_name} ${car.model_name}`).replace(/'/g, "\\'")}')"><i class="fas fa-images"></i> ${car.image_count}</div>` : ''}
+                    <div class="car-gallery">
+                        <div class="car-gallery-main">
+                            ${imageUrl ? 
+                                `<img src="${imageUrl}" alt="${car.title}" onerror="this.onerror=null;this.src='${inlinePlaceholder}';">` :
+                                '<i class="fas fa-car"></i>'
+                            }
+                            ${badgeHTML}
+                            ${car.image_count > 1 ? `<div class="image-count" onclick="event.stopPropagation(); openImageGallery(${car.id}, '${(car.title || `${car.year} ${car.make_name} ${car.model_name}`).replace(/'/g, "\\'")}')"><i class="fas fa-images"></i> ${car.image_count}</div>` : ''}
+                        </div>
                     </div>
                     <div class="car-content">
                         <h3 class="car-title">${car.title || `${car.year} ${car.make_name} ${car.model_name}`}</h3>

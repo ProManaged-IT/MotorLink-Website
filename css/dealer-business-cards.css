@@ -53,10 +53,8 @@
 /* Header Section - Uniform Height */
 .dealer-business-card .dealer-card-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  min-height: 70px; /* Ensures uniform header height across all cards */
+  flex-direction: column;
+  gap: 6px;
   margin-bottom: 6px;
 }
 
@@ -66,18 +64,14 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  padding-right: 60px; /* Reduced - location-meta now outside header */
 }
 
-/* Corner Ribbon Badges Container */
+/* Pill Badges Row */
 .dealer-business-card .dealer-header-right {
-  position: absolute;
-  top: 0;
-  right: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0;
-  z-index: 5;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .dealer-business-card .dealer-business-name {
@@ -206,38 +200,23 @@
   display: inline-block;
 }
 
-/* Corner Ribbon Badge Style - Elegant Watermark */
+/* Pill Badge Style */
 .dealer-business-card .dealer-status-tag {
-  position: relative;
-  padding: 6px 14px 6px 10px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 10px 100%);
-  box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.15);
-  min-width: 90px;
-  backdrop-filter: blur(10px);
+  padding: 4px 10px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border-radius: 20px;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
 .dealer-business-card .dealer-status-tag i {
-  font-size: 0.7rem;
-}
-
-/* Folded corner effect */
-.dealer-business-card .dealer-status-tag::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: -5px;
-  width: 10px;
-  height: 5px;
-  background: inherit;
-  filter: brightness(0.6);
-  clip-path: polygon(0 0, 100% 0, 0 100%);
+  font-size: 0.62rem;
 }
 
 /* Featured Badge - Vibrant Gold */
@@ -485,11 +464,10 @@
     font-size: 0.7rem;
   }
   
-  /* Corner ribbon - smaller on mobile */
+  /* Pill badges - smaller on mobile */
   .dealer-business-card .dealer-status-tag {
-    font-size: 0.6rem;
-    padding: 5px 10px 5px 8px;
-    min-width: 75px;
+    font-size: 0.58rem;
+    padding: 3px 8px;
   }
 
   .dealer-business-card .dealer-status-tag i {
@@ -620,10 +598,9 @@
       inset 0 2px 4px rgba(0, 0, 0, 0.06);
   }
 
-  /* 📋 Modern unified header with accent - FIX BADGE OVERLAP */
+  /* 📋 Modern unified header with accent */
   .dealer-business-card .dealer-card-header,
   .dealer-business-card.featured-dealer .dealer-card-header {
-    min-height: 52px;
     margin-bottom: 14px;
     padding-bottom: 14px;
     border-bottom: 3px solid #00c853;
@@ -631,25 +608,18 @@
     padding-left: 8px;
     margin-left: -8px;
     border-radius: 8px 0 0 0;
-    position: relative;
   }
 
-  /* Fix header-left to prevent badge overlap */
+  /* Fix header-left to not need badge padding */
   .dealer-business-card .dealer-header-left,
   .dealer-business-card.featured-dealer .dealer-header-left {
-    padding-right: 85px !important; /* More space for badges */
-    position: relative;
-    z-index: 2;
+    padding-right: 0;
   }
 
-  /* Ensure badges don't overlap content */
+  /* Badge row - normal flow, wraps below name */
   .dealer-business-card .dealer-header-right,
   .dealer-business-card.featured-dealer .dealer-header-right {
-    position: absolute;
-    top: 0;
-    right: 0;
-    z-index: 3 !important;
-    pointer-events: none; /* Allow clicking through badges */
+    gap: 4px;
   }
 
   /* 🌟 STUNNING LOCATION META - Ultra-Modern Badge Design - FORCE GRID LAYOUT */
@@ -951,16 +921,14 @@
     opacity: 0.7;
   }
 
-  /* 🏷️ PREMIUM STATUS TAGS */
+  /* 🏷️ PILL STATUS TAGS */
   .dealer-business-card .dealer-status-tag,
   .dealer-business-card.featured-dealer .dealer-status-tag {
     font-size: 0.65rem;
-    padding: 5px 10px;
-    border-radius: 10px;
-    font-weight: 800;
-    box-shadow:
-      0 3px 8px rgba(0, 0, 0, 0.12),
-      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-weight: 700;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
   }
 
   /* 📦 MODERN CARD BODY */

@@ -171,14 +171,14 @@ function renderCompanyHeader(company) {
         <div class="company-header-content container">
             <div class="header-top">
                 <div class="company-header-left">
-                    <h1>
-                        ${escapeHtml(company.business_name)}
-                        ${isVerified ? '<span class="verified-badge"><i class="fas fa-check-circle"></i> Verified</span>' : ''}
-                        ${isFeatured ? '<span class="featured-badge"><i class="fas fa-star"></i> Featured</span>' : ''}
-                        ${isCertified ? '<span class="certified-badge"><i class="fas fa-certificate"></i> Certified</span>' : ''}
-                        ${(hireCategory === 'events' || hireCategory === 'all') ? '<span class="events-badge"><i class="fas fa-calendar-check"></i> Events</span>' : ''}
-                        ${(hireCategory === 'vans_trucks' || hireCategory === 'all') ? '<span class="vantruck-badge"><i class="fas fa-truck"></i> Vans & Trucks</span>' : ''}
-                    </h1>
+                    <h1>${escapeHtml(company.business_name)}</h1>
+                    <div class="company-badge-row">
+                        ${isVerified ? '<span class="company-status-tag verified-tag"><i class="fas fa-check-circle"></i> Verified</span>' : ''}
+                        ${isFeatured ? '<span class="company-status-tag featured-tag"><i class="fas fa-star"></i> Featured</span>' : ''}
+                        ${isCertified ? '<span class="company-status-tag certified-tag"><i class="fas fa-certificate"></i> Certified</span>' : ''}
+                        ${(hireCategory === 'events' || hireCategory === 'all') ? '<span class="company-status-tag events-tag"><i class="fas fa-calendar-check"></i> Events</span>' : ''}
+                        ${(hireCategory === 'vans_trucks' || hireCategory === 'all') ? '<span class="company-status-tag vantruck-tag"><i class="fas fa-truck"></i> Vans & Trucks</span>' : ''}
+                    </div>
                     <div class="company-meta">
                         ${company.address ? `
                             <span class="meta-item address-meta" title="${escapeHtml(company.address)}">
