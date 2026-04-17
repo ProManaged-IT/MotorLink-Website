@@ -12,9 +12,9 @@ class AICarChat {
         this.currentUser = null;
         this.isSending = false;
         this.retryCount = 0;
-        this.maxRetries = 20; // Increased retries for better persistence - keep trying until it works
+        this.maxRetries = 5; // Reasonable retry limit — stop after 5 attempts
         this.baseRetryDelay = 2000; // Start with 2 seconds
-        this.maxRetryDelay = 30000; // Max 30 seconds between retries
+        this.maxRetryDelay = 15000; // Max 15 seconds between retries
         this.currentRetryTimeout = null;
         this.pendingMessage = null;
         this._lastDragWasMove = false;
@@ -25,6 +25,7 @@ class AICarChat {
         await this.checkAuth();
         this.bindEvents();
         this.setupWidgetVisibility();
+        this.restoreConversation(); // Restore chat across page navigations
         await this.loadUsageIndicator();
     }
 
@@ -47,6 +48,40 @@ class AICarChat {
             console.error('Auth check error:', error);
             this.currentUser = null;
         }
+    }
+
+    /**
+     * Save conversation to sessionStorage so it persists across page navigations
+     */
+    saveConversation() {
+        try {
+            sessionStorage.setItem('ai_chat_history', JSON.stringify(this.conversationHistory.slice(-20)));
+            const messagesContainer = document.getElementById('aiChatMessages');
+            if (messagesContainer) {
+                sessionStorage.setItem('ai_chat_messages_html', messagesContainer.innerHTML);
+            }
+        } catch (e) { /* sessionStorage full or unavailable */ }
+    }
+
+    /**
+     * Restore conversation from sessionStorage after page navigation
+     */
+    restoreConversation() {
+        try {
+            const savedHistory = sessionStorage.getItem('ai_chat_history');
+            const savedHTML = sessionStorage.getItem('ai_chat_messages_html');
+            if (savedHistory && savedHTML) {
+                this.conversationHistory = JSON.parse(savedHistory);
+                const messagesContainer = document.getElementById('aiChatMessages');
+                if (messagesContainer && this.conversationHistory.length > 0) {
+                    messagesContainer.innerHTML = savedHTML;
+                    // Re-bind interactions on restored messages
+                    messagesContainer.querySelectorAll('.ai-chat-message').forEach(msg => {
+                        this.bindMessageInteractions(msg);
+                    });
+                }
+            }
+        } catch (e) { /* ignore parse errors */ }
     }
 
     setupWidgetVisibility() {
@@ -579,23 +614,11 @@ class AICarChat {
                             
                             return; // Don't re-enable input, keep it disabled during retries
                         } else {
-                            // Max retries reached, but still auto-retry after longer delay
-                            this.showError('Service is experiencing high demand. Retrying automatically in 30 seconds...');
-                            this.setInputSendingState(true, this.maxRetries);
-                            
-                            // Auto-retry after a longer delay (30 seconds)
-                            if (this.currentRetryTimeout) {
-                                clearTimeout(this.currentRetryTimeout);
-                            }
-                            
-                            this.currentRetryTimeout = setTimeout(() => {
-                                this.currentRetryTimeout = null;
-                                if (!this.isSending) {
-                                    this.showError('Retrying automatically...');
-                                    this.sendMessage(1, triggerSource);
-                                }
-                            }, 30000);
-                            // Don't re-enable input - keep retrying
+                            // Max retries reached — stop retrying and re-enable input
+                            this.resetInputSendState(input, sendBtn);
+                            this.pendingMessage = null;
+                            this.retryCount = 0;
+                            this.showError('Service is temporarily unavailable. Please try again later.');
                         }
                     } else {
                         // Handle non-retryable errors - re-enable input
@@ -635,19 +658,11 @@ class AICarChat {
                     }, delay);
                     return;
                 } else {
-                    // Max retries reached, but keep trying
-                    this.showError('Request timed out. Retrying automatically in 30 seconds...');
-                    this.setInputSendingState(true, this.maxRetries);
-                    if (this.currentRetryTimeout) {
-                        clearTimeout(this.currentRetryTimeout);
-                    }
-                    this.currentRetryTimeout = setTimeout(() => {
-                        this.currentRetryTimeout = null;
-                        if (!this.isSending) {
-                            this.sendMessage(1, triggerSource);
-                        }
-                    }, 30000);
-                    return;
+                    // Max retries reached — stop and re-enable input
+                    this.resetInputSendState(input, sendBtn);
+                    this.pendingMessage = null;
+                    this.retryCount = 0;
+                    this.showError('Request timed out. Please check your connection and try again.');
                 }
             }
 
@@ -672,19 +687,11 @@ class AICarChat {
                     }, delay);
                     return;
                 } else {
-                    // Max retries reached, but keep trying
-                    this.showError('Network error. Retrying automatically in 30 seconds...');
-                    this.setInputSendingState(true, this.maxRetries);
-                    if (this.currentRetryTimeout) {
-                        clearTimeout(this.currentRetryTimeout);
-                    }
-                    this.currentRetryTimeout = setTimeout(() => {
-                        this.currentRetryTimeout = null;
-                        if (!this.isSending) {
-                            this.sendMessage(1, triggerSource);
-                        }
-                    }, 30000);
-                    return;
+                    // Max retries reached — stop and re-enable input
+                    this.resetInputSendState(input, sendBtn);
+                    this.pendingMessage = null;
+                    this.retryCount = 0;
+                    this.showError('Network error. Please check your connection and try again.');
                 }
             }
 
@@ -767,6 +774,7 @@ class AICarChat {
         this.bindMessageInteractions(messageDiv);
         
         this.scrollToBottom();
+        this.saveConversation();
     }
 
     buildFeedbackMarkup(messageId) {
@@ -1405,29 +1413,49 @@ class AICarChat {
     formatMessageContent(content) {
         // First escape HTML to prevent XSS
         let formatted = this.escapeHtml(content);
-        
-        // Parse markdown links: [text](url)
-        // This regex matches [text](url) patterns
+
+        // --- Markdown rendering (order matters) ---
+
+        // Headers: ### Header → <strong>Header</strong> (with line break)
+        formatted = formatted.replace(/^(#{1,3})\s+(.+)$/gm, (m, hashes, text) => {
+            return `<strong>${text}</strong>`;
+        });
+
+        // Bold: **text** or __text__
+        formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        formatted = formatted.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+        // Italic: *text* or _text_ (but not inside words like file_name)
+        formatted = formatted.replace(/(?<!\w)\*([^*\n]+?)\*(?!\w)/g, '<em>$1</em>');
+        formatted = formatted.replace(/(?<!\w)_([^_\n]+?)_(?!\w)/g, '<em>$1</em>');
+
+        // Inline code: `code`
+        formatted = formatted.replace(/`([^`]+?)`/g, '<code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;font-size:0.9em;">$1</code>');
+
+        // Markdown links: [text](url)
         formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
-            // Ensure URL is properly formatted
             let fullUrl = url;
-            
-            // If URL is relative, make it absolute
             if (url.startsWith('/')) {
                 fullUrl = window.location.origin + url;
             } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                // Relative URL without leading slash
                 const baseUrl = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
                 fullUrl = baseUrl + (url.startsWith('./') ? url.substring(1) : '/' + url);
             }
-            
-            // Return styled clickable link
             return `<a href="${fullUrl}" target="_blank" rel="noopener noreferrer" class="ai-chat-link">${text}</a>`;
         });
-        
+
+        // Unordered list items: - item or * item (at start of line)
+        formatted = formatted.replace(/^[\-\*]\s+(.+)$/gm, '• $1');
+
+        // Numbered list items: 1. item (at start of line) — keep as-is, just ensure spacing
+        formatted = formatted.replace(/^(\d+)\.\s+(.+)$/gm, '$1. $2');
+
+        // Horizontal rule: --- or ***
+        formatted = formatted.replace(/^[\-\*]{3,}$/gm, '<hr style="border:none;border-top:1px solid #ddd;margin:8px 0;">');
+
         // Convert line breaks to <br>
         formatted = formatted.replace(/\n/g, '<br>');
-        
+
         return formatted;
     }
 }

@@ -828,6 +828,28 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
+/* Markdown rendering in chat bubbles */
+.ai-chat-message-bubble strong {
+    font-weight: 700;
+    color: inherit;
+}
+
+.ai-chat-message-bubble em {
+    font-style: italic;
+}
+
+.ai-chat-message-bubble code {
+    background: rgba(0, 0, 0, 0.06);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.88em;
+}
+
+.ai-chat-message.user .ai-chat-message-bubble code {
+    background: rgba(255, 255, 255, 0.2);
+}
+
 .ai-chat-message-time {
     font-size: 11px;
     color: #999;

@@ -553,6 +553,10 @@ function handleAICarChat($db) {
                 if ($resolvedIntent === 'general_automotive') {
                     $aiIntentMarkedInScope = true;
                 }
+
+                if ($resolvedIntent === 'general_knowledge') {
+                    $aiIntentMarkedInScope = true;
+                }
             }
         }
 
@@ -806,19 +810,11 @@ WHAT I CAN DO FOR YOU:
    - Buying and selling advice
    - Car comparisons and recommendations
 
-HOW I ANSWER QUESTIONS (CRITICAL ORDER):
-1. **ALWAYS CHECK DATABASE FIRST** - Before anything else, query the MotorLink database for the information
-2. **If database has the info**: Use it immediately - present it accurately and clearly
-3. **ONLY if database doesn't have it**: Then and ONLY then, use AI knowledge and internet research as a fallback
-4. **Never skip the database** - Always check our database before wondering off to internet research
-
-DETAILED PROCESS:
-- **For car specs**: Database FIRST → If not found in database, THEN use AI research & web searches → Present clearly with source indication → Offer alternatives
-- **For listings**: PRECISE database search FIRST → If no matches in database, THEN offer alternatives → Suggest similar vehicles
-- **For simple questions**: Check database FIRST → Then use database + AI knowledge if needed
-- **For database queries**: Search our real data FIRST, present precisely, ONLY if not found then offer alternatives
-- **If database doesn't have the info**: THEN (and only then) use AI research & web searches, provide comprehensive answer, suggest alternatives
-- **Always include links**: When showing results, I include clickable links: [Text]({$baseUrl}page.html?id=ID)
+HOW I ANSWER QUESTIONS:
+1. **For car/vehicle/listing queries**: Check MotorLink database FIRST → present results → if not found, use AI knowledge
+2. **For general knowledge**: Answer directly and helpfully — I'm a broad knowledge assistant too
+3. **For follow-ups**: Read conversation history carefully to maintain context
+4. **Always include links**: When showing results, include clickable links: [Text]({$baseUrl}page.html?id=ID)
 
 LOGICAL THINKING & INTELLIGENT REASONING:
 - **Family cars**: Prioritize 6-7+ seating capacity (minivans, 3-row SUVs like Toyota Fortuner, Honda Pilot, Nissan Pathfinder), safety features, spacious interiors, reliability. Think: parents + 2-4 children = need for space. NOT just any SUV - specifically those with 7+ seats.
@@ -889,25 +885,18 @@ When users ask about car topics, I explain concepts clearly and educationally:
 - **Service history**: Always ask for service records. No history = risk.
 - **Pre-purchase inspection**: Get a mechanic to check before buying - worth the small fee.
 
-CRITICAL INTELLIGENCE RULES (MANDATORY ORDER):
-1. **DATABASE FIRST - NEVER SKIP THIS STEP**: ALWAYS query the MotorLink database FIRST for precise data before using AI knowledge or internet research. This is not optional - it's mandatory.
-2. **PRECISE DATA**: When database has info, present it EXACTLY as stored - be accurate and clinical
-3. **ONLY THEN - INTELLIGENT FALLBACK**: ONLY if the database doesn't have the info, THEN (and only then):
-   - Use my AI knowledge and web research capabilities
-   - Provide comprehensive answers based on research
-   - Offer alternatives and similar options
-   - Clearly state: 'This information is based on research as it's not in our database'
-4. **NEVER WONDER OFF TO INTERNET FIRST**: Do not use internet research or AI knowledge before checking the database. Always check database first, then fall back to research only if needed.
-5. **ALTERNATIVES**: When exact matches aren't found in database:
-   - Suggest similar makes/models from database FIRST
-   - THEN offer related options based on research if needed
-   - Provide helpful alternatives
-   - Be creative and helpful in finding solutions
+CORE RULES:
+1. For car/vehicle queries: Check MotorLink database FIRST, then use AI knowledge as fallback
+2. For general knowledge queries: Answer directly using your training knowledge — be helpful
+3. Always use **markdown formatting** in responses (bold, lists, headers)
+4. Keep responses clear, structured, and under 400 words unless more detail is requested
+5. When showing database results, indicate source. When using AI knowledge, say so clearly
 
 RESPONSE FORMATTING:
-- **Database results**: Present in structured, easy-to-read format with clear sections
-- **Research results**: Clearly labeled as 'Based on research' or 'From web sources'
-- **Mixed sources**: Separate sections: 'From MotorLink Database' and 'Additional Research'
+- Use **bold** for key terms and section headers
+- Use bullet points (- item) for lists of features, specs, options
+- Use numbered lists (1. 2. 3.) for step-by-step instructions
+- Present data in clean, scannable sections
 - **Alternatives**: Present as 'Similar Options' or 'You might also consider'
 - Use tables, lists, and clear formatting for better readability
 
@@ -920,15 +909,14 @@ MY STYLE:
 - Present data professionally and accurately
 
 REMEMBER (MANDATORY WORKFLOW):
-1. **ALWAYS check database FIRST** - This is step 1, not optional
-2. **ONLY if database doesn't have it** - Then use internet research as fallback
-3. **Never wonder off to internet first** - Always database before research
-4. Database accuracy is CRITICAL - always verify and present precisely
-5. When database lacks info, THEN use AI research intelligently
-6. Always offer alternatives and helpful suggestions
-7. I focus on cars and MotorLink services - I'll politely redirect other topics
-8. I'm always learning and improving to serve you better
-9. Your satisfaction is my priority! 😊";
+1. **ALWAYS check database FIRST** for car/vehicle/listing queries - This is step 1, not optional
+2. **ONLY if database doesn't have it** - Then use your broad knowledge as fallback
+3. Database accuracy is CRITICAL - always verify and present precisely
+4. Always offer alternatives and helpful suggestions
+5. **GENERAL KNOWLEDGE**: You are also a helpful general assistant. If users ask non-automotive questions (math, science, history, coding, weather, etc.), answer them helpfully using your training knowledge. You are NOT restricted to only car topics.
+6. **FOLLOW-UP UNDERSTANDING**: Always read the conversation history carefully. When a user says 'what about X' or 'and Y?', relate it to the previous messages. Maintain context across the conversation.
+7. **FORMAT WITH MARKDOWN**: Use **bold** for emphasis, bullet points (- item) for lists, ### for section headers. This makes responses scannable and professional.
+8. I'm always learning and improving to serve you better";
 
         // —— Inject proven high-quality Q&A pairs from user feedback ——
         $feedbackExamples = loadPositiveFeedbackExamples($db, 4);
@@ -1005,8 +993,8 @@ REMEMBER (MANDATORY WORKFLOW):
             sendError('AI service requires cURL extension. Please contact the administrator.', 503);
         }
 
-        $maxTokens = (int)($settings['max_tokens_per_request'] ?? 600);
-        $temperature = (float)($settings['temperature'] ?? 0.8);
+        $maxTokens = (int)($settings['max_tokens_per_request'] ?? 1200);
+        $temperature = (float)($settings['temperature'] ?? 0.7);
         
         // Build request body according to OpenAI API reference
         // Use settings from database (configurable in admin panel)
@@ -1935,7 +1923,7 @@ function resolveConversationalIntentWithAI($db, $message, $conversationHistory, 
         }
     }
 
-    $intentPrompt = "Classify the user's latest message into one intent for an automotive marketplace assistant and rewrite ambiguous follow-ups into a fully explicit query using conversation context.\n\n"
+    $intentPrompt = "Classify the user's latest message into one intent for an AI assistant on an automotive marketplace, and rewrite ambiguous follow-ups into a fully explicit query using conversation context.\n\n"
         . "Allowed intents:\n"
         . "- car_hire\n"
         . "- dealer\n"
@@ -1945,12 +1933,15 @@ function resolveConversationalIntentWithAI($db, $message, $conversationHistory, 
         . "- spec\n"
         . "- recommendation\n"
         . "- general_automotive\n"
-        . "- out_of_scope\n\n"
+        . "- general_knowledge (for non-automotive questions like math, science, history, weather, coding, etc.)\n"
+        . "- out_of_scope (ONLY for harmful/inappropriate content)\n\n"
         . "Rules:\n"
         . "1. Use conversation context heavily for pronouns and short follow-ups (their, them, that one, cheapest, contact number).\n"
         . "2. Keep rewritten_query concise and faithful to user constraints (location, category, business type).\n"
-        . "3. If the user is still asking about automotive/MotorLink, do NOT classify as out_of_scope.\n"
-        . "4. Return STRICT JSON only with this schema:\n"
+        . "3. If the user is asking about automotive/MotorLink, do NOT classify as out_of_scope.\n"
+        . "4. If the user asks a general knowledge question (not automotive), use general_knowledge intent — NOT out_of_scope.\n"
+        . "5. Only use out_of_scope for harmful, explicit, or dangerous content.\n"
+        . "6. Return STRICT JSON only with this schema:\n"
         . "{\"intent\":\"...\",\"rewritten_query\":\"...\",\"confidence\":0.0,\"out_of_scope\":false}\n\n"
         . "Conversation history JSON:\n"
         . json_encode($recentHistory, JSON_UNESCAPED_UNICODE)
@@ -2014,7 +2005,7 @@ function resolveConversationalIntentWithAI($db, $message, $conversationHistory, 
     }
 
     $intent = strtolower(trim((string)($parsed['intent'] ?? '')));
-    $allowed = ['car_hire', 'dealer', 'garage', 'listings', 'fuel', 'spec', 'recommendation', 'general_automotive', 'out_of_scope'];
+    $allowed = ['car_hire', 'dealer', 'garage', 'listings', 'fuel', 'spec', 'recommendation', 'general_automotive', 'general_knowledge', 'out_of_scope'];
     if (!in_array($intent, $allowed, true)) {
         return [];
     }
@@ -2696,31 +2687,26 @@ function isOutOfScopeQuery($message) {
         return false;
     }
 
-    // Allow short greetings/thanks so the chatbot remains usable.
-    if (preg_match('/^(hi|hello|hey|thanks|thank you|ok|okay|yo|good morning|good afternoon|good evening)[!. ]*$/i', $msg)) {
-        return false;
-    }
-
-    $inScopeKeywords = [
-        'car', 'vehicle', 'motor', 'automotive', 'listing', 'listings', 'dealer', 'dealership',
-        'garage', 'repair', 'service', 'car hire', 'rental', 'rent', 'fuel', 'petrol', 'diesel',
-        'engine', 'transmission', 'mileage', 'oil', 'brake', 'tyre', 'tire', 'battery', 'maintenance',
-        'suv', 'sedan', 'pickup', 'hatchback', 'bmw', 'toyota',
-        'honda', 'nissan', 'mazda', 'mercedes', 'ford', 'subaru', 'mitsubishi', 'vw', 'volkswagen',
-        'lilongwe', 'blantyre', 'mzuzu', 'zomba', 'motorlink', 'buy', 'sell', 'price', 'spec', 'specification'
+    // Block only clearly harmful/inappropriate content
+    $blockedPatterns = [
+        '/\b(hack|exploit|malware|phishing|ddos)\b/i',
+        '/\b(porn|xxx|nude|sex\s*chat|erotic)\b/i',
+        '/\b(bomb|weapon|how\s+to\s+kill|terrorism)\b/i',
+        '/\b(drug\s+deal|illegal\s+drug|cocaine|heroin|meth)\b/i',
     ];
 
-    foreach ($inScopeKeywords as $keyword) {
-        if (strpos($msg, $keyword) !== false) {
-            return false;
+    foreach ($blockedPatterns as $pattern) {
+        if (preg_match($pattern, $msg)) {
+            return true;
         }
     }
 
-    return true;
+    // Allow everything else — the AI is helpful for general knowledge too
+    return false;
 }
 
 function buildOutOfScopeResponse() {
-    return "I can only help with MotorLink and automotive topics (cars, listings, garages, dealers, car hire, fuel prices, and vehicle specs). Please ask a car-related question.";
+    return "I'm sorry, I can't help with that type of request. I'm here to help with cars, vehicles, and general knowledge questions. How can I assist you today?";
 }
 
 /**
@@ -3340,8 +3326,8 @@ function callOpenAIAPIForSpecs($db, $user, $messages) {
     if ($modelName === '') {
         $modelName = $providerConfig['default_model'];
     }
-    $maxTokens = (int)($settings['max_tokens_per_request'] ?? 600);
-    $temperature = (float)($settings['temperature'] ?? 0.8);
+    $maxTokens = (int)($settings['max_tokens_per_request'] ?? 1200);
+    $temperature = (float)($settings['temperature'] ?? 0.7);
     $enabled = (int)($settings['enabled'] ?? 1);
     
     if (!$enabled) {
@@ -8589,8 +8575,8 @@ function getAIChatSettings($db) {
                 'deepseek_enabled' => 1,
                 'qwen_enabled' => 1,
                 'glm_enabled' => 1,
-                'max_tokens_per_request' => 600,
-                'temperature' => 0.8,
+                'max_tokens_per_request' => 1200,
+                'temperature' => 0.7,
                 'requests_per_day' => 50,
                 'requests_per_hour' => 10,
                 'enabled' => 1
@@ -8606,8 +8592,8 @@ function getAIChatSettings($db) {
         $settings['deepseek_enabled'] = (int)($settings['deepseek_enabled'] ?? 1);
         $settings['qwen_enabled'] = (int)($settings['qwen_enabled'] ?? 1);
         $settings['glm_enabled'] = (int)($settings['glm_enabled'] ?? 1);
-        $settings['max_tokens_per_request'] = (int)($settings['max_tokens_per_request'] ?? 600);
-        $settings['temperature'] = (float)($settings['temperature'] ?? 0.8);
+        $settings['max_tokens_per_request'] = (int)($settings['max_tokens_per_request'] ?? 1200);
+        $settings['temperature'] = (float)($settings['temperature'] ?? 0.7);
         $settings['requests_per_day'] = (int)($settings['requests_per_day'] ?? 50);
         $settings['requests_per_hour'] = (int)($settings['requests_per_hour'] ?? 10);
         $settings['enabled'] = (int)($settings['enabled'] ?? 1);
@@ -8627,8 +8613,8 @@ function getAIChatSettings($db) {
             'deepseek_enabled' => 1,
             'qwen_enabled' => 1,
             'glm_enabled' => 1,
-            'max_tokens_per_request' => 600,
-            'temperature' => 0.8,
+            'max_tokens_per_request' => 1200,
+            'temperature' => 0.7,
             'requests_per_day' => 50,
             'requests_per_hour' => 10,
             'enabled' => 1

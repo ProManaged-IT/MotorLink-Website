@@ -203,10 +203,8 @@
 /* Header Section - Uniform Height */
 .company-card .company-card-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  min-height: 70px;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 6px;
 }
 
@@ -216,18 +214,16 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  padding-right: 100px; /* Prevent badge overlap */
+  /* No padding-right needed — badges are no longer absolutely positioned */
 }
 
-/* Corner Ribbon Badges Container */
+/* Badge Row — horizontal pills, wraps gracefully */
 .company-card .company-header-right {
-  position: absolute;
-  top: 0;
-  right: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0;
-  z-index: 5;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 5px;
+  /* Normal flow — no absolute positioning */
 }
 
 .company-card .company-business-name {
@@ -355,38 +351,24 @@
   font-weight: 700;
 }
 
-/* Corner Ribbon Badge Style - Elegant Watermark */
+/* Badge Pill Style — compact, wraps horizontally on all screen sizes */
 .company-card .company-status-tag {
-  position: relative;
-  padding: 6px 14px 6px 10px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 10px 100%);
-  box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.15);
-  min-width: 90px;
-  backdrop-filter: blur(10px);
+  padding: 4px 10px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border-radius: 20px;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  /* Remove clip-path ribbon — use pill shape instead */
 }
 
 .company-card .company-status-tag i {
-  font-size: 0.7rem;
-}
-
-/* Folded corner effect */
-.company-card .company-status-tag::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: -5px;
-  width: 10px;
-  height: 5px;
-  background: inherit;
-  filter: brightness(0.6);
-  clip-path: polygon(0 0, 100% 0, 0 100%);
+  font-size: 0.62rem;
 }
 
 /* Featured Badge - Vibrant Gold */
@@ -406,8 +388,8 @@
 /* Certified Badge - Softer, Elegant Gold */
 .company-card .company-status-tag.certified-tag {
   background: linear-gradient(135deg, #facc15 0%, #eab308 100%);
-  color: #ffffff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  color: #78350f;
+  text-shadow: none;
 }
 
 /* Events Badge - Elegant Purple */
@@ -724,8 +706,7 @@
   }
 
   .company-card .company-card-header {
-    min-height: 60px;
-    gap: 8px;
+    gap: 6px;
   }
 
   .company-card .company-business-name {
@@ -742,15 +723,19 @@
     font-size: 0.7rem;
   }
 
-  /* Corner ribbon - smaller on mobile */
+  /* Badge pills — smaller on mobile, still wrap correctly */
+  .company-card .company-header-right {
+    gap: 4px;
+  }
+
   .company-card .company-status-tag {
-    font-size: 0.6rem;
-    padding: 5px 10px 5px 8px;
-    min-width: 75px;
+    font-size: 0.58rem;
+    padding: 3px 8px;
+    letter-spacing: 0.3px;
   }
 
   .company-card .company-status-tag i {
-    font-size: 0.65rem;
+    font-size: 0.58rem;
   }
 
   .company-card .company-card-body {
@@ -1667,10 +1652,12 @@
     }
 }
 
-/* Header badges - inline style with softer colors */
+/* Header badges - inline pills, wrap naturally with company name */
 .company-header h1 .verified-badge,
 .company-header h1 .featured-badge,
-.company-header h1 .certified-badge {
+.company-header h1 .certified-badge,
+.company-header h1 .events-badge,
+.company-header h1 .vantruck-badge {
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -1680,6 +1667,8 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    white-space: nowrap;
+    vertical-align: middle;
 }
 
 .company-header h1 .verified-badge {
@@ -2800,21 +2789,29 @@
         max-width: 100%;
     }
 
+    /* On mobile: move header badges below company name — flex-wrap */
     .company-header h1 {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
         font-size: 1.4rem;
         text-align: center;
-        justify-content: center;
         width: 100%;
         max-width: 100%;
         word-wrap: break-word;
         overflow-wrap: break-word;
     }
 
-    /* Hide badges on mobile to keep it simple */
-    .verified-badge,
-    .featured-badge,
-    .certified-badge {
-        display: none !important;
+    /* Badges on detail page: smaller pills, wrap together */
+    .company-header h1 .verified-badge,
+    .company-header h1 .featured-badge,
+    .company-header h1 .certified-badge,
+    .company-header h1 .events-badge,
+    .company-header h1 .vantruck-badge {
+        font-size: 0.62rem;
+        padding: 3px 10px;
+        display: inline-flex;
     }
 
     /* Center and simplify company meta info on mobile - FIX OVERFLOW */
