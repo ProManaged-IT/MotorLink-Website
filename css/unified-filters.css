@@ -7,6 +7,22 @@
    GLOBAL FILTER CONTAINER STYLES
    ======================================== */
 
+/* Filter section wrapper (car-hire page) */
+.filter-section {
+    position: sticky;
+    top: 60px;
+    background: white;
+    z-index: 10;
+    padding: 20px 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0);
+    transition: box-shadow 0.3s ease;
+    margin-bottom: 0;
+}
+
+.filter-section.scrolled {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
 /* Base filter container - applies to all pages */
 .filters-container,
 .dealers-filters,
@@ -25,6 +41,19 @@
     top: 60px;
     z-index: 1000;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-sizing: border-box;
+    max-width: 100%;
+    overflow: visible;
+}
+
+/* When inside .filter-section (car-hire), don't re-sticky the inner .filter-bar */
+.filter-section .filter-bar {
+    position: static;
+    box-shadow: none;
+    border: none;
+    margin-bottom: 0;
+    background: transparent;
+    padding: 0;
 }
 
 /* ========================================
@@ -132,6 +161,8 @@ input.filter-input {
     transition: all 0.2s ease;
     appearance: none;
     cursor: pointer;
+    box-sizing: border-box;
+    min-width: 0;
 }
 
 /* Custom dropdown arrow for selects */
@@ -646,24 +677,21 @@ select.garage-filter-input {
     .mobile-search-wrapper {
         display: flex;
         align-items: stretch;
-        background: rgba(255, 255, 255, 0.1);
-        border: 1.5px solid rgba(255, 255, 255, 0.28);
+        background: rgba(255, 255, 255, 0.96);
+        border: 1.5px solid rgba(255, 255, 255, 0.9);
         border-radius: 14px;
         overflow: hidden;
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
         box-shadow:
-            0 4px 20px rgba(0, 0, 0, 0.15),
-            inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            0 4px 20px rgba(0, 0, 0, 0.2),
+            0 1px 4px rgba(0, 0, 0, 0.1);
         transition: border-color 0.25s ease, box-shadow 0.25s ease;
     }
 
     .mobile-search-wrapper:focus-within {
-        border-color: rgba(255, 255, 255, 0.5);
+        border-color: #00a651;
         box-shadow:
             0 4px 24px rgba(0, 0, 0, 0.2),
-            0 0 0 3px rgba(0, 166, 81, 0.2),
-            inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            0 0 0 3px rgba(0, 166, 81, 0.25);
     }
 
     .mobile-search-input {
@@ -673,15 +701,15 @@ select.garage-filter-input {
         background: transparent;
         border: none;
         outline: none;
-        color: #fff;
+        color: #1f2937;
         font-size: 0.95rem;
         font-weight: 400;
         letter-spacing: 0.01em;
-        caret-color: #00e676;
+        caret-color: #00a651;
     }
 
     .mobile-search-input::placeholder {
-        color: rgba(255, 255, 255, 0.55);
+        color: #9ca3af;
         font-weight: 400;
     }
 
@@ -691,9 +719,11 @@ select.garage-filter-input {
         align-items: center;
         justify-content: center;
         gap: 6px;
-        padding: 0 20px;
+        padding: 0 22px;
         min-height: 48px;
         border: none;
+        border-left: 2px solid rgba(0, 166, 81, 0.2);
+        margin-left: 4px;
         background: linear-gradient(135deg, #00c853 0%, #00a651 100%);
         color: #fff;
         font-size: 0.85rem;
@@ -703,6 +733,7 @@ select.garage-filter-input {
         touch-action: manipulation;
         transition: background 0.2s ease, transform 0.15s ease;
         white-space: nowrap;
+        border-radius: 0 12px 12px 0;
     }
 
     .mobile-search-btn i {
@@ -740,6 +771,7 @@ select.garage-filter-input {
         min-height: 44px;
         font-size: 0.8rem;
         gap: 5px;
+        border-radius: 0 10px 10px 0;
     }
 
     .mobile-search-btn i {
@@ -767,6 +799,7 @@ select.garage-filter-input {
         padding: 0 14px;
         min-height: 42px;
         font-size: 0.75rem;
+        border-radius: 0 9px 9px 0;
     }
 }
 

@@ -80,6 +80,11 @@
             border-top: 1px solid #e0e0e0 !important;
         }
 
+        body.chat-page .message-input-wrapper textarea {
+            min-height: 40px !important;
+            max-height: 120px !important;
+        }
+
         body.chat-page .send-message-btn {
             width: 40px !important;
             height: 40px !important;
@@ -125,13 +130,22 @@
                     <a href="car-hire.html">Car Hire</a>
                     <a href="sell.html">Sell Car</a>
                 </nav>
+
+                <div class="user-menu" id="userMenu">
+                    <div id="userInfo" style="display: none;">
+                        <a href="profile.html" class="user-avatar-btn" title="My Profile" id="userAvatar">
+                            <i class="fas fa-user"></i>
+                        </a>
+                        <button onclick="logout()" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-sign-out-alt"></i> Logout
+                        </button>
                     </div>
                     <div id="guestMenu">
-                        <a href="login.html" class="btn btn-outline-primary btn-sm">
-                            <i class="fas fa-sign-in-alt"></i> Login
+                        <a href="login.html" class="btn btn-outline-primary btn-sm login-icon-btn" title="Login">
+                            <i class="fas fa-sign-in-alt"></i> <span class="btn-label">Login</span>
                         </a>
-                        <a href="register.html" class="btn btn-primary btn-sm">
-                            <i class="fas fa-user-plus"></i> Register
+                        <a href="register.html" class="btn btn-primary btn-sm register-icon-btn" title="Register">
+                            <i class="fas fa-user-plus"></i> <span class="btn-label">Register</span>
                         </a>
                     </div>
                 </div>

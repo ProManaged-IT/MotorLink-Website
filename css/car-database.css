@@ -74,14 +74,11 @@
     font-weight: 400;
 }
 
-/* Search Container - Elevated Card Design with Sticky Positioning */
+/* Search Container - Elevated Card Design */
 .search-container {
     max-width: 1000px;
     margin: -60px auto 60px;
     padding: 0 20px;
-    position: sticky;
-    top: 80px;
-    z-index: 999;
 }
 
 .search-card {

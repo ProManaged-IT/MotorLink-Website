@@ -52,6 +52,8 @@ class MotorLink {
         
         this.checkAuthentication();
         this.setupEventListeners();
+        this.syncActiveNavLink();
+        this.initScrollHeader();
         this.setupDashboardCards();
         this.loadInitialData();
         this.setupPagination();
@@ -62,6 +64,41 @@ class MotorLink {
                 this.startTour();
             }
         }, 2000);
+    }
+
+    initScrollHeader() {
+        const header = document.querySelector('.header');
+        if (!header) return;
+        const onScroll = () => {
+            header.classList.toggle('scrolled', window.scrollY > 10);
+        };
+        window.addEventListener('scroll', onScroll, { passive: true });
+        onScroll(); // run immediately in case page loads mid-scroll
+    }
+
+    syncActiveNavLink() {
+        const nav = document.getElementById('mainNav');
+        if (!nav) return;
+
+        const currentPage = (window.location.pathname.split('/').pop() || 'index.html').toLowerCase();
+        const pageAliases = {
+            '': 'index.html',
+            'showroom.html': 'dealers.html',
+            'car-hire-company.html': 'car-hire.html'
+        };
+
+        const activeHref = pageAliases[currentPage] || currentPage;
+
+        nav.querySelectorAll('a').forEach(link => {
+            const href = (link.getAttribute('href') || '').toLowerCase();
+            const isMatch = activeHref && href === activeHref;
+            link.classList.toggle('active', isMatch);
+            if (isMatch) {
+                link.setAttribute('aria-current', 'page');
+            } else {
+                link.removeAttribute('aria-current');
+            }
+        });
     }
 
     async checkMaintenanceMode() {
@@ -873,10 +910,10 @@ class MotorLink {
         dashboardLink.href = dashboardUrl;
         dashboardLink.className = 'dashboard-link';
         dashboardLink.innerHTML = `<i class="${dashboardIcon}"></i> <span>${dashboardText}</span>`;
-        dashboardLink.style.cssText = 'background: linear-gradient(135deg, #27ae60, #229954); color: white; padding: 8px 16px; border-radius: 6px; font-weight: 600; display: flex; align-items: center; gap: 6px;';
 
         // Insert after the last nav item
         nav.appendChild(dashboardLink);
+        this.syncActiveNavLink();
     }
 
     async updateDashboardStats() {
@@ -1623,14 +1660,16 @@ class MotorLink {
                 ? `<div class="image-count" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${this.escapeHtml(listing.title).replace(/'/g, "\\'")}')"><i class="fas fa-images"></i> ${totalImageCount}</div>`
                 : '';
 
-            // DoneDeal-style gallery: main image + strip of up to 3 extra thumbs
-            const thumbs = images.slice(1, 4); // up to 3 non-featured extras
+            // Thumbnail row: up to 3 extra images under the featured image
+            const thumbs = images.slice(1, 4);
+            const remainingThumbCount = Math.max(0, totalImageCount - (thumbs.length + 1));
             const galleryStripHTML = thumbs.length > 0 ? `
-                <div class="car-gallery-strip">
+                <div class="car-gallery-strip thumb-count-${thumbs.length}">
                     ${thumbs.map((img, idx) => `
-                        <div class="gallery-thumb${idx === 2 ? ' gallery-thumb-3' : ''}" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${this.escapeHtml(listing.title).replace(/'/g, "\\'")}')">
+                        <div class="gallery-thumb" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${this.escapeHtml(listing.title).replace(/'/g, "\\'")}')">
                             <img src="${img}" alt="${this.escapeHtml(listing.title)}" loading="lazy"
                                  onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
+                            ${remainingThumbCount > 0 && idx === thumbs.length - 1 ? `<span class="gallery-thumb-more">+${remainingThumbCount}</span>` : ''}
                         </div>
                     `).join('')}
                 </div>
@@ -2235,6 +2274,9 @@ window.logout = async function() {
             }
         });
 
+        // Hide mobile avatar
+        if (typeof hideMobileAvatar === 'function') hideMobileAvatar();
+
         // Redirect to home page
         window.location.href = CONFIG.BASE_URL || 'index.html';
     }
@@ -2269,6 +2311,7 @@ class DealersManager {
         this.setupCardClickEvents();
         this.renderDealers();
         this.populateLocationFilter();
+        this.populateSpecializationFilter();
         // Mobile menu handled by mobile-menu.js
         // this.setupMobileMenu();
     }
@@ -2332,7 +2375,8 @@ class DealersManager {
             this.renderDealers();
             this.updateResultsCount();
             this.populateLocationFilter();
-            
+            this.populateSpecializationFilter();
+
             // Geocode addresses and calculate distances if user location is already available
             if (this.userLocation) {
                 this.geocodeAndRenderDealers();
@@ -2454,20 +2498,6 @@ class DealersManager {
         return Math.round((R * c) * 10) / 10; // Distance in km, rounded to 1 decimal
     }
 
-    populateLocationFilter() {
-        const locationFilter = document.getElementById('locationFilter');
-        if (!locationFilter) return;
-
-        const locations = [...new Set(this.dealers.map(dealer => dealer.location_name))].sort();
-        
-        locations.forEach(location => {
-            const option = document.createElement('option');
-            option.value = location;
-            option.textContent = location;
-            locationFilter.appendChild(option);
-        });
-    }
-
     setupEventListeners() {
         // Filter events
         const applyFiltersBtn = document.getElementById('applyFilters');
@@ -2480,6 +2510,12 @@ class DealersManager {
         if (sortSelect) sortSelect.addEventListener('change', () => this.applyFilters());
         if (dealerSearch) dealerSearch.addEventListener('input', () => this.applyFilters());
 
+        // Auto-apply on dropdown change
+        ['locationFilter', 'specializationFilter', 'verificationFilter'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', () => this.applyFilters());
+        });
+
         // Mobile hero search — syncs to desktop #dealerSearch
         const mobileDealerSearch = document.getElementById('mobileDealerSearch');
         const mobileDealerSearchBtn = document.getElementById('mobileDealerSearchBtn');
@@ -2489,6 +2525,7 @@ class DealersManager {
                 this.applyFilters();
             };
             mobileDealerSearchBtn.addEventListener('click', doMobileSearch);
+            mobileDealerSearch.addEventListener('input', doMobileSearch);
             mobileDealerSearch.addEventListener('keydown', e => {
                 if (e.key === 'Enter') { e.preventDefault(); doMobileSearch(); }
             });
@@ -2542,39 +2579,7 @@ class DealersManager {
         });
     }
 
-    applyFilters() {
-        const searchTerm = document.getElementById('dealerSearch')?.value.toLowerCase() || '';
-        const locationFilter = document.getElementById('locationFilter')?.value || '';
-        const verificationFilter = document.getElementById('verificationFilter')?.value || '';
-        const sortBy = document.getElementById('sortSelect')?.value || 'featured';
-
-        this.filteredDealers = this.dealers.filter(dealer => {
-            // Search filter
-            if (searchTerm && !dealer.business_name.toLowerCase().includes(searchTerm)) {
-                return false;
-            }
-            
-            // Location filter
-            if (locationFilter && dealer.location_name !== locationFilter) {
-                return false;
-            }
-            
-            // Verification filter
-            if (verificationFilter === 'verified' && !dealer.verified) {
-                return false;
-            }
-            if (verificationFilter === 'unverified' && dealer.verified) {
-                return false;
-            }
-            
-            return true;
-        });
-
-        // Sort results
-        this.sortDealers(sortBy);
-        this.renderDealers();
-        this.updateResultsCount();
-    }
+    // applyFilters() and clearFilters() defined in enhanced version below
 
     sortDealers(sortBy) {
         switch (sortBy) {
@@ -2592,20 +2597,6 @@ class DealersManager {
                 this.filteredDealers.sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
                 break;
         }
-    }
-
-    clearFilters() {
-        const dealerSearch = document.getElementById('dealerSearch');
-        const locationFilter = document.getElementById('locationFilter');
-        const verificationFilter = document.getElementById('verificationFilter');
-        const sortSelect = document.getElementById('sortSelect');
-
-        if (dealerSearch) dealerSearch.value = '';
-        if (locationFilter) locationFilter.value = '';
-        if (verificationFilter) verificationFilter.value = '';
-        if (sortSelect) sortSelect.value = 'featured';
-        
-        this.applyFilters();
     }
 
     renderDealers() {
@@ -2931,97 +2922,107 @@ updateHeroStats(dealers) {
     if (featuredDealersElement) featuredDealersElement.textContent = `${featuredDealers}`;
 }
 
-// Enhanced populateLocationFilter method
 populateLocationFilter() {
     const locationFilter = document.getElementById('locationFilter');
     if (!locationFilter) return;
 
-    // Clear existing options except the first one
-    while (locationFilter.options.length > 1) {
-        locationFilter.remove(1);
-    }
+    while (locationFilter.options.length > 1) locationFilter.remove(1);
 
-    // Get unique locations from dealers
-    const locations = [...new Set(this.dealers.map(dealer => dealer.location_name))]
-        .filter(location => location) // Remove null/undefined
-        .sort();
+    const locations = [...new Set(this.dealers.map(d => d.location_name))]
+        .filter(Boolean).sort();
 
-    // Add location options
-    locations.forEach(location => {
-        const option = document.createElement('option');
-        option.value = location;
-        option.textContent = location;
-        locationFilter.appendChild(option);
+    locations.forEach(loc => {
+        const opt = document.createElement('option');
+        opt.value = loc;
+        opt.textContent = loc;
+        locationFilter.appendChild(opt);
     });
 }
 
-// Enhanced applyFilters method - add the new filters
-applyFilters() {
-    const searchTerm = document.getElementById('dealerSearch')?.value.toLowerCase() || '';
-    const locationFilter = document.getElementById('locationFilter')?.value || '';
-    const ratingFilter = document.getElementById('ratingFilter')?.value || '';
-    const verificationFilter = document.getElementById('verificationFilter')?.value || '';
-    const featuredFilter = document.getElementById('featuredFilter')?.value || '';
-    const sortBy = document.getElementById('sortSelect')?.value || 'rating';
+populateSpecializationFilter() {
+    const specFilter = document.getElementById('specializationFilter');
+    if (!specFilter) return;
 
-    this.filteredDealers = this.dealers.filter(dealer => {
-        // Search filter
-        if (searchTerm && !dealer.business_name.toLowerCase().includes(searchTerm)) {
-            return false;
+    while (specFilter.options.length > 1) specFilter.remove(1);
+
+    const specs = new Set();
+    this.dealers.forEach(dealer => {
+        if (!dealer.specialization) return;
+        try {
+            const arr = typeof dealer.specialization === 'string'
+                ? JSON.parse(dealer.specialization)
+                : dealer.specialization;
+            if (Array.isArray(arr)) arr.forEach(s => { if (s) specs.add(s.trim()); });
+        } catch (e) {}
+    });
+
+    [...specs].sort().forEach(spec => {
+        const opt = document.createElement('option');
+        opt.value = spec;
+        opt.textContent = spec;
+        specFilter.appendChild(opt);
+    });
+}
+
+applyFilters() {
+    const searchTerm = (document.getElementById('dealerSearch')?.value || '').toLowerCase().trim();
+    const locationVal = document.getElementById('locationFilter')?.value || '';
+    const specializationVal = document.getElementById('specializationFilter')?.value || '';
+    const verificationVal = document.getElementById('verificationFilter')?.value || '';
+    const sortBy = document.getElementById('sortSelect')?.value || 'featured';
+
+    this.filteredDealers = (this.dealers || []).filter(dealer => {
+        // Text search — name, location, description
+        if (searchTerm) {
+            const name = (dealer.business_name || '').toLowerCase();
+            const loc  = (dealer.location_name  || '').toLowerCase();
+            const desc = (dealer.description    || '').toLowerCase();
+            if (!name.includes(searchTerm) && !loc.includes(searchTerm) && !desc.includes(searchTerm)) {
+                return false;
+            }
         }
-        
-        // Location filter
-        if (locationFilter && dealer.location_name !== locationFilter) {
-            return false;
+
+        // Location
+        if (locationVal && (dealer.location_name || '') !== locationVal) return false;
+
+        // Specialization (JSON array field)
+        if (specializationVal) {
+            let specs = [];
+            try {
+                specs = typeof dealer.specialization === 'string'
+                    ? JSON.parse(dealer.specialization)
+                    : (dealer.specialization || []);
+            } catch (e) {}
+            if (!Array.isArray(specs) || !specs.some(s => s.trim() === specializationVal)) return false;
         }
-        
-        // Rating filter
-        if (ratingFilter && dealer.rating < parseFloat(ratingFilter)) {
-            return false;
-        }
-        
-        // Verification filter
-        if (verificationFilter === 'verified' && dealer.verified != 1) {
-            return false;
-        }
-        if (verificationFilter === 'unverified' && dealer.verified == 1) {
-            return false;
-        }
-        
-        // Featured filter
-        if (featuredFilter === 'featured' && dealer.featured != 1) {
-            return false;
-        }
-        if (featuredFilter === 'regular' && dealer.featured == 1) {
-            return false;
-        }
-        
+
+        // Verified status (loose comparison — API may return string "1" or number 1)
+        if (verificationVal === 'verified' && dealer.verified != 1) return false;
+
         return true;
     });
 
-    // Sort results
     this.sortDealers(sortBy);
     this.renderDealers();
     this.updateResultsCount();
 }
 
-// Enhanced clearFilters method
 clearFilters() {
-    const dealerSearch = document.getElementById('dealerSearch');
-    const locationFilter = document.getElementById('locationFilter');
-    const ratingFilter = document.getElementById('ratingFilter');
-    const verificationFilter = document.getElementById('verificationFilter');
-    const featuredFilter = document.getElementById('featuredFilter');
-    const sortSelect = document.getElementById('sortSelect');
+    ['dealerSearch', 'locationFilter', 'specializationFilter', 'verificationFilter'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
 
-    if (dealerSearch) dealerSearch.value = '';
-    if (locationFilter) locationFilter.value = '';
-    if (ratingFilter) ratingFilter.value = '';
-    if (verificationFilter) verificationFilter.value = '';
-    if (featuredFilter) featuredFilter.value = '';
-    if (sortSelect) sortSelect.value = 'rating';
-    
-    this.applyFilters();
+    const sortSelect = document.getElementById('sortSelect');
+    if (sortSelect) sortSelect.value = 'featured';
+
+    const mobileDealerSearch = document.getElementById('mobileDealerSearch');
+    if (mobileDealerSearch) mobileDealerSearch.value = '';
+
+    this.filteredDealers = [...(this.dealers || [])];
+    this.sortDealers('featured');
+    this.renderDealers();
+    this.updateResultsCount();
 }
 }
 
@@ -3680,11 +3681,56 @@ class ShowroomManager {
         if (emptyState) emptyState.style.display = 'none';
 
         carsGrid.innerHTML = cars.map(car => {
-            const imageUrl = car.featured_image_id
-                ? `${CONFIG.API_URL}?action=image&id=${car.featured_image_id}`
-                : (car.featured_image
-                    ? `${CONFIG.BASE_URL}uploads/${car.featured_image}`
-                    : (car.primary_image || inlinePlaceholder));
+            let images = [];
+            const featuredImageId = car.featured_image_id || null;
+
+            if (featuredImageId) {
+                images.push(`${CONFIG.API_URL}?action=image&id=${featuredImageId}`);
+            } else if (car.featured_image) {
+                images.push(`${CONFIG.BASE_URL}uploads/${car.featured_image}`);
+            } else if (car.primary_image) {
+                images.push(car.primary_image);
+            }
+
+            if (car.images && Array.isArray(car.images) && car.images.length > 0) {
+                car.images.forEach(img => {
+                    let imgUrl = '';
+                    if (img.id) {
+                        if (img.id == featuredImageId) return;
+                        imgUrl = `${CONFIG.API_URL}?action=image&id=${img.id}`;
+                    } else if (img.filename) {
+                        if (img.filename === car.featured_image) return;
+                        imgUrl = `${CONFIG.BASE_URL}uploads/${img.filename}`;
+                    } else if (typeof img === 'string') {
+                        if (img === car.featured_image) return;
+                        imgUrl = `${CONFIG.BASE_URL}uploads/${img}`;
+                    }
+                    if (imgUrl && !images.includes(imgUrl)) {
+                        images.push(imgUrl);
+                    }
+                });
+            }
+
+            if (images.length === 0) {
+                images.push(inlinePlaceholder);
+            }
+
+            images = images.slice(0, 5);
+            const imageUrl = images[0];
+            const totalImageCount = car.image_count || images.length;
+            const thumbs = images.slice(1, 4);
+            const remainingThumbCount = Math.max(0, totalImageCount - (thumbs.length + 1));
+            const galleryStripHTML = thumbs.length > 0 ? `
+                <div class="car-gallery-strip thumb-count-${thumbs.length}">
+                    ${thumbs.map((img, idx) => `
+                        <div class="gallery-thumb" onclick="event.stopPropagation(); openImageGallery(${car.id}, '${(car.title || `${car.year} ${car.make_name} ${car.model_name}`).replace(/'/g, "\\'")}')">
+                            <img src="${img}" alt="${car.title || `${car.year} ${car.make_name} ${car.model_name}`}" loading="lazy"
+                                 onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
+                            ${remainingThumbCount > 0 && idx === thumbs.length - 1 ? `<span class="gallery-thumb-more">+${remainingThumbCount}</span>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '';
 
             // Check for is_featured and is_premium flags
             const isFeatured = car.is_featured == 1;
@@ -3723,6 +3769,7 @@ class ShowroomManager {
                             ${badgeHTML}
                             ${car.image_count > 1 ? `<div class="image-count" onclick="event.stopPropagation(); openImageGallery(${car.id}, '${(car.title || `${car.year} ${car.make_name} ${car.model_name}`).replace(/'/g, "\\'")}')"><i class="fas fa-images"></i> ${car.image_count}</div>` : ''}
                         </div>
+                        ${galleryStripHTML}
                     </div>
                     <div class="car-content">
                         <h3 class="car-title">${car.title || `${car.year} ${car.make_name} ${car.model_name}`}</h3>
@@ -4467,21 +4514,58 @@ function updateUserAvatar(userName) {
         let initials = '';
 
         if (nameParts.length >= 2) {
-            // First and last name initials
             initials = nameParts[0][0] + nameParts[nameParts.length - 1][0];
         } else if (nameParts.length === 1) {
-            // Single name - take first two characters
             initials = nameParts[0].substring(0, 2);
         }
 
         initials = initials.toUpperCase();
 
         if (initials) {
-            avatarBtn.innerHTML = `<span style="color: white; font-weight: 700; font-size: 16px;">${initials}</span>`;
+            avatarBtn.innerHTML = `<span>${initials}</span>`;
+            avatarBtn.title = userName + ' (Online)';
         } else {
             avatarBtn.innerHTML = '<i class="fas fa-user"></i>';
         }
+
+        // Create/update mobile avatar (visible on mobile/tablet in header bar)
+        ensureMobileAvatar(initials, userName);
     }
+}
+
+function ensureMobileAvatar(initials, userName) {
+    let mobileAvatar = document.getElementById('mobileAvatarBtn');
+    const headerContainer = document.querySelector('.header-container');
+    if (!headerContainer) return;
+
+    if (!mobileAvatar) {
+        mobileAvatar = document.createElement('a');
+        mobileAvatar.id = 'mobileAvatarBtn';
+        mobileAvatar.className = 'mobile-avatar-btn';
+        mobileAvatar.href = 'profile.html';
+        mobileAvatar.title = userName ? userName + ' (Online)' : 'My Profile';
+        // Insert before tablet toggle or mobile toggle
+        const tabletToggle = headerContainer.querySelector('.tablet-user-menu-toggle');
+        const mobileToggle = headerContainer.querySelector('.mobile-menu-toggle');
+        const refEl = tabletToggle || mobileToggle;
+        if (refEl) {
+            headerContainer.insertBefore(mobileAvatar, refEl);
+        } else {
+            headerContainer.appendChild(mobileAvatar);
+        }
+    }
+
+    mobileAvatar.innerHTML = initials
+        ? `<span>${initials}</span>`
+        : '<i class="fas fa-user"></i>';
+    mobileAvatar.title = userName ? userName + ' (Online)' : 'My Profile';
+    mobileAvatar.style.display = '';
+}
+
+// Hide mobile avatar on logout
+function hideMobileAvatar() {
+    const el = document.getElementById('mobileAvatarBtn');
+    if (el) el.style.display = 'none';
 }
 
 // Scroll to top functionality removed - using .back-to-top button from script.js instead
@@ -4695,15 +4779,7 @@ async function loadAIChatbot() {
     
     // Create widget HTML
     const widgetHTML = `
-        <div class="ai-car-chat-widget" id="aiCarChatWidget">
-            <div class="ai-chat-header" id="aiChatHeader">
-                <div class="ai-chat-header-info">
-                    <div class="ai-chat-avatar">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <div class="ai-chat-title">
-                        <h3>MotorLink AI Assistant</h3>
-                        <p>Your personal assistant</p>
+        <div class="ai-car-chat-widget minimized" id="aiCarChatWidget">
                         <div class="ai-usage-indicator" id="aiUsageIndicator">
                             <span id="aiUsageText">Loading usage...</span>
                         </div>
@@ -4761,11 +4837,8 @@ async function loadAIChatbot() {
     tempDiv.innerHTML = widgetHTML;
     const widget = tempDiv.firstElementChild;
     document.body.appendChild(widget);
-    
-    // Show widget after a short delay to ensure page is rendered
-    setTimeout(() => {
-        widget.classList.add('loaded');
-    }, 300);
+    // 'loaded' class is added by setupWidgetVisibility() in ai-car-chat.js
+    // after auth check — prevents the chat from flashing open before auth resolves
     
     // Load the chatbot script if not already loaded
     if (!window.AICarChat && !document.querySelector('script[src*="ai-car-chat.js"]')) {

@@ -32,65 +32,7 @@
 /* ========================================
    Filter Section - Clean Horizontal Bar
 ======================================== */
-.filter-section {
-  background: rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(10px);
-  padding: 20px 0;
-  border-bottom: 1px solid var(--border-light);
-  position: sticky;
-  top: 70px; /* Below the fixed header */
-  z-index: 999;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.filter-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 16px;
-}
-
-@media (min-width: 768px) {
-  .filter-bar {
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-  }
-}
-
-.filter-select {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-  max-width: 100%;
-    padding-bottom: 3px;
-    min-height: 50px;
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  background: var(--bg-white);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-  transition: all 0.2s ease;
-    min-width: 0;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23757575' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-    font-size: 0.82rem;
-  padding-right: 32px;
-  box-sizing: border-box;
-}
-
-.filter-select:hover {
-  border-color: var(--border-medium);
-}
-
-.filter-select:focus {
-  outline: none;
-  border-color: var(--primary-green);
-  box-shadow: 0 0 0 3px var(--primary-green-bg);
-}
+/* .filter-section, .filter-bar, and .filter-select styling handled by unified-filters.css */
 
 .btn-filter {
   height: 40px;
@@ -1421,20 +1363,7 @@
     grid-column: 1 / -1;
 }
 
-/* Enhanced filter bar for additional filters */
-.filter-bar.enhanced {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    max-width: 900px;
-}
-
-@media (min-width: 768px) {
-    .filter-bar.enhanced {
-        flex-direction: row;
-        align-items: center;
-    }
-}
+/* .filter-bar.enhanced styling handled by unified-filters.css */
 
 /* Stats animation */
 .car-hire-stat-number {
@@ -4148,48 +4077,7 @@
 }
 
 
-.filter-section {
-    position: sticky;
-    top: 60px;
-    background: white;
-    z-index: 10;
-    padding: 20px 0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0);
-    transition: box-shadow 0.3s ease;
-    margin-bottom: 0;
-}
-
-.filter-section.scrolled {
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-}
-
-.filter-bar {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-}
-
-/* Mobile adjustments */
-@media (max-width: 768px) {
-    .filter-section {
-        top: 60px;
-        padding: 15px 0;
-    }
-    
-    .filter-bar {
-        padding: 15px;
-    }
-}
-
-@media (max-width: 480px) {
-    .filter-section {
-        padding: 12px 0;
-    }
-    
-    .filter-bar {
-        padding: 12px;
-    }
-}
+/* .filter-bar styling handled by unified-filters.css */
 
 /* ============================================================================
    MOBILE FILTER OPTIMIZATION - Hide desktop filter bar on mobile

@@ -1971,6 +1971,43 @@ function getListings($db) {
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
         $listings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!empty($listings)) {
+            $listingIds = array_map('intval', array_column($listings, 'id'));
+            $imagePlaceholders = implode(',', array_fill(0, count($listingIds), '?'));
+            $imageSql = "
+                SELECT listing_id, id, filename, is_primary, sort_order
+                FROM car_listing_images
+                WHERE listing_id IN ({$imagePlaceholders})
+                ORDER BY listing_id ASC, is_primary DESC, sort_order ASC, id ASC
+            ";
+            $imageStmt = $db->prepare($imageSql);
+            $imageStmt->execute($listingIds);
+            $imageRows = $imageStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $imagesByListing = [];
+            foreach ($imageRows as $imageRow) {
+                $listingId = (int)$imageRow['listing_id'];
+                if (!isset($imagesByListing[$listingId])) {
+                    $imagesByListing[$listingId] = [];
+                }
+
+                if (count($imagesByListing[$listingId]) < MAX_VEHICLE_IMAGES) {
+                    $imagesByListing[$listingId][] = [
+                        'id' => (int)$imageRow['id'],
+                        'filename' => $imageRow['filename'],
+                        'is_primary' => (int)$imageRow['is_primary'],
+                        'sort_order' => (int)$imageRow['sort_order']
+                    ];
+                }
+            }
+
+            foreach ($listings as &$listing) {
+                $listingId = (int)$listing['id'];
+                $listing['images'] = $imagesByListing[$listingId] ?? [];
+            }
+            unset($listing);
+        }
         
         // Get total count for pagination
         $countSql = "SELECT COUNT(*) FROM car_listings l 
@@ -2330,6 +2367,16 @@ function getGarages($db) {
         if (!empty($_GET['district'])) {
             $whereConditions[] = "loc.district = ?";
             $params[] = $_GET['district'];
+        }
+        
+        // Search filter
+        if (!empty($_GET['search'])) {
+            $whereConditions[] = "(g.name LIKE ? OR g.address LIKE ? OR g.description LIKE ? OR g.owner_name LIKE ?)";
+            $searchTerm = '%' . $_GET['search'] . '%';
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
         }
         
         // Specialization filter

@@ -642,11 +642,13 @@ async function loadDatabaseGarages() {
         const params = [];
         
         // Add current filters
+        const search = document.getElementById('garageSearchInput')?.value?.trim() || '';
         const district = document.getElementById('districtFilter')?.value || '';
         const carBrand = document.getElementById('carBrandFilter')?.value || '';
         const service = document.getElementById('serviceFilter')?.value || '';
         const emergency = document.getElementById('emergencyFilter')?.value || '';
         
+        if (search) params.push(`search=${encodeURIComponent(search)}`);
         if (district) params.push(`district=${encodeURIComponent(district)}`);
         if (carBrand) params.push(`car_brand=${encodeURIComponent(carBrand)}`);
         if (service) params.push(`service=${encodeURIComponent(service)}`);

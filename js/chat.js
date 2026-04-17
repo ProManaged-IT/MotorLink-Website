@@ -269,15 +269,16 @@ class ChatManager {
                 <div class="conversation-avatar">
                     ${conv.other_user_avatar
                         ? `<img src="${conv.other_user_avatar}" alt="${conv.other_user_name}">`
-                        : '<i class="fas fa-user"></i>'}
+                        : `<span class="conv-avatar-initials">${this.getInitials(conv.other_user_name)}</span>`}
+                    ${conv.is_online ? '<span class="online-dot"></span>' : ''}
                 </div>
                 <div class="conversation-details">
                     <div class="conversation-header">
-                        <span class="conversation-name">${conv.archived ? '<i class="fas fa-archive" style="font-size:11px;opacity:0.5;margin-right:4px"></i>' : ''}${this.escapeHtml(conv.other_user_name || 'Unknown User')}</span>
+                        <span class="conversation-name">${conv.archived ? '<i class="fas fa-archive" style="font-size:11px;opacity:0.5;margin-right:4px"></i>' : ''}${this.escapeHtml(conv.other_user_name || 'Unknown User')}${conv.is_online ? ' <span class="online-label">Active</span>' : ''}</span>
                         <span class="conversation-time">${this.formatTime(conv.last_message_at)}</span>
                     </div>
                     <div class="conversation-preview">${this.escapeHtml(conv.last_message || 'No messages yet')}</div>
-                    ${conv.listing_title ? `<div class="conversation-listing"><i class="fas fa-car"></i> ${this.escapeHtml(conv.listing_title)}</div>` : ''}
+                    ${conv.listing_title ? `<div class="conversation-listing"><i class="fas fa-car"></i> ${this.escapeHtml(conv.listing_title)}${conv.has_active_listing ? ' <span class="listing-active-badge">Live</span>' : ''}</div>` : ''}
                 </div>
                 ${conv.unread_count > 0 ? `<div class="unread-badge">${conv.unread_count}</div>` : ''}
             </div>
@@ -331,6 +332,20 @@ class ChatManager {
 
         // Update chat header
         document.getElementById('chatUserName').textContent = this.currentConversation.other_user_name || 'Unknown User';
+
+        // Update chat avatar with initials
+        const chatAvatar = document.getElementById('chatAvatar');
+        if (chatAvatar) {
+            const name = this.currentConversation.other_user_name || '';
+            chatAvatar.innerHTML = this.currentConversation.other_user_avatar
+                ? `<img src="${this.currentConversation.other_user_avatar}" alt="${name}">`
+                : `<span class="chat-avatar-initials">${this.getInitials(name)}</span>`;
+            if (this.currentConversation.is_online) {
+                chatAvatar.classList.add('is-online');
+            } else {
+                chatAvatar.classList.remove('is-online');
+            }
+        }
 
         if (this.currentConversation.listing_id) {
             document.getElementById('chatListingInfo').style.display = 'block';
@@ -1055,6 +1070,7 @@ class ChatManager {
             // Pre-fill message input
             const messageInput = document.getElementById('messageInput');
             messageInput.value = `Hi, I'm interested in your ${listing.title}. Is it still available?`;
+            this.autoResizeTextarea(messageInput);
             messageInput.focus();
             this.updateCharCount(messageInput.value.length);
 
@@ -1238,6 +1254,14 @@ class ChatManager {
     }
 
     // Utility functions
+    getInitials(name) {
+        if (!name) return '?';
+        const parts = name.trim().split(/\s+/).filter(n => n.length > 0);
+        if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+        return '?';
+    }
+
     escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');

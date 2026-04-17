@@ -50,6 +50,12 @@ document.addEventListener('DOMContentLoaded', function() {
     loadCompanies();
     getUserLocation();
 
+    // Desktop search — live filter on input
+    const carHireSearch = document.getElementById('carHireSearch');
+    if (carHireSearch) {
+        carHireSearch.addEventListener('input', () => applyFilters());
+    }
+
     // Show/hide event type filter based on category selection
     const categoryFilter = document.getElementById('categoryFilter');
     if (categoryFilter) {
@@ -73,6 +79,14 @@ document.addEventListener('DOMContentLoaded', function() {
         eventTypeFilter.addEventListener('change', () => applyFilters());
     }
 
+    // Auto-apply on dropdown change for all remaining filter selects
+    ['locationFilter', 'vehicleTypeFilter', 'transmissionFilter',
+     'seatsFilter', 'fuelTypeFilter', 'sortFilter', 'distanceFilter'
+    ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', () => applyFilters());
+    });
+
     // Mobile hero search — syncs with #carHireSearch and triggers applyFilters
     const mobileCarHireSearch = document.getElementById('mobileCarHireSearch');
     const mobileCarHireSearchBtn = document.getElementById('mobileCarHireSearchBtn');
@@ -83,6 +97,7 @@ document.addEventListener('DOMContentLoaded', function() {
             applyFilters();
         };
         mobileCarHireSearchBtn.addEventListener('click', doSearch);
+        mobileCarHireSearch.addEventListener('input', doSearch);
         mobileCarHireSearch.addEventListener('keydown', e => {
             if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
         });
@@ -600,18 +615,30 @@ function retryCarHireLoad() {
 }
 
 function clearFilters() {
-    document.getElementById('locationFilter').value = '';
-    document.getElementById('sortFilter').value = 'featured';
-    const vehicleTypeFilter = document.getElementById('vehicleTypeFilter');
-    if (vehicleTypeFilter) vehicleTypeFilter.value = '';
-    const transmissionFilter = document.getElementById('transmissionFilter');
-    if (transmissionFilter) transmissionFilter.value = '';
-    const seatsFilter = document.getElementById('seatsFilter');
-    if (seatsFilter) seatsFilter.value = '';
-    const fuelTypeFilter = document.getElementById('fuelTypeFilter');
-    if (fuelTypeFilter) fuelTypeFilter.value = '';
-    const distanceFilter = document.getElementById('distanceFilter');
-    if (distanceFilter) distanceFilter.value = '';
+    const ids = ['locationFilter', 'vehicleTypeFilter', 'transmissionFilter',
+                 'seatsFilter', 'fuelTypeFilter', 'distanceFilter'];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+
+    const sortFilter = document.getElementById('sortFilter');
+    if (sortFilter) sortFilter.value = 'featured';
+
+    const carHireSearch = document.getElementById('carHireSearch');
+    if (carHireSearch) carHireSearch.value = '';
+
+    const mobileCarHireSearch = document.getElementById('mobileCarHireSearch');
+    if (mobileCarHireSearch) mobileCarHireSearch.value = '';
+
+    const categoryFilter = document.getElementById('categoryFilter');
+    if (categoryFilter) categoryFilter.value = '';
+
+    const eventTypeFilter = document.getElementById('eventTypeFilter');
+    if (eventTypeFilter) eventTypeFilter.value = '';
+
+    const eventGroup = document.getElementById('eventTypeFilterGroup');
+    if (eventGroup) eventGroup.style.display = 'none';
 
     renderCompanies(companies);
     updateResultsCount(companies.length);

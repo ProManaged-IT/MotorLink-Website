@@ -90,6 +90,15 @@
 
 /* Mobile optimizations */
 @media (max-width: 768px) {
+    /* Disable 3D stacking context on mobile — prevents logo from being pushed behind
+       other elements due to preserve-3d stacking context */
+    .index-page .logo {
+        perspective: none !important;
+        transform-style: flat !important;
+        position: relative !important;
+        z-index: 10002 !important;
+    }
+
     .index-page .logo.first-load {
         animation-duration: 0.9s, 1.5s, 1.5s;
     }

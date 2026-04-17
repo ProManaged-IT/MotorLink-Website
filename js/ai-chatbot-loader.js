@@ -62,7 +62,7 @@
     
     // Create widget HTML
     const widgetHTML = `
-        <div class="ai-car-chat-widget" id="aiCarChatWidget">
+        <div class="ai-car-chat-widget minimized" id="aiCarChatWidget">
             <div class="ai-chat-header" id="aiChatHeader">
                 <div class="ai-chat-header-info">
                     <div class="ai-chat-avatar">
@@ -128,12 +128,9 @@
     tempDiv.innerHTML = widgetHTML;
     const widget = tempDiv.firstElementChild;
     document.body.appendChild(widget);
-    
-    // Show widget after a short delay to ensure page is rendered
-    setTimeout(() => {
-        widget.classList.add('loaded');
-    }, 300);
-    
+    // 'loaded' class is added by setupWidgetVisibility() in ai-car-chat.js
+    // after auth check — prevents the chat from flashing open before auth resolves
+
     // Load the chatbot script if not already loaded
     if (!window.AICarChat && !document.querySelector('script[src*="ai-car-chat.js"]')) {
         const script = document.createElement('script');

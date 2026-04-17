@@ -284,36 +284,7 @@
         font-weight: 700 !important;
     }
 
-    .mobile-menu-toggle {
-        width: 44px !important;
-        height: 44px !important;
-        border-radius: 10px !important;
-        background: white !important;
-        border: 2px solid #e5e7eb !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    }
-
-    .mobile-menu-toggle:hover {
-        background: #f0fdf4 !important;
-        border-color: var(--mobile-green-primary) !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 16px rgba(0, 200, 83, 0.2) !important;
-    }
-
-    .mobile-menu-toggle:active {
-        transform: scale(0.92) !important;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1) !important;
-    }
-
-    .mobile-menu-toggle i {
-        font-size: 20px !important;
-        transition: transform 0.3s ease !important;
-    }
-
-    .mobile-menu-toggle.active i {
-        transform: rotate(90deg) !important;
-    }
+    /* .mobile-menu-toggle styling handled by common.css + mobile-enhancements.css */
 }
 
 /* ============================================================================

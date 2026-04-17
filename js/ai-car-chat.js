@@ -89,7 +89,7 @@ class AICarChat {
         if (!widget) return;
 
         if (!this.currentUser) {
-            // Hide widget for guests
+            // Keep widget invisible for guests — do NOT add 'loaded'
             widget.style.display = 'none';
         } else {
             // Show widget for logged-in users
@@ -97,6 +97,7 @@ class AICarChat {
             // Check if dismissed this session
             if (sessionStorage.getItem('ai_chat_dismissed') === '1') {
                 widget.classList.add('dismissed');
+                widget.classList.add('loaded');
                 // Create restore button
                 if (!document.getElementById('aiChatRestore')) {
                     const restoreBtn = document.createElement('button');
@@ -109,14 +110,14 @@ class AICarChat {
                 }
                 return;
             }
-            // Ensure initial state is minimized
+            // Ensure minimized state (widget HTML already has it, but sync JS state)
             const chatBody = document.getElementById('aiChatBody');
-            if (chatBody) {
-                chatBody.style.display = 'none';
-                widget.classList.add('minimized');
-                this.isMinimized = true;
-                this.isOpen = false;
-            }
+            if (chatBody) chatBody.style.display = 'none';
+            widget.classList.add('minimized'); // idempotent — pre-applied in HTML template
+            this.isMinimized = true;
+            this.isOpen = false;
+            // Reveal only after minimized state is confirmed
+            widget.classList.add('loaded');
 
             // Restore last drag position (within viewport)
             const savedPos = sessionStorage.getItem('ai_chat_pos');

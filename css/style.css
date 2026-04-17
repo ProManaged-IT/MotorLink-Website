@@ -237,50 +237,7 @@ body {
     }
 }
 
-.mobile-menu-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: white;
-    border: 2px solid #e5e7eb;
-    font-size: 20px;
-    cursor: pointer;
-    color: var(--text-secondary);
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-
-.mobile-menu-toggle:hover {
-    background: #f0fdf4;
-    color: var(--primary-green);
-    border-color: var(--primary-green);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 200, 83, 0.2);
-}
-
-.mobile-menu-toggle:active {
-    transform: scale(0.92);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-}
-
-.mobile-menu-toggle i {
-    font-size: 20px;
-    transition: transform 0.3s ease;
-}
-
-.mobile-menu-toggle.active i {
-    transform: rotate(90deg);
-}
-
-@media (min-width: 768px) {
-    .mobile-menu-toggle {
-        display: none;
-    }
-}
+/* .mobile-menu-toggle styling handled by common.css */
 
 /* Services Section - Enhanced Design */
 .services-section {
@@ -993,8 +950,8 @@ body {
 
 @media (min-width: 1100px) {
     .listings-grid {
-        grid-template-columns: repeat(3, 1fr);
-        gap: 32px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 28px;
     }
 }
 
@@ -1003,15 +960,13 @@ body {
     background: var(--bg-white);
     border: 1px solid var(--border-light);
     border-radius: 12px;
-    overflow: hidden;
+    overflow: visible;
     transition: all 0.3s ease;
     cursor: pointer;
     position: relative;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
     display: flex;
     flex-direction: column;
-    height: 100%;
-    min-height: 420px;
 }
 
 .car-card:hover {
@@ -1188,6 +1143,176 @@ body {
     top: var(--space-sm);
 }
 
+/* ============================================================================
+   CAR GALLERY - Base styles for index.html car cards
+   ============================================================================ */
+.car-gallery {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 12px 12px 0 0;
+}
+
+.car-gallery-main {
+    width: 100%;
+    aspect-ratio: 16/10;
+    height: auto;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+}
+
+.car-gallery-main img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.car-card:hover .car-gallery-main img {
+    transform: scale(1.04);
+}
+
+.car-gallery-main i {
+    font-size: 3rem;
+    color: rgba(255, 255, 255, 0.3);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Thumb strip — scrollable carousel row */
+.car-gallery-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 6px;
+    width: 100%;
+    max-width: 100%;
+}
+
+.gallery-thumb {
+    aspect-ratio: 1.45;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    border-radius: 10px;
+    background: #eef4f1;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+
+.gallery-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.25s ease, opacity 0.2s ease;
+}
+
+.gallery-thumb:hover img {
+    transform: scale(1.06);
+    opacity: 0.9;
+}
+
+.car-gallery-strip.thumb-count-1 {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.car-gallery-strip.thumb-count-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gallery-thumb-more {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.52), rgba(0, 0, 0, 0.28));
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(2px);
+}
+
+/* Image Count Badge */
+.image-count {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(10px);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    user-select: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.image-count i {
+    font-size: 0.7rem;
+}
+
+.image-count:hover {
+    background: rgba(255, 193, 7, 0.95);
+    color: #000;
+    transform: scale(1.05) translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
+}
+
+/* Car Badge styles */
+.car-badge {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    right: auto;
+    background: linear-gradient(135deg, var(--primary-green) 0%, #00e676 100%);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 12px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+    backdrop-filter: blur(5px);
+}
+
+.car-badge i {
+    font-size: 0.7rem;
+    margin-right: 3px;
+}
+
+.car-badge.premium {
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.5);
+    color: #000;
+    top: 12px;
+}
+
+.car-badge.featured {
+    background: linear-gradient(135deg, var(--primary-green) 0%, #00e676 100%);
+    box-shadow: 0 2px 8px rgba(0, 200, 83, 0.4);
+    color: white;
+    top: 40px;
+}
+
+.car-gallery-main:not(:has(.car-badge.premium)) .car-badge.featured {
+    top: 12px;
+}
+
 .car-info {
     padding: 20px;
     flex: 1;
@@ -1324,6 +1449,77 @@ body {
     padding-top: var(--space-md);
     font-weight: 500;
     margin-top: auto;
+}
+
+/* ============================================================================
+   DESKTOP CARD LAYOUT - 2-column grid with image carousel ≥1024px
+   ============================================================================ */
+@media (min-width: 1024px) {
+    .cars-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 20px !important;
+        max-width: 1100px;
+    }
+
+    /* Vertical card — image top, info below */
+    .car-card {
+        flex-direction: column !important;
+        border-radius: 12px;
+    }
+
+    .car-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 30px rgba(0, 200, 83, 0.12), 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    /* Gallery section */
+    .car-card .car-gallery-main {
+        aspect-ratio: 16/9;
+    }
+
+    /* Thumbnail row — fixed 1-row grid */
+    .car-card .car-gallery-strip {
+        gap: 6px;
+        margin-top: 6px;
+    }
+
+    .car-card .gallery-thumb {
+        aspect-ratio: 1.5;
+        border-radius: 10px;
+    }
+
+    /* Info section */
+    .car-card .car-info {
+        padding: 16px 20px;
+    }
+
+    .car-card .car-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 6px;
+        min-height: auto;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+    }
+
+    .car-card .car-price {
+        font-size: 18px;
+    }
+
+    .car-card .car-details {
+        grid-template-columns: repeat(3, auto);
+        gap: 6px 12px;
+        margin-bottom: 10px;
+        padding: 8px 12px;
+        background: #f8faf9;
+        border-radius: 8px;
+        font-size: 12px;
+    }
+
+    .car-card .car-meta {
+        padding-top: 8px;
+        margin-top: auto;
+    }
 }
 
 /* Buttons - Enhanced Modern Styling */
@@ -1725,26 +1921,7 @@ body {
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
 }
 
-/* Car Hire Page - Sticky Filter Bar */
-.filter-section {
-    position: sticky;
-    top: 60px; /* Adjust based on your header height */
-    background: white;
-    z-index: 10;
-    padding: 20px 0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0);
-    transition: box-shadow 0.3s ease;
-}
-
-.filter-section.scrolled {
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-}
-
-.filter-bar {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-}
+/* .filter-section and .filter-bar styling handled by unified-filters.css */
 
 /* Responsive Sticky Behavior */
 @media (max-width: 1024px) {
@@ -1790,10 +1967,6 @@ body {
     .filter-section {
         position: sticky;
         top: 60px;
-    }
-    
-    .filter-bar {
-        padding: 15px;
     }
 }
 
