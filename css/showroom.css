@@ -477,7 +477,7 @@
     display: flex;
     flex-direction: column;
     flex: 1;
-    min-height: 0;
+    overflow: hidden;
 }
 
 .car-title {
@@ -518,12 +518,22 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.car-detail span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .car-detail i {
     color: var(--primary-green);
     width: 14px;
     font-size: 0.8rem;
+    flex-shrink: 0;
 }
 
 .car-actions {
@@ -905,12 +915,22 @@
     gap: 6px;
     font-size: 0.8rem;
     color: #6c757d;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.detail-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .detail-item i {
     color: var(--primary-green);
     width: 14px;
     font-size: 0.7rem;
+    flex-shrink: 0;
 }
 
 /* Car Features Tags */

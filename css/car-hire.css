@@ -1669,8 +1669,51 @@
 /* Reuse company-status-tag pill styles (already defined for listing cards).
    The colour variants (verified-tag, featured-tag, etc.) are shared. */
 .company-badge-row .company-status-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    border-radius: 20px;
+    white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
     padding: 5px 12px;
+}
+
+.company-badge-row .company-status-tag i {
+    font-size: 0.62rem;
+}
+
+.company-badge-row .company-status-tag.featured-tag {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.company-badge-row .company-status-tag.verified-tag {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.company-badge-row .company-status-tag.certified-tag {
+    background: linear-gradient(135deg, #facc15 0%, #eab308 100%);
+    color: #78350f;
+    text-shadow: none;
+}
+
+.company-badge-row .company-status-tag.events-tag {
+    background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.company-badge-row .company-status-tag.vantruck-tag {
+    background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 /* Legacy: inline badges inside h1 — kept for compat if any old render paths remain */
@@ -1752,7 +1795,8 @@
 .fleet-card .category-badge {
     position: absolute;
     top: 8px;
-    left: 8px;
+    right: 8px;
+    left: auto;
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 0.7rem;
