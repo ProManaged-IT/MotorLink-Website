@@ -196,6 +196,16 @@ if (!function_exists('sendError')) {
  */
 if (!function_exists('sendSuccess')) {
     function sendSuccess($data = [], $code = 200) {
+        if (function_exists('motorlink_filter_send_success_response')) {
+            try {
+                $filteredData = motorlink_filter_send_success_response($data, $code);
+                if (is_array($filteredData)) {
+                    $data = $filteredData;
+                }
+            } catch (Throwable $e) {
+                error_log('sendSuccess hook error: ' . $e->getMessage());
+            }
+        }
         http_response_code($code);
         echo json_encode(array_merge(['success' => true], $data), JSON_UNESCAPED_UNICODE);
         exit;

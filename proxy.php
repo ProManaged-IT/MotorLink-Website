@@ -140,6 +140,26 @@ if ($action === 'get_ai_chat_usage_remaining') {
     }
 }
 
+if ($action === 'get_ai_chat_session_history') {
+    try {
+        // Change to root directory for proper includes
+        chdir(__DIR__);
+
+        // Include common functions and the AI car chat API file
+        require_once __DIR__ . '/api-common.php';
+        require_once __DIR__ . '/ai-car-chat-api.php';
+        requireAuth();
+        handleGetAIChatSessionHistory(getDB());
+        exit;
+    } catch (Exception $e) {
+        error_log("Get AI Chat Session History Error: " . $e->getMessage());
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Failed to get AI chat history']);
+        exit;
+    }
+}
+
 if ($action === 'ai_car_chat') {
     // Enable error output buffering to catch fatal errors
     ob_start();

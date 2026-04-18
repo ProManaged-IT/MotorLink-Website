@@ -1374,6 +1374,58 @@ function addCarHireCompany($db) {
             sendError('A car hire company with the name "' . $input['business_name'] . '" already exists. Please choose a different business name.', 409);
         }
 
+        // Sanitize and validate structured car hire fields before DB writes.
+        $allowed_hire_categories = ['standard', 'events', 'vans_trucks', 'all'];
+        $hire_category = in_array($input['hire_category'] ?? '', $allowed_hire_categories, true)
+            ? $input['hire_category']
+            : 'standard';
+
+        $sanitizeMultiSelect = function($values, $allowedValues) {
+            $sanitized = [];
+            if (is_array($values)) {
+                foreach ($values as $value) {
+                    $value = trim((string)$value);
+                    if ($value !== '' && in_array($value, $allowedValues, true)) {
+                        $sanitized[] = $value;
+                    }
+                }
+            }
+            return array_values(array_unique($sanitized));
+        };
+
+        $allowed_vehicle_types = [
+            'Economy', 'Compact', 'Sedan', 'SUV', 'Pickup', 'Luxury',
+            'Sports Car', 'Van', 'Truck', 'Minibus', '4WD', 'Executive', 'Limousine'
+        ];
+        $allowed_car_hire_services = [
+            'Self Drive', 'With Driver', 'Airport Pickup', 'Long Distance',
+            'Wedding Cars', 'Corporate Rental', 'Van Hire', 'Truck Hire'
+        ];
+        $allowed_special_services = [
+            'VIP Service', 'Tourist Packages', '24/7 Service', 'Chauffeur Service'
+        ];
+        $allowed_event_types = [
+            'Wedding',
+            'Corporate Event',
+            'Funeral',
+            'Birthday Party',
+            'Prom Night',
+            'Airport VIP Transfer',
+            'Graduation',
+            'Church Event'
+        ];
+
+        $sanitized_vehicle_types = $sanitizeMultiSelect($input['vehicle_types'] ?? [], $allowed_vehicle_types);
+        $sanitized_services = $sanitizeMultiSelect($input['services'] ?? [], $allowed_car_hire_services);
+        $sanitized_special_services = $sanitizeMultiSelect($input['special_services'] ?? [], $allowed_special_services);
+        $sanitized_event_types = ($hire_category === 'events' || $hire_category === 'all')
+            ? $sanitizeMultiSelect($input['event_types'] ?? [], $allowed_event_types)
+            : [];
+
+        if (($hire_category === 'events' || $hire_category === 'all') && empty($sanitized_event_types)) {
+            sendError('Please select at least one event type when Hire Category is Events or All.', 400);
+        }
+
         ensureUserWhatsappPreferenceColumn($db);
 
         // Start transaction to ensure atomicity and prevent ID skipping
@@ -1440,55 +1492,6 @@ function addCarHireCompany($db) {
             }
             throw new Exception('User creation failed: ' . $e->getMessage());
         }
-
-        // Sanitise hire_category
-        $allowed_hire_categories = ['standard', 'events', 'vans_trucks', 'all'];
-        $hire_category = in_array($input['hire_category'] ?? '', $allowed_hire_categories, true)
-            ? $input['hire_category']
-            : 'standard';
-
-        $sanitizeMultiSelect = function($values, $allowedValues) {
-            $sanitized = [];
-            if (is_array($values)) {
-                foreach ($values as $value) {
-                    $value = trim((string)$value);
-                    if ($value !== '' && in_array($value, $allowedValues, true)) {
-                        $sanitized[] = $value;
-                    }
-                }
-            }
-            return array_values(array_unique($sanitized));
-        };
-
-        $allowed_vehicle_types = [
-            'Economy', 'Compact', 'Sedan', 'SUV', 'Pickup', 'Luxury',
-            'Sports Car', 'Van', 'Truck', 'Minibus', '4WD', 'Executive', 'Limousine'
-        ];
-        $allowed_car_hire_services = [
-            'Self Drive', 'With Driver', 'Airport Pickup', 'Long Distance',
-            'Wedding Cars', 'Corporate Rental', 'Van Hire', 'Truck Hire'
-        ];
-        $allowed_special_services = [
-            'VIP Service', 'Tourist Packages', '24/7 Service', 'Chauffeur Service'
-        ];
-
-        $sanitized_vehicle_types = $sanitizeMultiSelect($input['vehicle_types'] ?? [], $allowed_vehicle_types);
-        $sanitized_services = $sanitizeMultiSelect($input['services'] ?? [], $allowed_car_hire_services);
-        $sanitized_special_services = $sanitizeMultiSelect($input['special_services'] ?? [], $allowed_special_services);
-
-        $allowed_event_types = [
-            'Wedding',
-            'Corporate Event',
-            'Funeral',
-            'Birthday Party',
-            'Prom Night',
-            'Airport VIP Transfer',
-            'Graduation',
-            'Church Event'
-        ];
-        $sanitized_event_types = ($hire_category === 'events' || $hire_category === 'all')
-            ? $sanitizeMultiSelect($input['event_types'] ?? [], $allowed_event_types)
-            : [];
 
         // Create car hire company and link to user
         $stmt = $db->prepare("

@@ -165,7 +165,7 @@ function normalizeAIChatModelName($provider, $modelName, $fallbackModel = '') {
         return $model;
     }
 
-    if ($provider === 'openai' && (strpos($model, 'gpt-') === 0 || strpos($model, 'o1') === 0 || strpos($model, 'o3') === 0)) {
+    if ($provider === 'openai' && preg_match('/^(gpt-|o\d)/', $model)) {
         return $model;
     }
 
@@ -339,6 +339,1326 @@ function loadPositiveFeedbackExamples($db, $limit = 4) {
     }
 }
 
+function aiChatTruncateText($text, $limit = 2000) {
+    $text = trim((string)$text);
+    if ($text === '') {
+        return '';
+    }
+
+    if (function_exists('mb_substr')) {
+        return mb_substr($text, 0, $limit);
+    }
+
+    return substr($text, 0, $limit);
+}
+
+function aiChatMessageFingerprint($role, $text) {
+    return hash('sha256', strtolower(trim((string)$role)) . '|' . strtolower(trim((string)$text)));
+}
+
+function setAIChatPersistenceContext(array $context) {
+    $GLOBALS['motorlink_ai_chat_persistence'] = $context;
+}
+
+function updateAIChatPersistenceContext(array $context) {
+    $current = $GLOBALS['motorlink_ai_chat_persistence'] ?? [];
+    if (!is_array($current)) {
+        $current = [];
+    }
+
+    $GLOBALS['motorlink_ai_chat_persistence'] = array_merge($current, $context);
+}
+
+function getAIChatPersistenceContext() {
+    $context = $GLOBALS['motorlink_ai_chat_persistence'] ?? [];
+    return is_array($context) ? $context : [];
+}
+
+function motorlink_filter_send_success_response($data, $code) {
+    $context = getAIChatPersistenceContext();
+    if (empty($context['active']) || !is_array($data) || (int)$code >= 400) {
+        return $data;
+    }
+
+    $responseText = trim((string)($data['response'] ?? ''));
+    if ($responseText === '' || empty($context['db']) || empty($context['user_id'])) {
+        return $data;
+    }
+
+    try {
+        persistAIChatConversationOutcome($context['db'], $context, $data);
+    } catch (Throwable $e) {
+        error_log('AI chat persistence hook error: ' . $e->getMessage());
+    }
+
+    return $data;
+}
+
+function ensureAIChatMemoryTables($db) {
+    static $ensured = false;
+
+    if ($ensured) {
+        return;
+    }
+
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS `ai_chat_conversations` (
+            `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `user_id` INT UNSIGNED NOT NULL,
+            `role` ENUM('user','assistant') NOT NULL,
+            `message_text` MEDIUMTEXT NOT NULL,
+            `message_hash` CHAR(64) NOT NULL,
+            `topic` VARCHAR(50) DEFAULT NULL,
+            `metadata_json` MEDIUMTEXT DEFAULT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            INDEX `idx_ai_chat_conv_user_created` (`user_id`, `created_at`),
+            INDEX `idx_ai_chat_conv_user_topic` (`user_id`, `topic`),
+            INDEX `idx_ai_chat_conv_hash` (`message_hash`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Exception $e) {
+        error_log('ai_chat_conversations table create error: ' . $e->getMessage());
+    }
+
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS `ai_chat_user_memory` (
+            `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `user_id` INT UNSIGNED NOT NULL,
+            `memory_key` VARCHAR(100) NOT NULL,
+            `memory_value` TEXT NOT NULL,
+            `memory_type` VARCHAR(30) NOT NULL DEFAULT 'preference',
+            `confidence` DECIMAL(4,2) NOT NULL DEFAULT 0.75,
+            `source_message` VARCHAR(255) DEFAULT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uniq_ai_chat_user_memory` (`user_id`, `memory_key`),
+            INDEX `idx_ai_chat_user_memory_type` (`user_id`, `memory_type`),
+            INDEX `idx_ai_chat_user_memory_updated` (`user_id`, `updated_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Exception $e) {
+        error_log('ai_chat_user_memory table create error: ' . $e->getMessage());
+    }
+
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS `ai_chat_user_summaries` (
+            `user_id` INT UNSIGNED NOT NULL,
+            `summary_text` MEDIUMTEXT NOT NULL,
+            `last_message_at` DATETIME DEFAULT NULL,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`user_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Exception $e) {
+        error_log('ai_chat_user_summaries table create error: ' . $e->getMessage());
+    }
+
+    $ensured = true;
+}
+
+function sanitizeAIChatConversationHistory($conversationHistory, $limit = 20) {
+    if (!is_array($conversationHistory)) {
+        return [];
+    }
+
+    $sanitized = [];
+    foreach ($conversationHistory as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $role = strtolower(trim((string)($item['role'] ?? '')));
+        $content = trim((string)($item['content'] ?? ''));
+
+        if (($role !== 'user' && $role !== 'assistant') || $content === '') {
+            continue;
+        }
+
+        $sanitized[] = [
+            'role' => $role,
+            'content' => aiChatTruncateText($content, 3000)
+        ];
+    }
+
+    if (count($sanitized) > $limit) {
+        $sanitized = array_slice($sanitized, -$limit);
+    }
+
+    return array_values($sanitized);
+}
+
+function loadPersistentAIChatConversationHistory($db, $userId, $limit = 12) {
+    try {
+        ensureAIChatMemoryTables($db);
+        $stmt = $db->prepare(
+            "SELECT role, message_text
+             FROM ai_chat_conversations
+             WHERE user_id = ?
+             ORDER BY created_at DESC
+             LIMIT ?"
+        );
+        $stmt->bindValue(1, (int)$userId, PDO::PARAM_INT);
+        $stmt->bindValue(2, (int)$limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $history = [];
+        foreach (array_reverse($rows) as $row) {
+            $role = strtolower(trim((string)($row['role'] ?? '')));
+            $content = trim((string)($row['message_text'] ?? ''));
+            if (($role !== 'user' && $role !== 'assistant') || $content === '') {
+                continue;
+            }
+
+            $history[] = [
+                'role' => $role,
+                'content' => aiChatTruncateText($content, 2500)
+            ];
+        }
+
+        return $history;
+    } catch (Exception $e) {
+        error_log('loadPersistentAIChatConversationHistory error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+function handleGetAIChatSessionHistory($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        sendError('GET method required', 405);
+    }
+
+    $user = getCurrentUser(true);
+    if (!$user) {
+        sendError('Authentication required', 401);
+    }
+
+    $history = loadPersistentAIChatConversationHistory($db, $user['id'], 20);
+    sendSuccess([
+        'history' => $history
+    ]);
+}
+
+function mergeAIChatConversationHistory($currentHistory, $persistentHistory, $limit = 24) {
+    $merged = [];
+    $seen = [];
+
+    foreach (array_merge((array)$persistentHistory, (array)$currentHistory) as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $role = strtolower(trim((string)($item['role'] ?? '')));
+        $content = trim((string)($item['content'] ?? ''));
+        if (($role !== 'user' && $role !== 'assistant') || $content === '') {
+            continue;
+        }
+
+        $key = aiChatMessageFingerprint($role, $content);
+        if (isset($seen[$key])) {
+            continue;
+        }
+
+        $seen[$key] = true;
+        $merged[] = [
+            'role' => $role,
+            'content' => aiChatTruncateText($content, 3000)
+        ];
+    }
+
+    if (count($merged) > $limit) {
+        $merged = array_slice($merged, -$limit);
+    }
+
+    return array_values($merged);
+}
+
+function loadAIChatUserMemories($db, $userId, $limit = 10) {
+    try {
+        ensureAIChatMemoryTables($db);
+        $stmt = $db->prepare(
+            "SELECT memory_key, memory_value, memory_type, confidence, updated_at
+             FROM ai_chat_user_memory
+             WHERE user_id = ?
+             ORDER BY updated_at DESC, confidence DESC
+             LIMIT ?"
+        );
+        $stmt->bindValue(1, (int)$userId, PDO::PARAM_INT);
+        $stmt->bindValue(2, (int)$limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Exception $e) {
+        error_log('loadAIChatUserMemories error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+function loadRecentAIChatTopics($db, $userId, $limit = 6) {
+    try {
+        ensureAIChatMemoryTables($db);
+        $stmt = $db->prepare(
+            "SELECT topic
+             FROM ai_chat_conversations
+             WHERE user_id = ?
+               AND topic IS NOT NULL
+               AND topic <> ''
+             ORDER BY created_at DESC
+             LIMIT ?"
+        );
+        $stmt->bindValue(1, (int)$userId, PDO::PARAM_INT);
+        $stmt->bindValue(2, (int)$limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        $topics = [];
+        foreach ($rows as $topic) {
+            $topic = trim((string)$topic);
+            if ($topic !== '' && !in_array($topic, $topics, true)) {
+                $topics[] = $topic;
+            }
+        }
+
+        return $topics;
+    } catch (Exception $e) {
+        error_log('loadRecentAIChatTopics error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+function loadAIChatUserSummary($db, $userId) {
+    try {
+        ensureAIChatMemoryTables($db);
+        $stmt = $db->prepare("SELECT summary_text FROM ai_chat_user_summaries WHERE user_id = ? LIMIT 1");
+        $stmt->execute([(int)$userId]);
+        $summary = $stmt->fetchColumn();
+        return is_string($summary) ? trim($summary) : '';
+    } catch (Exception $e) {
+        error_log('loadAIChatUserSummary error: ' . $e->getMessage());
+        return '';
+    }
+}
+
+function aiChatMemoryRowsToMap($rows) {
+    $map = [];
+    foreach ((array)$rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $key = trim((string)($row['memory_key'] ?? ''));
+        $value = trim((string)($row['memory_value'] ?? ''));
+        if ($key !== '' && $value !== '') {
+            $map[$key] = $value;
+        }
+    }
+
+    return $map;
+}
+
+function buildAIChatUserSummaryText($memoryRows, $recentTopics = []) {
+    $memoryMap = aiChatMemoryRowsToMap($memoryRows);
+    $lines = [];
+
+    $preferenceParts = [];
+    if (!empty($memoryMap['preferred_location'])) {
+        $preferenceParts[] = 'Location: ' . $memoryMap['preferred_location'];
+    }
+    if (!empty($memoryMap['budget_max_mwk']) && is_numeric($memoryMap['budget_max_mwk'])) {
+        $preferenceParts[] = 'Budget up to ' . getChatCurrencyCode() . ' ' . number_format((float)$memoryMap['budget_max_mwk']);
+    }
+    if (!empty($memoryMap['preferred_fuel_type'])) {
+        $preferenceParts[] = 'Fuel: ' . ucfirst($memoryMap['preferred_fuel_type']);
+    }
+    if (!empty($memoryMap['preferred_transmission'])) {
+        $preferenceParts[] = 'Transmission: ' . ucfirst($memoryMap['preferred_transmission']);
+    }
+    if (!empty($memoryMap['preferred_body_type'])) {
+        $preferenceParts[] = 'Body type: ' . ucfirst($memoryMap['preferred_body_type']);
+    }
+    if (!empty($memoryMap['preferred_seats'])) {
+        $preferenceParts[] = 'Seats: ' . $memoryMap['preferred_seats'];
+    }
+    if (!empty($memoryMap['search_purpose'])) {
+        $preferenceParts[] = 'Use case: ' . ucfirst($memoryMap['search_purpose']);
+    }
+    if (!empty($preferenceParts)) {
+        $lines[] = '- Preferences: ' . implode('; ', $preferenceParts);
+    }
+
+    $interestParts = [];
+    if (!empty($memoryMap['preferred_make']) && !empty($memoryMap['preferred_model'])) {
+        $interestParts[] = 'Interested in ' . $memoryMap['preferred_make'] . ' ' . $memoryMap['preferred_model'];
+    } elseif (!empty($memoryMap['preferred_make'])) {
+        $interestParts[] = 'Interested in ' . $memoryMap['preferred_make'];
+    } elseif (!empty($memoryMap['preferred_model'])) {
+        $interestParts[] = 'Interested in ' . $memoryMap['preferred_model'];
+    }
+    if (!empty($memoryMap['last_market_tool'])) {
+        $interestParts[] = 'Last marketplace focus: ' . str_replace('_', ' ', $memoryMap['last_market_tool']);
+    }
+    if (!empty($interestParts)) {
+        $lines[] = '- Interests: ' . implode('; ', $interestParts);
+    }
+
+    if (!empty($recentTopics)) {
+        $lines[] = '- Recent topics: ' . implode(', ', array_slice($recentTopics, 0, 5));
+    }
+
+    return trim(implode("\n", $lines));
+}
+
+function refreshAIChatUserSummary($db, $userId) {
+    try {
+        ensureAIChatMemoryTables($db);
+        $memoryRows = loadAIChatUserMemories($db, $userId, 12);
+        $recentTopics = loadRecentAIChatTopics($db, $userId, 6);
+        $summaryText = buildAIChatUserSummaryText($memoryRows, $recentTopics);
+
+        $stmt = $db->prepare(
+            "INSERT INTO ai_chat_user_summaries (user_id, summary_text, last_message_at, updated_at)
+             VALUES (?, ?, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE
+                 summary_text = VALUES(summary_text),
+                 last_message_at = NOW(),
+                 updated_at = NOW()"
+        );
+        $stmt->execute([(int)$userId, $summaryText]);
+        return $summaryText;
+    } catch (Exception $e) {
+        error_log('refreshAIChatUserSummary error: ' . $e->getMessage());
+        return '';
+    }
+}
+
+function upsertAIChatUserMemory($db, $userId, $key, $value, $type = 'preference', $confidence = 0.75, $sourceMessage = '') {
+    $key = trim((string)$key);
+    $value = trim((string)$value);
+    if ($key === '' || $value === '') {
+        return;
+    }
+
+    try {
+        ensureAIChatMemoryTables($db);
+        $stmt = $db->prepare(
+            "INSERT INTO ai_chat_user_memory
+                (user_id, memory_key, memory_value, memory_type, confidence, source_message, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE
+                memory_value = VALUES(memory_value),
+                memory_type = VALUES(memory_type),
+                confidence = VALUES(confidence),
+                source_message = VALUES(source_message),
+                updated_at = NOW()"
+        );
+        $stmt->execute([
+            (int)$userId,
+            $key,
+            aiChatTruncateText($value, 1000),
+            trim((string)$type) !== '' ? trim((string)$type) : 'preference',
+            max(0.10, min(1.00, (float)$confidence)),
+            aiChatTruncateText($sourceMessage, 255)
+        ]);
+    } catch (Exception $e) {
+        error_log('upsertAIChatUserMemory error: ' . $e->getMessage());
+    }
+}
+
+function detectAIChatTopic($message, $responseText = '') {
+    $message = trim((string)$message);
+
+    if (preg_match('/\b(update|change|modify|delete|remove|mark|set|create|sell|list|dashboard|inventory|analytics|stats|my listings|my business)\b/i', $message)) {
+        return 'action';
+    }
+    if (detectCarHireQuery($message)) {
+        return 'car_hire';
+    }
+    if (detectDealerQuery($message)) {
+        return 'dealer';
+    }
+    if (detectGarageQuery($message)) {
+        return 'garage';
+    }
+    if (detectFuelPriceQuery($message)) {
+        return 'fuel';
+    }
+    if (detectSearchQuery($message)) {
+        return 'listings';
+    }
+    if (detectCarSpecQuery($message)) {
+        return 'spec';
+    }
+    if (detectCarRecommendationQuery($message)) {
+        return 'recommendation';
+    }
+    if (detectPartsQuery($message)) {
+        return 'parts';
+    }
+    if (preg_match('/\b(my|our)\b.*\b(car|vehicle|listing|business|garage|dealer|fleet)\b/i', $message)) {
+        return 'account';
+    }
+
+    $responseText = trim((string)$responseText);
+    if ($responseText !== '') {
+        if (preg_match('/\bcar hire compan/i', $responseText)) {
+            return 'car_hire';
+        }
+        if (preg_match('/\bdealer\b|\bshowroom\b/i', $responseText)) {
+            return 'dealer';
+        }
+        if (preg_match('/\bgarage\b|\bworkshop\b/i', $responseText)) {
+            return 'garage';
+        }
+    }
+
+    return 'general';
+}
+
+function extractAIChatPreferenceFacts($db, $message) {
+    $message = trim((string)$message);
+    if ($message === '') {
+        return [];
+    }
+
+    $facts = [];
+    $params = normalizeSearchParams($db, simpleExtractParams($db, $message), $message);
+    $carInfo = extractCarInfoFromMessage($db, $message);
+
+    if (!empty($params['location'])) {
+        $facts['preferred_location'] = $params['location'];
+    }
+    if (!empty($params['max_price']) && is_numeric($params['max_price'])) {
+        $facts['budget_max_mwk'] = (string)(int)$params['max_price'];
+    }
+    if (!empty($params['make'])) {
+        $facts['preferred_make'] = $params['make'];
+    } elseif (!empty($carInfo['make'])) {
+        $facts['preferred_make'] = $carInfo['make'];
+    }
+    if (!empty($params['model'])) {
+        $facts['preferred_model'] = $params['model'];
+    } elseif (!empty($carInfo['model'])) {
+        $facts['preferred_model'] = $carInfo['model'];
+    }
+    if (!empty($params['body_type'])) {
+        $facts['preferred_body_type'] = strtolower((string)$params['body_type']);
+    }
+    if (!empty($params['fuel_type'])) {
+        $facts['preferred_fuel_type'] = strtolower((string)$params['fuel_type']);
+    }
+    if (!empty($params['transmission'])) {
+        $facts['preferred_transmission'] = strtolower((string)$params['transmission']);
+    }
+    if (!empty($params['seats']) && is_numeric($params['seats'])) {
+        $facts['preferred_seats'] = (string)(int)$params['seats'];
+    }
+
+    if (preg_match('/\bfamily\b/i', $message)) {
+        $facts['search_purpose'] = 'family';
+    } elseif (preg_match('/\bbusiness\b|\bcommercial\b/i', $message)) {
+        $facts['search_purpose'] = 'business';
+    } elseif (preg_match('/\bcity\b|\bcommute\b|\burban\b/i', $message)) {
+        $facts['search_purpose'] = 'city';
+    } elseif (preg_match('/\boff\s*-?road\b|\b4x4\b|\badventure\b/i', $message)) {
+        $facts['search_purpose'] = 'off-road';
+    }
+
+    $topic = detectAIChatTopic($message);
+    $facts['last_topic'] = $topic;
+
+    if (in_array($topic, ['car_hire', 'dealer', 'garage', 'fuel', 'listings', 'spec', 'recommendation', 'parts'], true)) {
+        $facts['last_market_tool'] = $topic;
+    }
+
+    return $facts;
+}
+
+function aiChatMessageMentionsBudget($message) {
+    return preg_match('/\b(?:budget|max|maximum|under|below|less than|up to|million|kwacha|mwk|mk)\b/i', (string)$message) === 1;
+}
+
+function aiChatMessageMentionsFuelType($message) {
+    return preg_match('/\b(?:diesel|petrol|gasoline|hybrid|electric|ev|lpg|cng)\b/i', (string)$message) === 1;
+}
+
+function aiChatMessageMentionsTransmission($message) {
+    return preg_match('/\b(?:automatic|manual|cvt|semi-automatic|dct|gearbox|transmission)\b/i', (string)$message) === 1;
+}
+
+function aiChatMessageMentionsSeats($message) {
+    return preg_match('/\b\d+\s*(?:seat|seater|seats|passenger)\b/i', (string)$message) === 1;
+}
+
+function aiChatMessageMentionsBodyType($message) {
+    return preg_match('/\b(?:suv|sucv|sedan|hatchback|pickup|truck|wagon|minivan|van|crossover|coupe|convertible)\b/i', (string)$message) === 1;
+}
+
+function aiChatMessageMentionsLocation($db, $message) {
+    return extractLocationMentionFromText($db, $message) !== null || inferLocationFromMessage($message) !== null;
+}
+
+function isLikelyPersistentFollowUpQuery($message) {
+    $message = trim((string)$message);
+    if ($message === '') {
+        return false;
+    }
+
+    if (str_word_count($message) <= 5) {
+        return true;
+    }
+
+    return preg_match('/\b(what about|how about|same|instead|also|another|those|them|it|this|that|ones|cheapest|cheaper|budget|diesel|petrol|automatic|manual|in|near|around|and)\b/i', $message) === 1;
+}
+
+function buildPersistentMemoryAwareMessage($db, $message, $memoryRows) {
+    $message = trim((string)$message);
+    if ($message === '' || !isLikelyPersistentFollowUpQuery($message)) {
+        return false;
+    }
+
+    if (
+        detectCarHireQuery($message) ||
+        detectDealerQuery($message) ||
+        detectGarageQuery($message) ||
+        detectSearchQuery($message) ||
+        detectCarSpecQuery($message) ||
+        detectCarRecommendationQuery($message)
+    ) {
+        return false;
+    }
+
+    $memoryMap = aiChatMemoryRowsToMap($memoryRows);
+    if (empty($memoryMap)) {
+        return false;
+    }
+
+    $lastTool = strtolower(trim((string)($memoryMap['last_market_tool'] ?? '')));
+    $segments = [];
+
+    if ($lastTool === 'car_hire') {
+        $segments[] = 'I am looking for a vehicle to hire';
+    } elseif ($lastTool === 'dealer') {
+        $segments[] = 'I am looking for a car dealer';
+    } elseif ($lastTool === 'garage') {
+        $segments[] = 'I am looking for a garage';
+    } elseif ($lastTool === 'spec') {
+        $segments[] = 'Tell me about';
+    } else {
+        $segments[] = 'I am looking for a vehicle';
+    }
+
+    if (in_array($lastTool, ['listings', 'recommendation', 'spec', 'car_hire', ''], true)) {
+        $subjectParts = [];
+        if (!empty($memoryMap['search_purpose']) && !preg_match('/\b' . preg_quote((string)$memoryMap['search_purpose'], '/') . '\b/i', $message)) {
+            $subjectParts[] = $memoryMap['search_purpose'];
+        }
+        if (!empty($memoryMap['preferred_make']) && !preg_match('/\b' . preg_quote((string)$memoryMap['preferred_make'], '/') . '\b/i', $message)) {
+            $subjectParts[] = $memoryMap['preferred_make'];
+        }
+        if (!empty($memoryMap['preferred_model']) && !preg_match('/\b' . preg_quote((string)$memoryMap['preferred_model'], '/') . '\b/i', $message)) {
+            $subjectParts[] = $memoryMap['preferred_model'];
+        } elseif (!empty($memoryMap['preferred_body_type']) && !aiChatMessageMentionsBodyType($message)) {
+            $subjectParts[] = $memoryMap['preferred_body_type'];
+        }
+
+        if (!empty($subjectParts)) {
+            $segments[] = implode(' ', $subjectParts);
+        }
+    }
+
+    $segments[] = $message;
+
+    if (!aiChatMessageMentionsLocation($db, $message) && !empty($memoryMap['preferred_location'])) {
+        $segments[] = 'in ' . $memoryMap['preferred_location'];
+    }
+    if (!aiChatMessageMentionsBudget($message) && !empty($memoryMap['budget_max_mwk']) && is_numeric($memoryMap['budget_max_mwk']) && !in_array($lastTool, ['dealer', 'garage', 'fuel'], true)) {
+        $segments[] = 'under ' . (int)$memoryMap['budget_max_mwk'] . ' MWK';
+    }
+    if (!aiChatMessageMentionsFuelType($message) && !empty($memoryMap['preferred_fuel_type']) && !in_array($lastTool, ['dealer', 'garage', 'fuel'], true)) {
+        $segments[] = $memoryMap['preferred_fuel_type'];
+    }
+    if (!aiChatMessageMentionsTransmission($message) && !empty($memoryMap['preferred_transmission']) && !in_array($lastTool, ['dealer', 'garage', 'fuel'], true)) {
+        $segments[] = $memoryMap['preferred_transmission'];
+    }
+    if (!aiChatMessageMentionsSeats($message) && !empty($memoryMap['preferred_seats']) && in_array($lastTool, ['listings', 'recommendation', 'car_hire', ''], true)) {
+        $segments[] = $memoryMap['preferred_seats'] . ' seats';
+    }
+
+    $rewritten = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter($segments, function($segment) {
+        return trim((string)$segment) !== '';
+    }))));
+
+    if ($rewritten === '' || strcasecmp($rewritten, $message) === 0 || strlen($rewritten) > 1500) {
+        return false;
+    }
+
+    return $rewritten;
+}
+
+function maybeStoreAIChatConversationMessage($db, $userId, $role, $messageText, $topic = null, $metadata = []) {
+    $messageText = aiChatTruncateText($messageText, 4000);
+    if ($messageText === '') {
+        return;
+    }
+
+    $hash = aiChatMessageFingerprint($role, $messageText);
+
+    try {
+        $checkStmt = $db->prepare(
+            "SELECT id
+             FROM ai_chat_conversations
+             WHERE user_id = ?
+               AND role = ?
+               AND message_hash = ?
+               AND created_at >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+             LIMIT 1"
+        );
+        $checkStmt->execute([(int)$userId, $role, $hash]);
+        if ($checkStmt->fetch(PDO::FETCH_ASSOC)) {
+            return;
+        }
+
+        $insertStmt = $db->prepare(
+            "INSERT INTO ai_chat_conversations
+                (user_id, role, message_text, message_hash, topic, metadata_json, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, NOW())"
+        );
+        $insertStmt->execute([
+            (int)$userId,
+            strtolower(trim((string)$role)),
+            $messageText,
+            $hash,
+            $topic ?: null,
+            !empty($metadata) ? json_encode($metadata, JSON_UNESCAPED_UNICODE) : null
+        ]);
+    } catch (Exception $e) {
+        error_log('maybeStoreAIChatConversationMessage error: ' . $e->getMessage());
+    }
+}
+
+function aiChatNormalizePromptText($text, $limit = 220) {
+    $text = trim((string)$text);
+    if ($text === '') {
+        return '';
+    }
+
+    $text = preg_replace('/\[([^\]]+)\]\(([^)]+)\)/', '$1', $text);
+    $text = strip_tags((string)$text);
+    $text = preg_replace('/[`*_>#]+/', ' ', (string)$text);
+    $text = preg_replace('/\s+/', ' ', (string)$text);
+
+    return aiChatTruncateText($text, $limit);
+}
+
+function buildAIChatConversationBrief($conversationHistory, $limit = 6) {
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return '';
+    }
+
+    $lines = [];
+    foreach (array_slice($conversationHistory, -$limit) as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $role = strtolower(trim((string)($item['role'] ?? '')));
+        $content = aiChatNormalizePromptText($item['content'] ?? '', 220);
+        if ($content === '' || ($role !== 'user' && $role !== 'assistant')) {
+            continue;
+        }
+
+        $lines[] = '- ' . ($role === 'user' ? 'User' : 'Assistant') . ': ' . $content;
+    }
+
+    return implode("\n", $lines);
+}
+
+function buildAIChatResponseEntityDigest($responseData, $maxEntities = 5) {
+    if (!is_array($responseData)) {
+        return [];
+    }
+
+    $entities = [];
+    $pushEntity = function($entry) use (&$entities, $maxEntities) {
+        if (count($entities) >= $maxEntities) {
+            return;
+        }
+
+        $name = trim((string)($entry['name'] ?? ''));
+        if ($name === '') {
+            return;
+        }
+
+        $entry['name'] = aiChatTruncateText($name, 120);
+        $entities[] = $entry;
+    };
+
+    if (!empty($responseData['search_results']) && is_array($responseData['search_results'])) {
+        foreach (array_slice($responseData['search_results'], 0, $maxEntities) as $index => $listing) {
+            if (!is_array($listing)) {
+                continue;
+            }
+
+            $titleParts = [];
+            if (!empty($listing['year'])) {
+                $titleParts[] = $listing['year'];
+            }
+            if (!empty($listing['make_name'])) {
+                $titleParts[] = $listing['make_name'];
+            }
+            if (!empty($listing['model_name'])) {
+                $titleParts[] = $listing['model_name'];
+            }
+            $name = trim(implode(' ', $titleParts));
+            if ($name === '') {
+                $name = trim((string)($listing['title'] ?? 'Vehicle listing'));
+            }
+
+            $pushEntity([
+                'set_type' => 'listings',
+                'type' => 'listing',
+                'rank' => $index + 1,
+                'id' => (int)($listing['id'] ?? 0),
+                'name' => $name,
+                'price_mwk' => isset($listing['price']) && $listing['price'] !== '' ? (float)$listing['price'] : null,
+                'location' => aiChatTruncateText((string)($listing['location_name'] ?? ''), 80),
+                'seller' => aiChatTruncateText((string)($listing['seller_name'] ?? ''), 80),
+                'path' => !empty($listing['id']) ? 'car.html?id=' . (int)$listing['id'] : ''
+            ]);
+        }
+    }
+
+    if (!empty($responseData['car_hire_companies']) && is_array($responseData['car_hire_companies'])) {
+        foreach (array_slice($responseData['car_hire_companies'], 0, $maxEntities) as $index => $company) {
+            if (!is_array($company)) {
+                continue;
+            }
+
+            $leadVehicle = '';
+            if (!empty($company['matching_vehicles']) && is_array($company['matching_vehicles']) && !empty($company['matching_vehicles'][0])) {
+                $vehicle = $company['matching_vehicles'][0];
+                if (is_array($vehicle)) {
+                    $leadVehicle = trim(((string)($vehicle['make_name'] ?? '')) . ' ' . ((string)($vehicle['model_name'] ?? '')));
+                }
+            }
+
+            $pushEntity([
+                'set_type' => 'car_hire',
+                'type' => 'car_hire_company',
+                'rank' => $index + 1,
+                'id' => (int)($company['id'] ?? 0),
+                'name' => trim((string)($company['business_name'] ?? 'Car hire company')),
+                'location' => aiChatTruncateText((string)($company['location_name'] ?? ''), 80),
+                'phone' => aiChatTruncateText((string)($company['phone'] ?? ''), 40),
+                'daily_rate_from_mwk' => isset($company['daily_rate_from']) && $company['daily_rate_from'] !== '' ? (float)$company['daily_rate_from'] : null,
+                'inventory_count' => isset($company['total_vehicles']) ? (int)$company['total_vehicles'] : null,
+                'lead_vehicle' => aiChatTruncateText($leadVehicle, 80),
+                'path' => !empty($company['id']) ? 'car-hire-company.html?id=' . (int)$company['id'] : ''
+            ]);
+        }
+    }
+
+    if (!empty($responseData['garages']) && is_array($responseData['garages'])) {
+        foreach (array_slice($responseData['garages'], 0, $maxEntities) as $index => $garage) {
+            if (!is_array($garage)) {
+                continue;
+            }
+
+            $services = $garage['services_list'] ?? ($garage['services'] ?? []);
+            if (is_string($services)) {
+                $decodedServices = json_decode($services, true);
+                $services = is_array($decodedServices) ? $decodedServices : [];
+            }
+
+            $pushEntity([
+                'set_type' => 'garages',
+                'type' => 'garage',
+                'rank' => $index + 1,
+                'id' => (int)($garage['id'] ?? 0),
+                'name' => trim((string)($garage['name'] ?? 'Garage')),
+                'location' => aiChatTruncateText((string)($garage['location_name'] ?? ''), 80),
+                'phone' => aiChatTruncateText((string)($garage['phone'] ?? ''), 40),
+                'services' => aiChatTruncateText(implode(', ', array_slice(is_array($services) ? $services : [], 0, 3)), 90),
+                'path' => !empty($garage['id']) ? 'garages.html?id=' . (int)$garage['id'] : ''
+            ]);
+        }
+    }
+
+    if (!empty($responseData['dealers']) && is_array($responseData['dealers'])) {
+        foreach (array_slice($responseData['dealers'], 0, $maxEntities) as $index => $dealer) {
+            if (!is_array($dealer)) {
+                continue;
+            }
+
+            $pushEntity([
+                'set_type' => 'dealers',
+                'type' => 'dealer',
+                'rank' => $index + 1,
+                'id' => (int)($dealer['id'] ?? 0),
+                'name' => trim((string)($dealer['business_name'] ?? 'Dealer')),
+                'location' => aiChatTruncateText((string)($dealer['location_name'] ?? ''), 80),
+                'phone' => aiChatTruncateText((string)($dealer['phone'] ?? ''), 40),
+                'inventory_count' => isset($dealer['total_cars']) ? (int)$dealer['total_cars'] : null,
+                'path' => !empty($dealer['id']) ? 'showroom.html?dealer_id=' . (int)$dealer['id'] : ''
+            ]);
+        }
+    }
+
+    return $entities;
+}
+
+function buildAIChatRecentEntityContextPrompt($db, $userId, $runtimeSiteUrl = '', $limitMessages = 4, $maxEntities = 8) {
+    $userId = (int)$userId;
+    if ($userId <= 0) {
+        return '';
+    }
+
+    try {
+        ensureAIChatMemoryTables($db);
+        $stmt = $db->prepare(
+            "SELECT metadata_json
+             FROM ai_chat_conversations
+             WHERE user_id = ?
+               AND role = 'assistant'
+               AND metadata_json IS NOT NULL
+             ORDER BY created_at DESC
+             LIMIT ?"
+        );
+        $stmt->bindValue(1, $userId, PDO::PARAM_INT);
+        $stmt->bindValue(2, (int)$limitMessages, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        $labels = ['Latest', 'Previous', 'Earlier', 'Older'];
+        $currencyCode = getChatCurrencyCode($db);
+        $lines = [];
+        $seen = [];
+
+        foreach ($rows as $rowIndex => $metadataJson) {
+            if (count($lines) >= $maxEntities) {
+                break;
+            }
+
+            $metadata = json_decode((string)$metadataJson, true);
+            if (!is_array($metadata) || empty($metadata['entities']) || !is_array($metadata['entities'])) {
+                continue;
+            }
+
+            $setLabel = $labels[min($rowIndex, count($labels) - 1)];
+            $setType = trim((string)($metadata['result_type'] ?? 'results'));
+
+            foreach ($metadata['entities'] as $entity) {
+                if (count($lines) >= $maxEntities || !is_array($entity)) {
+                    break;
+                }
+
+                $entityType = trim((string)($entity['type'] ?? 'result'));
+                $entityKey = strtolower($entityType . '|' . ((string)($entity['id'] ?? $entity['name'] ?? $entity['path'] ?? '')));
+                if ($entityKey === '' || isset($seen[$entityKey])) {
+                    continue;
+                }
+                $seen[$entityKey] = true;
+
+                $name = trim((string)($entity['name'] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+
+                $entitySetType = trim((string)($entity['set_type'] ?? $setType));
+                $descriptor = $setLabel . ' ' . ($entitySetType !== '' ? $entitySetType : $entityType) . ' item';
+                if (!empty($entity['rank'])) {
+                    $descriptor .= ' #' . (int)$entity['rank'];
+                }
+
+                $line = '- ' . $descriptor . ': ' . aiChatNormalizePromptText($name, 120);
+
+                if (isset($entity['price_mwk']) && $entity['price_mwk'] !== null) {
+                    $line .= ' - ' . $currencyCode . ' ' . number_format((float)$entity['price_mwk']);
+                } elseif (isset($entity['daily_rate_from_mwk']) && $entity['daily_rate_from_mwk'] !== null) {
+                    $line .= ' - from ' . $currencyCode . ' ' . number_format((float)$entity['daily_rate_from_mwk']) . '/day';
+                }
+
+                if (!empty($entity['location'])) {
+                    $line .= ' - ' . aiChatNormalizePromptText($entity['location'], 60);
+                }
+                if (!empty($entity['seller'])) {
+                    $line .= ' - seller ' . aiChatNormalizePromptText($entity['seller'], 60);
+                }
+                if (!empty($entity['phone'])) {
+                    $line .= ' - ' . aiChatNormalizePromptText($entity['phone'], 40);
+                }
+                if (!empty($entity['inventory_count'])) {
+                    $line .= ' - ' . (int)$entity['inventory_count'] . ' vehicles';
+                }
+                if (!empty($entity['lead_vehicle'])) {
+                    $line .= ' - lead vehicle ' . aiChatNormalizePromptText($entity['lead_vehicle'], 60);
+                }
+                if (!empty($entity['services'])) {
+                    $line .= ' - services ' . aiChatNormalizePromptText($entity['services'], 70);
+                }
+
+                $path = trim((string)($entity['path'] ?? ''));
+                if ($path !== '') {
+                    $url = $path;
+                    if ($runtimeSiteUrl !== '' && !preg_match('~^https?://~i', $url)) {
+                        $url = rtrim($runtimeSiteUrl, '/') . '/' . ltrim($url, '/');
+                    }
+                    $line .= ' - ' . $url;
+                }
+
+                $lines[] = $line;
+            }
+        }
+
+        return implode("\n", $lines);
+    } catch (Exception $e) {
+        error_log('buildAIChatRecentEntityContextPrompt error: ' . $e->getMessage());
+        return '';
+    }
+}
+
+function persistAIChatConversationOutcome($db, $context, $responseData) {
+    ensureAIChatMemoryTables($db);
+
+    $userId = (int)($context['user_id'] ?? 0);
+    if ($userId <= 0) {
+        return;
+    }
+
+    $originalMessage = trim((string)($context['original_message'] ?? ''));
+    $resolvedMessage = trim((string)($context['resolved_message'] ?? $originalMessage));
+    $responseText = trim((string)($responseData['response'] ?? ''));
+    if ($originalMessage === '' || $responseText === '') {
+        return;
+    }
+
+    $topic = detectAIChatTopic($resolvedMessage !== '' ? $resolvedMessage : $originalMessage, $responseText);
+    $metadata = [
+        'resolved_message' => aiChatTruncateText($resolvedMessage, 500),
+        'provider' => trim((string)($context['provider'] ?? '')),
+        'model_name' => trim((string)($context['model_name'] ?? '')),
+        'result_type' => !empty($responseData['search_results']) ? 'listings'
+            : (!empty($responseData['car_hire_companies']) ? 'car_hire'
+            : (!empty($responseData['garages']) ? 'garages'
+            : (!empty($responseData['dealers']) ? 'dealers' : 'general')))
+    ];
+
+    $entityDigest = buildAIChatResponseEntityDigest($responseData, 5);
+    if (!empty($entityDigest)) {
+        $metadata['entities'] = $entityDigest;
+        $metadata['entity_count'] = count($entityDigest);
+    }
+
+    $userMetadata = $metadata;
+    unset($userMetadata['entities'], $userMetadata['entity_count']);
+
+    maybeStoreAIChatConversationMessage($db, $userId, 'user', $originalMessage, $topic, $userMetadata);
+    maybeStoreAIChatConversationMessage($db, $userId, 'assistant', $responseText, $topic, $metadata);
+
+    $facts = extractAIChatPreferenceFacts($db, $resolvedMessage !== '' ? $resolvedMessage : $originalMessage);
+    $memoryTypeMap = [
+        'preferred_location' => 'preference',
+        'budget_max_mwk' => 'budget',
+        'preferred_make' => 'preference',
+        'preferred_model' => 'preference',
+        'preferred_body_type' => 'preference',
+        'preferred_fuel_type' => 'preference',
+        'preferred_transmission' => 'preference',
+        'preferred_seats' => 'preference',
+        'search_purpose' => 'intent',
+        'last_topic' => 'routing',
+        'last_market_tool' => 'routing'
+    ];
+
+    foreach ($facts as $key => $value) {
+        $type = $memoryTypeMap[$key] ?? 'preference';
+        $confidence = in_array($key, ['last_topic', 'last_market_tool'], true) ? 0.90 : 0.78;
+        upsertAIChatUserMemory($db, $userId, $key, $value, $type, $confidence, $originalMessage);
+    }
+
+    refreshAIChatUserSummary($db, $userId);
+}
+
+function buildAIChatLocationRetrievalSnippet($db, $message) {
+    $location = extractLocationMentionFromText($db, $message);
+    if ($location === null) {
+        $rawLocation = inferLocationFromMessage($message);
+        if (!empty($rawLocation)) {
+            $location = resolveClosestLocationName($db, $rawLocation);
+        }
+    }
+
+    if (empty($location)) {
+        return '';
+    }
+
+    try {
+        $stmt = $db->prepare("SELECT name, region, district FROM locations WHERE LOWER(name) = LOWER(?) LIMIT 1");
+        $stmt->execute([$location]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return '';
+        }
+
+        $parts = ['Location match: ' . $row['name']];
+        if (!empty($row['district'])) {
+            $parts[] = 'District: ' . $row['district'];
+        }
+        if (!empty($row['region'])) {
+            $parts[] = 'Region: ' . $row['region'];
+        }
+
+        return implode(' | ', $parts);
+    } catch (Exception $e) {
+        error_log('buildAIChatLocationRetrievalSnippet error: ' . $e->getMessage());
+        return '';
+    }
+}
+
+function buildAIChatListingsRetrievalSnippet($db, $message, $runtimeSiteUrl) {
+    $searchParams = normalizeSearchParams($db, simpleExtractParams($db, $message), $message);
+    if (!hasMeaningfulSearchParams($searchParams)) {
+        return '';
+    }
+
+    $searchQuery = [];
+
+    try {
+        if (!empty($searchParams['make'])) {
+            $makeStmt = $db->prepare("SELECT id FROM car_makes WHERE LOWER(name) LIKE ? LIMIT 1");
+            $makeStmt->execute(['%' . strtolower($searchParams['make']) . '%']);
+            $make = $makeStmt->fetch(PDO::FETCH_ASSOC);
+            if (!empty($make['id'])) {
+                $searchQuery['make_id'] = (int)$make['id'];
+            }
+        }
+
+        if (!empty($searchParams['model'])) {
+            $modelSql = "SELECT id FROM car_models WHERE LOWER(name) LIKE ?";
+            $modelArgs = ['%' . strtolower($searchParams['model']) . '%'];
+            if (!empty($searchQuery['make_id'])) {
+                $modelSql .= " AND make_id = ?";
+                $modelArgs[] = (int)$searchQuery['make_id'];
+            }
+            $modelStmt = $db->prepare($modelSql . " LIMIT 1");
+            $modelStmt->execute($modelArgs);
+            $model = $modelStmt->fetch(PDO::FETCH_ASSOC);
+            if (!empty($model['id'])) {
+                $searchQuery['model_id'] = (int)$model['id'];
+            }
+        }
+    } catch (Exception $e) {
+        error_log('buildAIChatListingsRetrievalSnippet lookup error: ' . $e->getMessage());
+    }
+
+    if (!empty($searchParams['max_price'])) {
+        $searchQuery['max_price'] = (int)$searchParams['max_price'];
+    }
+    if (!empty($searchParams['location'])) {
+        $searchQuery['location'] = $searchParams['location'];
+        try {
+            $locStmt = $db->prepare("SELECT id FROM locations WHERE LOWER(name) = LOWER(?) LIMIT 1");
+            $locStmt->execute([$searchParams['location']]);
+            $loc = $locStmt->fetch(PDO::FETCH_ASSOC);
+            if (!empty($loc['id'])) {
+                $searchQuery['location_id'] = (int)$loc['id'];
+            }
+        } catch (Exception $e) {
+            error_log('buildAIChatListingsRetrievalSnippet location error: ' . $e->getMessage());
+        }
+    }
+    if (!empty($searchParams['body_type'])) {
+        $searchQuery['category'] = $searchParams['body_type'];
+    }
+    if (!empty($searchParams['fuel_type'])) {
+        $searchQuery['fuel_type'] = $searchParams['fuel_type'];
+    }
+    if (!empty($searchParams['transmission'])) {
+        $searchQuery['transmission'] = $searchParams['transmission'];
+    }
+    if (!empty($searchParams['seats'])) {
+        $searchQuery['seats'] = (int)$searchParams['seats'];
+    }
+    if (!empty($searchParams['price_comparison'])) {
+        $searchQuery['sort_by_price'] = $searchParams['price_comparison'];
+    }
+
+    $listings = searchListings($db, $searchQuery);
+    if (empty($listings)) {
+        return '';
+    }
+
+    $lines = ['Live listing matches:'];
+    foreach (array_slice($listings, 0, 3) as $listing) {
+        $price = isset($listing['price']) ? number_format((float)$listing['price']) : 'Price on request';
+        $url = $runtimeSiteUrl . 'car.html?id=' . (int)$listing['id'];
+        $summary = '- ' . trim(($listing['make_name'] ?? '') . ' ' . ($listing['model_name'] ?? ''));
+        if (!empty($listing['year'])) {
+            $summary .= ' (' . $listing['year'] . ')';
+        }
+        $summary .= ' - ' . getChatCurrencyCode($db) . ' ' . $price;
+        if (!empty($listing['location_name'])) {
+            $summary .= ' - ' . $listing['location_name'];
+        }
+        $summary .= ' - ' . $url;
+        $lines[] = $summary;
+    }
+
+    return implode("\n", $lines);
+}
+
+function buildAIChatDealerRetrievalSnippet($db, $message, $runtimeSiteUrl) {
+    if (!detectDealerQuery($message)) {
+        return '';
+    }
+
+    $dealers = searchDealers($db, extractDealerSearchParams($db, $message), null);
+    if (empty($dealers)) {
+        return '';
+    }
+
+    $lines = ['Live dealer matches:'];
+    foreach (array_slice($dealers, 0, 3) as $dealer) {
+        $url = $runtimeSiteUrl . 'showroom.html?dealer_id=' . (int)$dealer['id'];
+        $line = '- ' . trim((string)($dealer['business_name'] ?? 'Dealer'));
+        if (!empty($dealer['location_name'])) {
+            $line .= ' - ' . $dealer['location_name'];
+        }
+        if (!empty($dealer['phone'])) {
+            $line .= ' - ' . $dealer['phone'];
+        }
+        $line .= ' - ' . $url;
+        $lines[] = $line;
+    }
+
+    return implode("\n", $lines);
+}
+
+function buildAIChatGarageRetrievalSnippet($db, $message, $runtimeSiteUrl) {
+    if (!detectGarageQuery($message)) {
+        return '';
+    }
+
+    $garages = searchGarages($db, extractGarageSearchParams($message), null);
+    if (empty($garages)) {
+        return '';
+    }
+
+    $lines = ['Live garage matches:'];
+    foreach (array_slice($garages, 0, 3) as $garage) {
+        $url = $runtimeSiteUrl . 'garages.html?id=' . (int)$garage['id'];
+        $line = '- ' . trim((string)($garage['name'] ?? 'Garage'));
+        if (!empty($garage['location_name'])) {
+            $line .= ' - ' . $garage['location_name'];
+        }
+        if (!empty($garage['phone'])) {
+            $line .= ' - ' . $garage['phone'];
+        }
+        $line .= ' - ' . $url;
+        $lines[] = $line;
+    }
+
+    return implode("\n", $lines);
+}
+
+function buildAIChatCarHireRetrievalSnippet($db, $message, $runtimeSiteUrl) {
+    if (!detectCarHireQuery($message)) {
+        return '';
+    }
+
+    $results = searchCarHire($db, extractCarHireSearchParams($message), null);
+    if (empty($results['companies'])) {
+        return '';
+    }
+
+    $lines = ['Live car hire matches:'];
+    foreach (array_slice($results['companies'], 0, 3) as $company) {
+        $url = $runtimeSiteUrl . 'car-hire-company.html?id=' . (int)$company['id'];
+        $line = '- ' . trim((string)($company['business_name'] ?? 'Car hire company'));
+        if (!empty($company['location_name'])) {
+            $line .= ' - ' . $company['location_name'];
+        }
+        if (!empty($company['daily_rate_from'])) {
+            $line .= ' - from ' . getChatCurrencyCode($db) . ' ' . number_format((float)$company['daily_rate_from']) . '/day';
+        }
+        $line .= ' - ' . $url;
+        $lines[] = $line;
+    }
+
+    return implode("\n", $lines);
+}
+
+function buildAIChatFuelRetrievalSnippet($db) {
+    try {
+        $stmt = $db->prepare(
+            "SELECT fuel_type, price_per_liter_mwk, date
+             FROM fuel_prices
+             WHERE is_active = 1
+             ORDER BY date DESC, fuel_type ASC
+             LIMIT 4"
+        );
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if (empty($rows)) {
+            return '';
+        }
+
+        $lines = ['Latest fuel prices:'];
+        foreach ($rows as $row) {
+            $line = '- ' . ucfirst((string)$row['fuel_type']) . ': ' . getChatCurrencyCode($db) . ' ' . number_format((float)$row['price_per_liter_mwk'], 2) . '/L';
+            if (!empty($row['date'])) {
+                $line .= ' (' . $row['date'] . ')';
+            }
+            $lines[] = $line;
+        }
+
+        return implode("\n", $lines);
+    } catch (Exception $e) {
+        error_log('buildAIChatFuelRetrievalSnippet error: ' . $e->getMessage());
+        return '';
+    }
+}
+
+function buildAIChatStructuredRetrievalContext($db, $message, $conversationHistory, $runtimeSiteUrl, $userContext) {
+    $sections = [];
+
+    $locationSnippet = buildAIChatLocationRetrievalSnippet($db, $message);
+    if ($locationSnippet !== '') {
+        $sections[] = $locationSnippet;
+    }
+
+    $listingSnippet = buildAIChatListingsRetrievalSnippet($db, $message, $runtimeSiteUrl);
+    if ($listingSnippet !== '') {
+        $sections[] = $listingSnippet;
+    }
+
+    $dealerSnippet = buildAIChatDealerRetrievalSnippet($db, $message, $runtimeSiteUrl);
+    if ($dealerSnippet !== '') {
+        $sections[] = $dealerSnippet;
+    }
+
+    $garageSnippet = buildAIChatGarageRetrievalSnippet($db, $message, $runtimeSiteUrl);
+    if ($garageSnippet !== '') {
+        $sections[] = $garageSnippet;
+    }
+
+    $carHireSnippet = buildAIChatCarHireRetrievalSnippet($db, $message, $runtimeSiteUrl);
+    if ($carHireSnippet !== '') {
+        $sections[] = $carHireSnippet;
+    }
+
+    if (detectFuelPriceQuery($message)) {
+        $fuelSnippet = buildAIChatFuelRetrievalSnippet($db);
+        if ($fuelSnippet !== '') {
+            $sections[] = $fuelSnippet;
+        }
+    }
+
+    if (empty($sections)) {
+        return '';
+    }
+
+    return "\n\nLIVE MARKETPLACE RETRIEVAL (verified site data):\n" . implode("\n\n", $sections) . "\n";
+}
+
 function handleAICarChat($db) {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         sendError('POST method required', 405);
@@ -373,11 +1693,31 @@ function handleAICarChat($db) {
         }
 
         $message = trim($input['message']);
-        $conversationHistory = $input['conversation_history'] ?? [];
+        $conversationHistory = sanitizeAIChatConversationHistory($input['conversation_history'] ?? []);
+        $originalMessage = $message;
+
+        ensureAIChatMemoryTables($db);
+        $persistentConversationHistory = loadPersistentAIChatConversationHistory($db, $user['id'], 12);
+        $conversationHistory = mergeAIChatConversationHistory($conversationHistory, $persistentConversationHistory, 24);
+        $userMemoryRows = loadAIChatUserMemories($db, $user['id'], 10);
+        $userMemorySummary = loadAIChatUserSummary($db, $user['id']);
+        if ($userMemorySummary === '' && !empty($userMemoryRows)) {
+            $userMemorySummary = buildAIChatUserSummaryText($userMemoryRows, loadRecentAIChatTopics($db, $user['id'], 5));
+        }
+        $conversationBrief = buildAIChatConversationBrief($conversationHistory, 8);
+        $intentEntityContext = buildAIChatRecentEntityContextPrompt($db, $user['id'], '', 4, 8);
+
+        setAIChatPersistenceContext([
+            'active' => true,
+            'db' => $db,
+            'user_id' => (int)$user['id'],
+            'original_message' => $originalMessage,
+            'resolved_message' => $message
+        ]);
 
         // Validate message length
-        if (strlen($message) > 500) {
-            sendError('Message is too long (maximum 500 characters)', 400);
+        if (strlen($message) > 1500) {
+            sendError('Message is too long (maximum 1500 characters)', 400);
             return;
         }
 
@@ -389,8 +1729,17 @@ function handleAICarChat($db) {
             return;
         }
 
+        $memoryAwareMessage = buildPersistentMemoryAwareMessage($db, $message, $userMemoryRows);
+        if ($memoryAwareMessage !== false) {
+            $message = $memoryAwareMessage;
+            updateAIChatPersistenceContext([
+                'resolved_message' => $message,
+                'memory_rewrite' => true
+            ]);
+        }
+
         // Keep learning always on for valid automotive conversations.
-        scheduleContinuousLearningForQuery($db, $message);
+        scheduleContinuousLearningForQuery($db, $originalMessage);
 
         // Load AI settings and select active provider
         $settings = getAIChatSettings($db);
@@ -402,6 +1751,10 @@ function handleAICarChat($db) {
             $settings['model_name'] ?? $providerConfig['default_model'],
             $providerConfig['default_model']
         );
+        updateAIChatPersistenceContext([
+            'provider' => $provider,
+            'model_name' => $modelName
+        ]);
 
         if (!$enabled) {
             sendError('AI chat feature is currently disabled. Please contact administrator.', 503);
@@ -421,6 +1774,7 @@ function handleAICarChat($db) {
 
         // Get user context (type, business info, etc.)
         $userContext = getUserContext($db, $user);
+        updateAIChatPersistenceContext(['user_context' => $userContext]);
         
         // Check if user is asking about their own data (inventory, listings, fleet, garage, business)
         $userDataResult = detectAndHandleUserDataQuery($db, $message, $user, $userContext);
@@ -442,6 +1796,7 @@ function handleAICarChat($db) {
         // by reusing the previous car-search intent.
         $locationFollowUpMessage = buildLocationFollowUpSearchMessage($db, $message, $conversationHistory);
         if ($locationFollowUpMessage !== false) {
+            updateAIChatPersistenceContext(['resolved_message' => $locationFollowUpMessage]);
             $logDeterministicUsage();
             handleSearchQuery($db, $locationFollowUpMessage, $conversationHistory);
             return;
@@ -452,6 +1807,7 @@ function handleAICarChat($db) {
         // current: "What about Salima"
         $carHireFollowUpMessage = buildLocationFollowUpCarHireMessage($db, $message, $conversationHistory);
         if ($carHireFollowUpMessage !== false) {
+            updateAIChatPersistenceContext(['resolved_message' => $carHireFollowUpMessage]);
             $logDeterministicUsage();
             handleCarHireQuery($db, $carHireFollowUpMessage, $conversationHistory);
             return;
@@ -462,6 +1818,7 @@ function handleAICarChat($db) {
         // current: "What is the cheapest"
         $carHireComparativeFollowUpMessage = buildCarHireComparativeFollowUpMessage($db, $message, $conversationHistory);
         if ($carHireComparativeFollowUpMessage !== false) {
+            updateAIChatPersistenceContext(['resolved_message' => $carHireComparativeFollowUpMessage]);
             $logDeterministicUsage();
             handleCarHireQuery($db, $carHireComparativeFollowUpMessage, $conversationHistory);
             return;
@@ -479,6 +1836,7 @@ function handleAICarChat($db) {
         // current: "What about Salima"
         $garageFollowUpMessage = buildLocationFollowUpGarageMessage($db, $message, $conversationHistory);
         if ($garageFollowUpMessage !== false) {
+            updateAIChatPersistenceContext(['resolved_message' => $garageFollowUpMessage]);
             $logDeterministicUsage();
             handleGarageQuery($db, $garageFollowUpMessage, $conversationHistory);
             return;
@@ -489,6 +1847,7 @@ function handleAICarChat($db) {
         // current: "What about Salima"
         $dealerFollowUpMessage = buildLocationFollowUpDealerMessage($db, $message, $conversationHistory);
         if ($dealerFollowUpMessage !== false) {
+            updateAIChatPersistenceContext(['resolved_message' => $dealerFollowUpMessage]);
             $logDeterministicUsage();
             handleDealerQuery($db, $dealerFollowUpMessage, $conversationHistory);
             return;
@@ -528,12 +1887,14 @@ function handleAICarChat($db) {
                 $settings,
                 $provider,
                 $providerConfig,
-                $modelName
+                $modelName,
+                $conversationBrief,
+                $intentEntityContext
             );
 
             if (!empty($aiIntent)) {
                 $rewrittenQuery = trim((string)($aiIntent['rewritten_query'] ?? ''));
-                if ($rewrittenQuery !== '' && strlen($rewrittenQuery) <= 500) {
+                if ($rewrittenQuery !== '' && strlen($rewrittenQuery) <= 1500) {
                     $message = $rewrittenQuery;
                 }
 
@@ -597,6 +1958,8 @@ function handleAICarChat($db) {
                 }
             }
         }
+
+        updateAIChatPersistenceContext(['resolved_message' => $message]);
 
         // Hard scope gate: do not answer non-automotive / non-MotorLink requests.
         if (!$aiIntentMarkedInScope && isOutOfScopeQuery($message)) {
@@ -789,12 +2152,23 @@ function handleAICarChat($db) {
         }
         
         $locationContext = $userCity ? "\nUSER LOCATION: {$userCity}" : "";
+        $longTermMemoryContext = $userMemorySummary !== ''
+            ? "\nUSER LONG-TERM MEMORY (treat as preference hints; if current request conflicts, follow the current request):\n{$userMemorySummary}\n"
+            : '';
+        $conversationBriefContext = $conversationBrief !== ''
+            ? "\nRECENT CONVERSATION SNAPSHOT:\n{$conversationBrief}\n"
+            : '';
+        $recentEntityContext = buildAIChatRecentEntityContextPrompt($db, $user['id'], $runtimeSiteUrl, 4, 8);
+        $recentEntityPromptContext = $recentEntityContext !== ''
+            ? "\nRECENT MARKETPLACE ENTITIES (latest results first; use these to resolve references like first/second/that one/their contact):\n{$recentEntityContext}\n"
+            : '';
+        $retrievalContext = buildAIChatStructuredRetrievalContext($db, $message, $conversationHistory, $runtimeSiteUrl, $userContext);
         
         // System prompt - friendly, helpful, and comprehensive with intelligent fallback
         $systemPrompt = "Hey there! 👋 I'm {$siteName} AI Assistant, your friendly automotive expert here at {$siteName}! I'm here to help you with all things cars - from specs and maintenance to finding the perfect vehicle.
 
-USER CONTEXT: {$contextInfo}{$locationContext}
-BASE URL: {$baseUrl}{$databaseContext}
+    USER CONTEXT: {$contextInfo}{$locationContext}{$longTermMemoryContext}{$conversationBriefContext}{$recentEntityPromptContext}
+    BASE URL: {$baseUrl}{$databaseContext}{$retrievalContext}
 
 MOTORLINK DATABASE SCHEMA (CRITICAL KNOWLEDGE):
 Our database contains comprehensive car data with the following structure:
@@ -858,6 +2232,10 @@ HOW I ANSWER QUESTIONS:
 2. **For general knowledge**: Answer directly and helpfully — I'm a broad knowledge assistant too
 3. **For follow-ups**: Read conversation history carefully to maintain context
 4. **Always include links**: When showing results, include clickable links: [Text]({$runtimeSiteUrl}page.html?id=ID)
+5. **For long-term continuity**: Use USER LONG-TERM MEMORY as soft context for recurring preferences, but let the user's current message override stored memory
+6. **For grounded answers**: Prefer LIVE MARKETPLACE RETRIEVAL and DATABASE CONTEXT over generic assumptions whenever they are available
+7. **For result references**: Resolve phrases like 'first one', 'second option', 'that dealer', or 'their contact' against RECENT MARKETPLACE ENTITIES, preferring the latest result set first
+8. **For ambiguity**: If the request is still underspecified after using context, ask one targeted clarification question instead of guessing
 
 LOGICAL THINKING & INTELLIGENT REASONING:
 - **Family cars**: Prioritize 6-7+ seating capacity (minivans, 3-row SUVs like Toyota Fortuner, Honda Pilot, Nissan Pathfinder), safety features, spacious interiors, reliability. Think: parents + 2-4 children = need for space. NOT just any SUV - specifically those with 7+ seats.
@@ -977,8 +2355,7 @@ REMEMBER (MANDATORY WORKFLOW):
             ['role' => 'system', 'content' => $systemPrompt]
         ];
 
-        // Add conversation history (last 10 messages for context)
-        // Enhanced: Better context understanding for follow-up questions
+        // Add merged recent + persistent conversation history for context.
         $enhancedHistory = [];
         foreach ($conversationHistory as $historyItem) {
             if (isset($historyItem['role']) && isset($historyItem['content'])) {
@@ -1146,6 +2523,7 @@ REMEMBER (MANDATORY WORKFLOW):
                     error_log(getAIChatProviderLabel($provider) . " model '$currentModel' failed. Retrying with default '$defaultModel'.");
                     $requestBody['model'] = $defaultModel;
                     $modelName = $defaultModel;
+                    updateAIChatPersistenceContext(['model_name' => $modelName]);
                     continue;
                 }
 
@@ -1205,6 +2583,10 @@ REMEMBER (MANDATORY WORKFLOW):
         
         // Log usage to database
         logAIChatUsage($db, $user['id'], $message, $responseLength, $tokensUsed, $modelName, $costEstimate);
+        updateAIChatPersistenceContext([
+            'resolved_message' => $message,
+            'model_name' => $modelName
+        ]);
 
         sendSuccess([
             'response' => $aiResponse
@@ -1938,7 +3320,7 @@ function buildContactFollowUpMessage($db, $message, $conversationHistory) {
  * AI-assisted conversational intent resolver for ambiguous natural-language follow-ups.
  * Returns: ['intent' => string, 'rewritten_query' => string, 'confidence' => float, 'out_of_scope' => bool]
  */
-function resolveConversationalIntentWithAI($db, $message, $conversationHistory, $settings, $provider, $providerConfig, $modelName) {
+function resolveConversationalIntentWithAI($db, $message, $conversationHistory, $settings, $provider, $providerConfig, $modelName, $conversationBrief = '', $recentEntityContext = '') {
     if (!function_exists('curl_init')) {
         return [];
     }
@@ -1985,9 +3367,21 @@ function resolveConversationalIntentWithAI($db, $message, $conversationHistory, 
         . "3. If the user is asking about automotive/MotorLink, do NOT classify as out_of_scope.\n"
         . "4. If the user asks a general knowledge question (not automotive), use general_knowledge intent — NOT out_of_scope.\n"
         . "5. Only use out_of_scope for harmful, explicit, or dangerous content.\n"
-        . "6. Return STRICT JSON only with this schema:\n"
-        . "{\"intent\":\"...\",\"rewritten_query\":\"...\",\"confidence\":0.0,\"out_of_scope\":false}\n\n"
-        . "Conversation history JSON:\n"
+        . "6. Prefer the latest result set first when resolving references like first, second, that one, their contact, or cheapest one.\n"
+        . "7. Return STRICT JSON only with this schema:\n"
+        . "{\"intent\":\"...\",\"rewritten_query\":\"...\",\"confidence\":0.0,\"out_of_scope\":false}";
+
+    $conversationBrief = trim((string)$conversationBrief);
+    if ($conversationBrief !== '') {
+        $intentPrompt .= "\n\nRecent conversation snapshot:\n" . $conversationBrief;
+    }
+
+    $recentEntityContext = trim((string)$recentEntityContext);
+    if ($recentEntityContext !== '') {
+        $intentPrompt .= "\n\nRecent marketplace entities (latest results first; use to resolve first/second/that one/their contact):\n" . $recentEntityContext;
+    }
+
+    $intentPrompt .= "\n\nConversation history JSON:\n"
         . json_encode($recentHistory, JSON_UNESCAPED_UNICODE)
         . "\n\nLatest user message:\n"
         . $message;

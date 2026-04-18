@@ -48,12 +48,11 @@
                 <form onsubmit="adminLogin(event)">
                     <div class="form-group">
                         <label for="adminEmail"><i class="fas fa-envelope"></i> Email</label>
-                        <input type="email" id="adminEmail" autocomplete="username" required placeholder="admin@motorlink.mw" value="admin@motorlink.mw">
-                        <small>Use: admin@motorlink.mw / password</small>
+                        <input type="email" id="adminEmail" autocomplete="username" required placeholder="Enter your email">
                     </div>
                     <div class="form-group">
                         <label for="adminPassword"><i class="fas fa-lock"></i> Password</label>
-                        <input type="password" id="adminPassword" autocomplete="current-password" required placeholder="Enter password" value="password">
+                        <input type="password" id="adminPassword" autocomplete="current-password" required placeholder="Enter password">
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">
                         <i class="fas fa-sign-in-alt"></i> Login to Dashboard
@@ -85,8 +84,7 @@
                     </div>
                     <div class="form-group">
                         <label for="regAdminKey"><i class="fas fa-key"></i> Admin Key</label>
-                        <input type="password" id="regAdminKey" autocomplete="off" required placeholder="MOTORLINK_ADMIN_KEY_2025">
-                        <small>Use: MOTORLINK_ADMIN_KEY_2025</small>
+                        <input type="password" id="regAdminKey" autocomplete="off" required placeholder="Enter admin registration key">
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">
                         <i class="fas fa-user-plus"></i> Register Admin
@@ -99,7 +97,7 @@
                 <form onsubmit="forgotPassword(event)">
                     <div class="form-group">
                         <label for="forgotEmail"><i class="fas fa-envelope"></i> Email</label>
-                        <input type="email" id="forgotEmail" autocomplete="email" required placeholder="admin@motorlink.mw">
+                        <input type="email" id="forgotEmail" autocomplete="email" required placeholder="Enter your email">
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">
                         <i class="fas fa-paper-plane"></i> Send Reset Link
@@ -841,10 +839,31 @@
                         </button>
                     </div>
 
+                    <!-- Bulk Actions Bar -->
+                    <div class="bulk-actions-bar" id="garageBulkActionsBar" style="display: none;">
+                        <strong>Bulk Actions:</strong>
+                        <select id="garageBulkActionSelect" class="form-control">
+                            <option value="">Choose Action...</option>
+                            <option value="approve">Approve Selected</option>
+                            <option value="reject">Reject Selected</option>
+                            <option value="activate">Activate Selected</option>
+                            <option value="suspend">Suspend Selected</option>
+                            <option value="delete">Delete Selected</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="admin.executeGarageBulkAction()">
+                            <i class="fas fa-play"></i> Apply
+                        </button>
+                        <span class="bulk-selected-count" id="garageBulkSelectedCount">0 selected</span>
+                        <button class="btn btn-outline" onclick="admin.clearGarageBulkSelection()">
+                            <i class="fas fa-times"></i> Clear
+                        </button>
+                    </div>
+
                     <div class="table-container">
                         <table id="garagesTable" class="data-table">
                             <thead>
                                 <tr>
+                                    <th width="30"><input type="checkbox" id="selectAllGarages" onchange="admin.toggleSelectAllGarages(this)"></th>
                                     <th>ID</th>
                                     <th>Name</th>
                                     <th>Owner</th>
@@ -893,10 +912,31 @@
                         </button>
                     </div>
 
+                    <!-- Bulk Actions Bar -->
+                    <div class="bulk-actions-bar" id="dealerBulkActionsBar" style="display: none;">
+                        <strong>Bulk Actions:</strong>
+                        <select id="dealerBulkActionSelect" class="form-control">
+                            <option value="">Choose Action...</option>
+                            <option value="approve">Approve Selected</option>
+                            <option value="reject">Reject Selected</option>
+                            <option value="activate">Activate Selected</option>
+                            <option value="suspend">Suspend Selected</option>
+                            <option value="delete">Delete Selected</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="admin.executeDealerBulkAction()">
+                            <i class="fas fa-play"></i> Apply
+                        </button>
+                        <span class="bulk-selected-count" id="dealerBulkSelectedCount">0 selected</span>
+                        <button class="btn btn-outline" onclick="admin.clearDealerBulkSelection()">
+                            <i class="fas fa-times"></i> Clear
+                        </button>
+                    </div>
+
                     <div class="table-container">
                         <table id="dealersTable" class="data-table">
                             <thead>
                                 <tr>
+                                    <th width="30"><input type="checkbox" id="selectAllDealers" onchange="admin.toggleSelectAllDealers(this)"></th>
                                     <th>ID</th>
                                     <th>Business Name</th>
                                     <th>Owner</th>
@@ -1825,7 +1865,7 @@
                             </div>
                             <div class="form-group">
                                 <label for="ai-chat-provider">AI Chat Provider</label>
-                                <select id="ai-chat-provider" class="form-control">
+                                <select id="ai-chat-provider" class="form-control" onchange="syncAIModelInputState(); updateModelBadge()">
                                     <option value="openai">ChatGPT (OpenAI)</option>
                                     <option value="deepseek">DeepSeek</option>
                                     <option value="qwen">Qwen</option>
@@ -1837,7 +1877,7 @@
                             </div>
                             <div class="form-group">
                                 <label for="ai-model-name">AI Model <span id="current-model-badge" class="badge badge-info" style="margin-left: 10px; display: none;">Current</span></label>
-                                <select id="ai-model-name" class="form-control" onchange="updateModelBadge()">
+                                <select id="ai-model-name" class="form-control" onchange="syncAIModelInputState(); updateModelBadge()">
                                     <option value="gpt-4o-mini">gpt-4o-mini (OpenAI)</option>
                                     <option value="gpt-4o">gpt-4o (OpenAI)</option>
                                     <option value="gpt-4-turbo">gpt-4-turbo (OpenAI)</option>
@@ -1855,9 +1895,13 @@
                                     <option value="glm-4.5v">GLM-4.5V (GLM)</option>
                                     <option value="glm-4.5">GLM-4.5 (GLM)</option>
                                     <option value="glm-4.5-air">GLM-4.5-Air (GLM)</option>
+                                    <option value="__custom__">Custom model ID...</option>
                                 </select>
+                                <input type="text" id="ai-custom-model-name" class="form-control" style="margin-top: 10px; display: none;" maxlength="120" placeholder="Enter the exact API model ID" oninput="updateModelBadge()">
                                 <small class="form-text">
                                     <strong>What this does:</strong> Selects the model used by your selected provider. Save changes to apply immediately for new AI chat requests.
+                                    <br>
+                                    <strong>Custom model IDs:</strong> If your provider account exposes a newer model not listed here, choose <em>Custom model ID...</em> and enter the exact API model name.
                                     <br>
                                     <em><strong>Cost Impact:</strong> Changing models affects API costs. Monitor usage in "AI Chat Usage Logs" section.</em>
                                 </small>

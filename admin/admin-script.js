@@ -900,7 +900,7 @@ class AdminDashboard {
             const canvas = document.getElementById('popularMakesChartCanvas');
             if (!canvas) return;
 
-            const response = await this.apiCall('get_makes', 'GET');
+            const response = await this.apiCall('get_car_makes', 'GET');
             if (response.success && response.makes) {
                 const ctx = canvas.getContext('2d');
                 canvas.height = 300;
@@ -1167,6 +1167,174 @@ async loadCars() {
             cb.checked = false;
         });
         this.updateBulkSelection();
+    }
+
+    // ===== GARAGE BULK ACTIONS =====
+
+    toggleSelectAllGarages(checkbox) {
+        document.querySelectorAll('.garage-checkbox').forEach(cb => { cb.checked = checkbox.checked; });
+        this.updateGarageBulkBar();
+    }
+
+    updateGarageBulkBar() {
+        const selected = document.querySelectorAll('.garage-checkbox:checked');
+        const total = document.querySelectorAll('.garage-checkbox');
+        const bar = document.getElementById('garageBulkActionsBar');
+        const countEl = document.getElementById('garageBulkSelectedCount');
+        const selectAll = document.getElementById('selectAllGarages');
+
+        if (selected.length > 0) {
+            bar.style.display = 'flex';
+            countEl.textContent = `${selected.length} selected`;
+            if (selectAll) {
+                selectAll.checked = selected.length === total.length;
+                selectAll.indeterminate = selected.length > 0 && selected.length < total.length;
+            }
+        } else {
+            bar.style.display = 'none';
+            if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+        }
+    }
+
+    clearGarageBulkSelection() {
+        document.querySelectorAll('.garage-checkbox:checked').forEach(cb => { cb.checked = false; });
+        this.updateGarageBulkBar();
+    }
+
+    async executeGarageBulkAction() {
+        const action = document.getElementById('garageBulkActionSelect').value;
+        const checkboxes = document.querySelectorAll('.garage-checkbox:checked');
+
+        if (!action) { this.showAlert('warning', 'Please select an action'); return; }
+        if (checkboxes.length === 0) { this.showAlert('warning', 'Please select at least one garage'); return; }
+
+        const ids = Array.from(checkboxes).map(cb => cb.value);
+        const confirmed = await this.showActionConfirmDialog(
+            'Confirm Bulk Action',
+            `Are you sure you want to ${action} ${ids.length} garage(s)?`,
+            'Proceed',
+            action === 'delete' ? 'btn-danger' : 'btn-primary'
+        );
+        if (!confirmed) return;
+
+        try {
+            let endpoint = '';
+            let data = { garage_ids: ids };
+
+            switch (action) {
+                case 'approve':
+                case 'reject':
+                    endpoint = 'bulk_approve_garages';
+                    data.action = action;
+                    break;
+                case 'activate':
+                    endpoint = 'bulk_update_garages';
+                    data.status = 'active';
+                    break;
+                case 'suspend':
+                    endpoint = 'bulk_update_garages';
+                    data.status = 'suspended';
+                    break;
+                case 'delete':
+                    endpoint = 'bulk_delete_garages';
+                    break;
+            }
+
+            const response = await this.apiCall(endpoint, 'POST', data);
+            if (response.success) {
+                this.showAlert('success', response.message || `Bulk ${action} applied to ${ids.length} garage(s)`);
+                this.clearGarageBulkSelection();
+                await this.loadGarages();
+            } else {
+                throw new Error(response.message);
+            }
+        } catch (error) {
+            this.showAlert('error', error.message || 'Bulk garage action failed');
+        }
+    }
+
+    // ===== DEALER BULK ACTIONS =====
+
+    toggleSelectAllDealers(checkbox) {
+        document.querySelectorAll('.dealer-checkbox').forEach(cb => { cb.checked = checkbox.checked; });
+        this.updateDealerBulkBar();
+    }
+
+    updateDealerBulkBar() {
+        const selected = document.querySelectorAll('.dealer-checkbox:checked');
+        const total = document.querySelectorAll('.dealer-checkbox');
+        const bar = document.getElementById('dealerBulkActionsBar');
+        const countEl = document.getElementById('dealerBulkSelectedCount');
+        const selectAll = document.getElementById('selectAllDealers');
+
+        if (selected.length > 0) {
+            bar.style.display = 'flex';
+            countEl.textContent = `${selected.length} selected`;
+            if (selectAll) {
+                selectAll.checked = selected.length === total.length;
+                selectAll.indeterminate = selected.length > 0 && selected.length < total.length;
+            }
+        } else {
+            bar.style.display = 'none';
+            if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+        }
+    }
+
+    clearDealerBulkSelection() {
+        document.querySelectorAll('.dealer-checkbox:checked').forEach(cb => { cb.checked = false; });
+        this.updateDealerBulkBar();
+    }
+
+    async executeDealerBulkAction() {
+        const action = document.getElementById('dealerBulkActionSelect').value;
+        const checkboxes = document.querySelectorAll('.dealer-checkbox:checked');
+
+        if (!action) { this.showAlert('warning', 'Please select an action'); return; }
+        if (checkboxes.length === 0) { this.showAlert('warning', 'Please select at least one dealer'); return; }
+
+        const ids = Array.from(checkboxes).map(cb => cb.value);
+        const confirmed = await this.showActionConfirmDialog(
+            'Confirm Bulk Action',
+            `Are you sure you want to ${action} ${ids.length} dealer(s)?`,
+            'Proceed',
+            action === 'delete' ? 'btn-danger' : 'btn-primary'
+        );
+        if (!confirmed) return;
+
+        try {
+            let endpoint = '';
+            let data = { dealer_ids: ids };
+
+            switch (action) {
+                case 'approve':
+                case 'reject':
+                    endpoint = 'bulk_approve_dealers';
+                    data.action = action;
+                    break;
+                case 'activate':
+                    endpoint = 'bulk_update_dealers';
+                    data.status = 'active';
+                    break;
+                case 'suspend':
+                    endpoint = 'bulk_update_dealers';
+                    data.status = 'suspended';
+                    break;
+                case 'delete':
+                    endpoint = 'bulk_delete_dealers';
+                    break;
+            }
+
+            const response = await this.apiCall(endpoint, 'POST', data);
+            if (response.success) {
+                this.showAlert('success', response.message || `Bulk ${action} applied to ${ids.length} dealer(s)`);
+                this.clearDealerBulkSelection();
+                await this.loadDealers();
+            } else {
+                throw new Error(response.message);
+            }
+        } catch (error) {
+            this.showAlert('error', error.message || 'Bulk dealer action failed');
+        }
     }
 
     async executeBulkAction() {
@@ -2282,12 +2450,13 @@ displayGaragesTable(garages) {
     const tbody = document.getElementById('garagesTableBody');
     
     if (!garages || garages.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No garages found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No garages found</td></tr>';
         return;
     }
 
     const html = garages.map(garage => `
         <tr>
+            <td><input type="checkbox" class="garage-checkbox" value="${garage.id}" onchange="admin.updateGarageBulkBar()"></td>
             <td>${garage.id}</td>
             <td>
                 <div class="business-name">${this.escapeHtml(garage.name)}</div>
@@ -2354,12 +2523,13 @@ displayDealersTable(dealers) {
     const tbody = document.getElementById('dealersTableBody');
     
     if (!dealers || dealers.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No dealers found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No dealers found</td></tr>';
         return;
     }
 
     const html = dealers.map(dealer => `
         <tr>
+            <td><input type="checkbox" class="dealer-checkbox" value="${dealer.id}" onchange="admin.updateDealerBulkBar()"></td>
             <td>${dealer.id || 'N/A'}</td>
             <td>
                 <div class="business-name">${this.escapeHtml(dealer.business_name || 'N/A')}</div>
@@ -3039,7 +3209,7 @@ async filterMakesModels() {
     
     async populateMakesForEditCar(selectedMakeId) {
         try {
-            const response = await this.apiCall('get_makes');
+            const response = await this.apiCall('get_car_makes');
             if (response.success && response.makes) {
                 const makeSelect = document.getElementById('editCarMake');
                 if (makeSelect) {
@@ -6742,28 +6912,23 @@ async function loadAIChatSettings() {
                 providerSelect.value = savedProvider;
             }
             
-            // Set model - ensure it exists in dropdown, fallback to provider default if not
             const modelSelect = document.getElementById('ai-model-name');
+            const customModelInput = document.getElementById('ai-custom-model-name');
             const savedModel = data.settings.model_name || 'gpt-4o-mini';
             if (modelSelect) {
-                const providerDefaultModels = {
-                    openai: 'gpt-4o-mini',
-                    deepseek: 'deepseek-chat',
-                    qwen: 'qwen-plus',
-                    glm: 'glm-4.7'
-                };
-                const fallbackModel = providerDefaultModels[savedProvider] || 'gpt-4o-mini';
-
-                // Check if the saved model exists in options
-                const modelExists = Array.from(modelSelect.options).some(opt => opt.value === savedModel);
+                const modelExists = Array.from(modelSelect.options).some(opt => opt.value === savedModel && opt.value !== '__custom__');
                 if (modelExists) {
                     modelSelect.value = savedModel;
+                    if (customModelInput) {
+                        customModelInput.value = '';
+                    }
                 } else {
-                    // If model doesn't exist (e.g., deprecated), use provider-aware fallback
-                    modelSelect.value = fallbackModel;
-                    console.warn(`Model "${savedModel}" not found in dropdown, defaulting to ${fallbackModel}`);
+                    modelSelect.value = '__custom__';
+                    if (customModelInput) {
+                        customModelInput.value = savedModel;
+                    }
                 }
-                // Show current model badge
+                syncAIModelInputState(savedModel);
                 updateModelBadge();
             }
             
@@ -6785,10 +6950,9 @@ async function loadAIChatSettings() {
  */
 async function saveAIChatSettings() {
     try {
-        const modelSelect = document.getElementById('ai-model-name');
-        const selectedModel = modelSelect ? modelSelect.value : 'gpt-4o-mini';
         const providerSelect = document.getElementById('ai-chat-provider');
         const selectedProvider = providerSelect ? providerSelect.value : 'openai';
+        const selectedModel = getSelectedAIModelName();
         
         // Get all values and validate
         const enabled = document.getElementById('ai-chat-enabled').checked ? 1 : 0;
@@ -6796,6 +6960,15 @@ async function saveAIChatSettings() {
         const temperature = parseFloat(document.getElementById('ai-temperature').value);
         const requestsPerDay = parseInt(document.getElementById('ai-requests-per-day').value);
         const requestsPerHour = parseInt(document.getElementById('ai-requests-per-hour').value);
+
+        if (!selectedModel) {
+            admin.showAlert('error', 'Enter a valid model name before saving AI chat settings');
+            return;
+        }
+        if (selectedModel.length > 120) {
+            admin.showAlert('error', 'Model name must be 120 characters or fewer');
+            return;
+        }
         
         // Validate inputs
         if (isNaN(maxTokens) || maxTokens < 1 || maxTokens > 4000) {
@@ -6928,15 +7101,69 @@ function updateModelBadge() {
     const badge = document.getElementById('current-model-badge');
     
     if (modelSelect && badge) {
-        const selectedModel = modelSelect.value;
+        const selectedModel = getSelectedAIModelName();
         const selectedOption = modelSelect.options[modelSelect.selectedIndex];
-        const optionText = selectedOption ? selectedOption.text : selectedModel;
+        const optionText = modelSelect.value === '__custom__'
+            ? `Custom model: ${selectedModel || 'Not set'}`
+            : (selectedOption ? selectedOption.text : selectedModel);
         
         // Show badge with current model info
-        badge.textContent = `Active: ${selectedModel}`;
+        badge.textContent = `Active: ${selectedModel || 'Not set'}`;
         badge.style.display = 'inline-block';
         badge.title = `Current model: ${optionText}`;
     }
+}
+
+function getProviderDefaultChatModel(provider) {
+    const providerDefaultModels = {
+        openai: 'gpt-4o-mini',
+        deepseek: 'deepseek-chat',
+        qwen: 'qwen-plus',
+        glm: 'glm-4.7'
+    };
+
+    return providerDefaultModels[provider] || 'gpt-4o-mini';
+}
+
+function syncAIModelInputState(prefillValue = '') {
+    const modelSelect = document.getElementById('ai-model-name');
+    const customModelInput = document.getElementById('ai-custom-model-name');
+    const providerSelect = document.getElementById('ai-chat-provider');
+
+    if (!modelSelect || !customModelInput) {
+        return;
+    }
+
+    const useCustomModel = modelSelect.value === '__custom__';
+    const provider = providerSelect ? providerSelect.value : 'openai';
+
+    customModelInput.style.display = useCustomModel ? 'block' : 'none';
+    customModelInput.disabled = !useCustomModel;
+    customModelInput.required = useCustomModel;
+    customModelInput.placeholder = `e.g. ${getProviderDefaultChatModel(provider)} or another ${provider} model ID`;
+
+    if (useCustomModel && prefillValue && !customModelInput.value.trim()) {
+        customModelInput.value = prefillValue;
+    }
+
+    if (!useCustomModel) {
+        customModelInput.value = '';
+    }
+}
+
+function getSelectedAIModelName() {
+    const modelSelect = document.getElementById('ai-model-name');
+    const customModelInput = document.getElementById('ai-custom-model-name');
+
+    if (!modelSelect) {
+        return 'gpt-4o-mini';
+    }
+
+    if (modelSelect.value === '__custom__') {
+        return customModelInput ? customModelInput.value.trim() : '';
+    }
+
+    return modelSelect.value.trim();
 }
 
 /**

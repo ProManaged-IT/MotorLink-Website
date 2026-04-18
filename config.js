@@ -76,44 +76,36 @@ const PRODUCTION_BASE = 'https://promanaged-it.com/motorlink/';
 
 // Determine the API URL based on environment
 const getAPIUrl = () => {
-    // Production environment: use local api.php (same server)
-    if (isProduction) {
-        return '/motorlink/api.php';
-    }
-
-    // Local development on static ports (e.g. Live Server 5500):
-    // force API calls to the local PHP server so localhost testing works.
-    if (isLocal && protocol !== 'file:' && port && port !== '80' && port !== '443' && port !== '8000') {
-        return `${window.location.protocol}//${window.location.hostname}:8000/api.php`;
+    // Local development on static ports (e.g. Live Server 5500, PHP server 8000):
+    // Always use an absolute URL so subdirectory pages resolve correctly.
+    if (isLocal && protocol !== 'file:' && port && port !== '80' && port !== '443') {
+        const phpPort = port === '8000' ? port : '8000';
+        return `${window.location.protocol}//${window.location.hostname}:${phpPort}/api.php`;
     }
 
     if (protocol === 'file:') {
         return 'http://127.0.0.1:8000/api.php';
     }
 
-    // UAT/Local development: ALWAYS use local api.php
-    // Never reference promanaged.com in development
-    return 'api.php';
+    // All other environments: derive from getBaseURL() so the install path
+    // is defined in one place only. Works on any domain or subdirectory.
+    return `${getBaseURL()}api.php`;
 };
 
 // Dedicated recommendation endpoint URL
 const getRecommendationApiUrl = () => {
-    // Production environment: same server path
-    if (isProduction) {
-        return '/motorlink/recommendation_engine.php';
-    }
-
-    // Local development with static servers should target local PHP server
-    if (isLocal && protocol !== 'file:' && port && port !== '80' && port !== '443' && port !== '8000') {
-        return `${window.location.protocol}//${window.location.hostname}:8000/recommendation_engine.php`;
+    // Local development on static ports:
+    if (isLocal && protocol !== 'file:' && port && port !== '80' && port !== '443') {
+        const phpPort = port === '8000' ? port : '8000';
+        return `${window.location.protocol}//${window.location.hostname}:${phpPort}/recommendation_engine.php`;
     }
 
     if (protocol === 'file:') {
         return 'http://127.0.0.1:8000/recommendation_engine.php';
     }
 
-    // UAT/Local development: relative path
-    return 'recommendation_engine.php';
+    // All other environments: single source of truth via getBaseURL().
+    return `${getBaseURL()}recommendation_engine.php`;
 };
 
 // Determine the base URL
@@ -515,6 +507,18 @@ function applyBrandingToDocument() {
             }
         }
     });
+
+    // Inject DB-driven tagline / description into tagged elements
+    if (CONFIG.SITE_TAGLINE) {
+        document.querySelectorAll('[data-site-tagline]').forEach((el) => {
+            el.textContent = CONFIG.SITE_TAGLINE;
+        });
+    }
+    if (CONFIG.SITE_DESCRIPTION) {
+        document.querySelectorAll('[data-site-description]').forEach((el) => {
+            el.textContent = CONFIG.SITE_DESCRIPTION;
+        });
+    }
 
     applyRuntimeTextToBody(document.body);
 }

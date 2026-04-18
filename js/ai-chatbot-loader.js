@@ -106,14 +106,14 @@
                             id="aiChatInput" 
                             placeholder="Ask me anything..." 
                             rows="1"
-                            maxlength="500"
+                            maxlength="1500"
                         ></textarea>
                         <button class="ai-chat-send-btn" id="aiChatSendBtn">
                             <i class="fas fa-paper-plane"></i>
                         </button>
                     </div>
                     <div class="ai-chat-char-count">
-                        <span id="aiChatCharCount">0</span>/500
+                        <span id="aiChatCharCount">0</span>/1500
                     </div>
                 </div>
             </div>

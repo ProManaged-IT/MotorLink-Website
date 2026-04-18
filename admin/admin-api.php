@@ -148,6 +148,18 @@ try {
         case 'approve_car':
             handleApproveCar($db);
             break;
+
+        case 'bulk_approve_cars':
+            handleBulkApproveCars($db);
+            break;
+
+        case 'bulk_update_cars':
+            handleBulkUpdateCars($db);
+            break;
+
+        case 'bulk_delete_cars':
+            handleBulkDeleteCars($db);
+            break;
             
         case 'get_users':
             getUsers($db);
@@ -165,8 +177,32 @@ try {
             approveGarage($db);
             break;
             
+        case 'bulk_approve_garages':
+            handleBulkApproveGarages($db);
+            break;
+
+        case 'bulk_update_garages':
+            handleBulkUpdateGarages($db);
+            break;
+
+        case 'bulk_delete_garages':
+            handleBulkDeleteGarages($db);
+            break;
+            
         case 'approve_dealer':
             approveDealer($db);
+            break;
+
+        case 'bulk_approve_dealers':
+            handleBulkApproveDealers($db);
+            break;
+
+        case 'bulk_update_dealers':
+            handleBulkUpdateDealers($db);
+            break;
+
+        case 'bulk_delete_dealers':
+            handleBulkDeleteDealers($db);
             break;
             
         case 'approve_car_hire':
@@ -1774,6 +1810,137 @@ function approveDealer($db) {
     }
 }
 
+function handleBulkApproveGarages($db) {
+    requireAdmin();
+    $input   = json_decode(file_get_contents('php://input'), true);
+    $ids     = array_filter(array_map('intval', (array)($input['garage_ids'] ?? [])));
+    $action  = $input['action'] ?? '';
+    if (empty($ids) || !in_array($action, ['approve', 'reject'], true)) {
+        echo json_encode(['success' => false, 'message' => 'garage_ids and action (approve|reject) required']);
+        return;
+    }
+    $newStatus      = $action === 'approve' ? 'active'    : 'suspended';
+    $approvalStatus = $action === 'approve' ? 'approved'  : 'denied';
+    $adminId        = $_SESSION['admin_id'] ?? null;
+    try {
+        $ph   = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE garages SET status = ?, approved_by = ?, approved_at = NOW(), updated_at = NOW() WHERE id IN ($ph)");
+        $stmt->execute(array_merge([$newStatus, $adminId], $ids));
+        $count = $stmt->rowCount();
+        echo json_encode(['success' => true, 'message' => ucfirst($action) . "d $count garage(s)", 'count' => $count]);
+    } catch (Exception $e) {
+        error_log("handleBulkApproveGarages: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Bulk action failed: ' . $e->getMessage()]);
+    }
+}
+
+function handleBulkUpdateGarages($db) {
+    requireAdmin();
+    $input   = json_decode(file_get_contents('php://input'), true);
+    $ids     = array_filter(array_map('intval', (array)($input['garage_ids'] ?? [])));
+    $status  = $input['status'] ?? '';
+    $allowed = ['active', 'suspended', 'pending_approval'];
+    if (empty($ids) || !in_array($status, $allowed, true)) {
+        echo json_encode(['success' => false, 'message' => 'garage_ids and a valid status required']);
+        return;
+    }
+    try {
+        $ph   = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE garages SET status = ?, updated_at = NOW() WHERE id IN ($ph)");
+        $stmt->execute(array_merge([$status], $ids));
+        $count = $stmt->rowCount();
+        echo json_encode(['success' => true, 'message' => "Updated $count garage(s) to '$status'", 'count' => $count]);
+    } catch (Exception $e) {
+        error_log("handleBulkUpdateGarages: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Bulk update failed: ' . $e->getMessage()]);
+    }
+}
+
+function handleBulkDeleteGarages($db) {
+    requireAdmin();
+    $input = json_decode(file_get_contents('php://input'), true);
+    $ids   = array_filter(array_map('intval', (array)($input['garage_ids'] ?? [])));
+    if (empty($ids)) {
+        echo json_encode(['success' => false, 'message' => 'garage_ids required']);
+        return;
+    }
+    try {
+        $ph   = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE garages SET status = 'deleted', updated_at = NOW() WHERE id IN ($ph)");
+        $stmt->execute($ids);
+        $count = $stmt->rowCount();
+        echo json_encode(['success' => true, 'message' => "Deleted $count garage(s)", 'count' => $count]);
+    } catch (Exception $e) {
+        error_log("handleBulkDeleteGarages: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Bulk delete failed: ' . $e->getMessage()]);
+    }
+}
+
+function handleBulkApproveDealers($db) {
+    requireAdmin();
+    $input   = json_decode(file_get_contents('php://input'), true);
+    $ids     = array_filter(array_map('intval', (array)($input['dealer_ids'] ?? [])));
+    $action  = $input['action'] ?? '';
+    if (empty($ids) || !in_array($action, ['approve', 'reject'], true)) {
+        echo json_encode(['success' => false, 'message' => 'dealer_ids and action (approve|reject) required']);
+        return;
+    }
+    $newStatus = $action === 'approve' ? 'active' : 'suspended';
+    $adminId   = $_SESSION['admin_id'] ?? null;
+    try {
+        $ph   = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE car_dealers SET status = ?, approved_by = ?, approved_at = NOW(), updated_at = NOW() WHERE id IN ($ph)");
+        $stmt->execute(array_merge([$newStatus, $adminId], $ids));
+        $count = $stmt->rowCount();
+        echo json_encode(['success' => true, 'message' => ucfirst($action) . "d $count dealer(s)", 'count' => $count]);
+    } catch (Exception $e) {
+        error_log("handleBulkApproveDealers: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Bulk action failed: ' . $e->getMessage()]);
+    }
+}
+
+function handleBulkUpdateDealers($db) {
+    requireAdmin();
+    $input   = json_decode(file_get_contents('php://input'), true);
+    $ids     = array_filter(array_map('intval', (array)($input['dealer_ids'] ?? [])));
+    $status  = $input['status'] ?? '';
+    $allowed = ['active', 'suspended', 'pending_approval'];
+    if (empty($ids) || !in_array($status, $allowed, true)) {
+        echo json_encode(['success' => false, 'message' => 'dealer_ids and a valid status required']);
+        return;
+    }
+    try {
+        $ph   = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE car_dealers SET status = ?, updated_at = NOW() WHERE id IN ($ph)");
+        $stmt->execute(array_merge([$status], $ids));
+        $count = $stmt->rowCount();
+        echo json_encode(['success' => true, 'message' => "Updated $count dealer(s) to '$status'", 'count' => $count]);
+    } catch (Exception $e) {
+        error_log("handleBulkUpdateDealers: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Bulk update failed: ' . $e->getMessage()]);
+    }
+}
+
+function handleBulkDeleteDealers($db) {
+    requireAdmin();
+    $input = json_decode(file_get_contents('php://input'), true);
+    $ids   = array_filter(array_map('intval', (array)($input['dealer_ids'] ?? [])));
+    if (empty($ids)) {
+        echo json_encode(['success' => false, 'message' => 'dealer_ids required']);
+        return;
+    }
+    try {
+        $ph   = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare("UPDATE car_dealers SET status = 'deleted', updated_at = NOW() WHERE id IN ($ph)");
+        $stmt->execute($ids);
+        $count = $stmt->rowCount();
+        echo json_encode(['success' => true, 'message' => "Deleted $count dealer(s)", 'count' => $count]);
+    } catch (Exception $e) {
+        error_log("handleBulkDeleteDealers: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Bulk delete failed: ' . $e->getMessage()]);
+    }
+}
+
 /**
  * Approve or reject a car hire company
  */
@@ -3101,6 +3268,90 @@ function handleDeleteCar($db) {
         error_log("handleDeleteCar error: " . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to delete car']);
         exit();
+    }
+}
+
+function handleBulkApproveCars($db) {
+    requireAdmin();
+    $input = json_decode(file_get_contents('php://input'), true);
+    $carIds = array_filter(array_map('intval', (array)($input['car_ids'] ?? [])));
+    $action = $input['action'] ?? '';
+
+    if (empty($carIds) || !in_array($action, ['approve', 'reject'], true)) {
+        echo json_encode(['success' => false, 'message' => 'car_ids and action (approve|reject) required']);
+        return;
+    }
+
+    $newStatus     = $action === 'approve' ? 'active'    : 'rejected';
+    $approvalStatus = $action === 'approve' ? 'approved'  : 'denied';
+    $adminId       = $_SESSION['admin_id'] ?? null;
+
+    try {
+        $placeholders = implode(',', array_fill(0, count($carIds), '?'));
+        $params = array_merge([$newStatus, $approvalStatus, $adminId], $carIds);
+        $stmt = $db->prepare(
+            "UPDATE car_listings
+             SET status = ?, approval_status = ?, approved_by = ?, updated_at = NOW()
+             WHERE id IN ($placeholders)"
+        );
+        $stmt->execute($params);
+        $count = $stmt->rowCount();
+        echo json_encode(['success' => true, 'message' => ucfirst($action) . "d $count listing(s) successfully", 'count' => $count]);
+    } catch (Exception $e) {
+        error_log("handleBulkApproveCars error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Bulk action failed: ' . $e->getMessage()]);
+    }
+}
+
+function handleBulkUpdateCars($db) {
+    requireAdmin();
+    $input  = json_decode(file_get_contents('php://input'), true);
+    $carIds = array_filter(array_map('intval', (array)($input['car_ids'] ?? [])));
+    $status = $input['status'] ?? '';
+    $allowed = ['active', 'suspended', 'pending_approval'];
+
+    if (empty($carIds) || !in_array($status, $allowed, true)) {
+        echo json_encode(['success' => false, 'message' => 'car_ids and a valid status required']);
+        return;
+    }
+
+    try {
+        $placeholders = implode(',', array_fill(0, count($carIds), '?'));
+        $params = array_merge([$status], $carIds);
+        $stmt = $db->prepare(
+            "UPDATE car_listings SET status = ?, updated_at = NOW() WHERE id IN ($placeholders)"
+        );
+        $stmt->execute($params);
+        $count = $stmt->rowCount();
+        echo json_encode(['success' => true, 'message' => "Updated $count listing(s) to '$status'", 'count' => $count]);
+    } catch (Exception $e) {
+        error_log("handleBulkUpdateCars error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Bulk update failed: ' . $e->getMessage()]);
+    }
+}
+
+function handleBulkDeleteCars($db) {
+    requireAdmin();
+    $input  = json_decode(file_get_contents('php://input'), true);
+    $carIds = array_filter(array_map('intval', (array)($input['car_ids'] ?? [])));
+
+    if (empty($carIds)) {
+        echo json_encode(['success' => false, 'message' => 'car_ids required']);
+        return;
+    }
+
+    try {
+        $placeholders = implode(',', array_fill(0, count($carIds), '?'));
+        $params = $carIds;
+        $stmt = $db->prepare(
+            "UPDATE car_listings SET status = 'deleted', updated_at = NOW() WHERE id IN ($placeholders)"
+        );
+        $stmt->execute($params);
+        $count = $stmt->rowCount();
+        echo json_encode(['success' => true, 'message' => "Deleted $count listing(s) successfully", 'count' => $count]);
+    } catch (Exception $e) {
+        error_log("handleBulkDeleteCars error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Bulk delete failed: ' . $e->getMessage()]);
     }
 }
 
@@ -5861,7 +6112,7 @@ function handleGetAIChatSettings($db) {
         $db->exec("CREATE TABLE IF NOT EXISTS ai_chat_settings (
             id INT PRIMARY KEY DEFAULT 1,
             ai_provider VARCHAR(20) DEFAULT 'openai',
-            model_name VARCHAR(50) DEFAULT 'gpt-4o',
+            model_name VARCHAR(120) DEFAULT 'gpt-4o',
             openai_enabled TINYINT(1) DEFAULT 1,
             deepseek_enabled TINYINT(1) DEFAULT 1,
             qwen_enabled TINYINT(1) DEFAULT 1,
@@ -5909,6 +6160,11 @@ function handleGetAIChatSettings($db) {
         }
         try {
             $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN glm_enabled TINYINT(1) DEFAULT 1");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
+            $db->exec("ALTER TABLE ai_chat_settings MODIFY COLUMN model_name VARCHAR(120) DEFAULT 'gpt-4o'");
         } catch (Exception $e) {
             // ignore
         }
@@ -5963,8 +6219,8 @@ function handleSaveAIChatSettings($db) {
         if (!in_array($aiProvider, $allowedProviders, true)) {
             throw new Exception('Invalid AI provider. Allowed providers: ' . implode(', ', $allowedProviders));
         }
-        if ($modelName === '' || strlen($modelName) > 50 || !preg_match('/^[a-zA-Z0-9._:-]+$/', $modelName)) {
-            throw new Exception('Invalid model name format. Use letters, numbers, dot, underscore, dash, and colon only (max 50 chars).');
+        if ($modelName === '' || strlen($modelName) > 120 || !preg_match('/^[a-zA-Z0-9._:-]+$/', $modelName)) {
+            throw new Exception('Invalid model name format. Use letters, numbers, dot, underscore, dash, and colon only (max 120 chars).');
         }
         
         // Validate
@@ -6003,6 +6259,11 @@ function handleSaveAIChatSettings($db) {
         }
         try {
             $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN glm_enabled TINYINT(1) DEFAULT 1");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
+            $db->exec("ALTER TABLE ai_chat_settings MODIFY COLUMN model_name VARCHAR(120) DEFAULT 'gpt-4o'");
         } catch (Exception $e) {
             // ignore
         }
@@ -6691,7 +6952,7 @@ function handleSetAIChatEnabled($db) {
         $db->exec("CREATE TABLE IF NOT EXISTS ai_chat_settings (
             id INT PRIMARY KEY DEFAULT 1,
             ai_provider VARCHAR(20) DEFAULT 'openai',
-            model_name VARCHAR(50) DEFAULT 'gpt-4o',
+            model_name VARCHAR(120) DEFAULT 'gpt-4o',
             openai_enabled TINYINT(1) DEFAULT 1,
             deepseek_enabled TINYINT(1) DEFAULT 1,
             qwen_enabled TINYINT(1) DEFAULT 1,

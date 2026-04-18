@@ -17,6 +17,48 @@ function outputPlaceholderImage(): void
     echo $svg;
 }
 
+function detectImageMimeType(string $filePath): string
+{
+    if (function_exists('mime_content_type')) {
+        $detected = @mime_content_type($filePath);
+        if (is_string($detected) && $detected !== '') {
+            return $detected;
+        }
+    }
+
+    if (function_exists('finfo_open') && defined('FILEINFO_MIME_TYPE')) {
+        $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo !== false) {
+            $detected = @finfo_file($finfo, $filePath);
+            @finfo_close($finfo);
+            if (is_string($detected) && $detected !== '') {
+                return $detected;
+            }
+        }
+    }
+
+    if (function_exists('getimagesize')) {
+        $info = @getimagesize($filePath);
+        if (is_array($info) && !empty($info['mime'])) {
+            return (string)$info['mime'];
+        }
+    }
+
+    $ext = strtolower((string)pathinfo($filePath, PATHINFO_EXTENSION));
+    $byExtension = [
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+        'bmp' => 'image/bmp',
+        'svg' => 'image/svg+xml',
+        'avif' => 'image/avif'
+    ];
+
+    return $byExtension[$ext] ?? 'application/octet-stream';
+}
+
 $rawPath = isset($_GET['path']) ? trim((string)$_GET['path']) : '';
 if ($rawPath === '') {
     outputPlaceholderImage();
@@ -70,7 +112,7 @@ if ($targetRealPath === false || !str_starts_with($targetRealPath, $uploadsDir) 
     exit;
 }
 
-$mimeType = mime_content_type($targetRealPath) ?: 'application/octet-stream';
+$mimeType = detectImageMimeType($targetRealPath);
 if (!str_starts_with($mimeType, 'image/')) {
     outputPlaceholderImage();
     exit;

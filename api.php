@@ -1464,6 +1464,12 @@ try {
             $usage = getUserAIChatUsageRemaining($db, $user['id']);
             sendSuccess(['usage' => $usage]);
             break;
+        case 'get_ai_chat_session_history':
+            requireAuth();
+            require_once __DIR__ . '/api-common.php';
+            require_once __DIR__ . '/ai-car-chat-api.php';
+            handleGetAIChatSessionHistory($db);
+            break;
         case 'ai_chat_feedback':
             require_once __DIR__ . '/api-common.php';
             require_once __DIR__ . '/ai-car-chat-api.php';
@@ -1924,7 +1930,7 @@ function getListings($db) {
         // Seller type filter - filter by user_type (private seller vs dealer)
         if (!empty($_GET['seller_type']) && $_GET['seller_type'] !== 'all') {
             if ($_GET['seller_type'] === 'dealer') {
-                $whereConditions[] = "EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id AND u.user_type = 'dealer')";
+                $whereConditions[] = "EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id AND u.user_type IN ('dealer', 'garage', 'car_hire'))";
             } elseif ($_GET['seller_type'] === 'private') {
                 $whereConditions[] = "EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id AND (u.user_type = 'individual' OR u.user_type IS NULL))";
             }

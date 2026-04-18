@@ -408,8 +408,16 @@ class MotorLink {
     
     setupFilters() {
         const filterInputs = document.querySelectorAll('.filter-select, .filter-input');
+        const filterForm = document.getElementById('filterForm') || document.querySelector('.filter-form');
         const sortSelect = document.querySelector('.sort-select');
         const findNearbyBtn = document.getElementById('findNearbyBtn');
+
+        if (filterForm) {
+            filterForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.applyFilters();
+            });
+        }
         
         filterInputs.forEach(input => {
             input.addEventListener('change', () => {
@@ -1630,11 +1638,17 @@ class MotorLink {
                 // Sort by distance if "nearest" is selected
                 const sortSelect = document.querySelector('.sort-select');
                 if (sortSelect && sortSelect.value === 'nearest') {
-                    listings.sort((a, b) => {
-                        const distA = a.distance !== undefined ? a.distance : 999999;
-                        const distB = b.distance !== undefined ? b.distance : 999999;
-                        return distA - distB;
-                    });
+                    const hasDistanceData = listings.some(item => item.distance !== undefined);
+                    if (hasDistanceData) {
+                        listings.sort((a, b) => {
+                            const distA = a.distance !== undefined ? a.distance : 999999;
+                            const distB = b.distance !== undefined ? b.distance : 999999;
+                            return distA - distB;
+                        });
+                    } else {
+                        sortSelect.value = 'newest';
+                        this.showToast('Nearest sort is unavailable right now. Showing newest listings instead.', 'info');
+                    }
                 }
             }
             
@@ -1656,6 +1670,22 @@ class MotorLink {
         
         createListingHTML(listing) {
             const inlinePlaceholder = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22 viewBox=%220 0 400 300%22%3E%3Crect width=%22400%22 height=%22300%22 fill=%22%23f3f4f6%22/%3E%3Ctext x=%22200%22 y=%22150%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2216%22 fill=%226b7280%22%3EImage unavailable%3C/text%3E%3C/svg%3E';
+            const rawTitle = String(listing.title || [listing.year, listing.make_name, listing.model_name].filter(Boolean).join(' ') || 'Vehicle Listing').trim();
+            const escapedTitle = this.escapeHtml(rawTitle);
+            const escapedTitleForJs = rawTitle.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const locationText = this.escapeHtml(listing.location_name || 'Location not specified');
+            const yearText = listing.year || 'N/A';
+            const fuelTypeText = listing.fuel_type ? this.capitalize(listing.fuel_type) : 'N/A';
+            const listingDataAttr = encodeURIComponent(JSON.stringify({
+                id: listing.id,
+                make_name: listing.make_name || '',
+                model_name: listing.model_name || '',
+                year: listing.year || '',
+                price: listing.price || '',
+                fuel_type: listing.fuel_type || '',
+                transmission: listing.transmission || ''
+            }));
+
             // Check for is_featured and is_premium flags
             const isFeatured = listing.is_featured == 1;
             const isPremium = listing.is_premium == 1;
@@ -1668,8 +1698,6 @@ class MotorLink {
             if (isFeatured) {
                 badgeHTML += '<div class="car-badge featured"><i class="fas fa-star"></i> Featured</div>';
             }
-
-            const negotiableText = listing.negotiable == 1 ? '' : '';
 
             // Build images array for carousel - featured image first
             let images = [];
@@ -1722,7 +1750,7 @@ class MotorLink {
             // Show image count if there are multiple images (either loaded or indicated by API)
             const showImageCount = hasMultipleImages || totalImageCount > 1;
             const imageCountBadge = showImageCount
-                ? `<div class="image-count" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${this.escapeHtml(listing.title).replace(/'/g, "\\'")}')"><i class="fas fa-images"></i> ${totalImageCount}</div>`
+                ? `<div class="image-count" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${escapedTitleForJs}')"><i class="fas fa-images"></i> ${totalImageCount}</div>`
                 : '';
 
             // Thumbnail row: up to 3 extra images under the featured image
@@ -1731,8 +1759,8 @@ class MotorLink {
             const galleryStripHTML = thumbs.length > 0 ? `
                 <div class="car-gallery-strip thumb-count-${thumbs.length}">
                     ${thumbs.map((img, idx) => `
-                        <div class="gallery-thumb" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${this.escapeHtml(listing.title).replace(/'/g, "\\'")}')">
-                            <img src="${img}" alt="${this.escapeHtml(listing.title)}" loading="lazy"
+                        <div class="gallery-thumb" onclick="event.stopPropagation(); openImageGallery(${listing.id}, '${escapedTitleForJs}')">
+                            <img src="${img}" alt="${escapedTitle}" loading="lazy"
                                  onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
                             ${remainingThumbCount > 0 && idx === thumbs.length - 1 ? `<span class="gallery-thumb-more">+${remainingThumbCount}</span>` : ''}
                         </div>
@@ -1745,23 +1773,14 @@ class MotorLink {
             // Individual users are displayed as "Private Seller"
             const userType = listing.user_type || listing.seller_type || 'individual';
             const isBusinessSeller = userType === 'dealer' || userType === 'garage' || userType === 'car_hire';
-            const sellerType = isBusinessSeller ? 'dealer' : 'private';
             const sellerTypeText = isBusinessSeller ? 'Dealer' : 'Private Seller';
             const sellerTypeIcon = isBusinessSeller ? 'fa-building' : 'fa-user';
 
             return `
-                <div class="car-card" data-id="${listing.id}" data-listing='${JSON.stringify({
-                    id: listing.id,
-                    make_name: listing.make_name,
-                    model_name: listing.model_name,
-                    year: listing.year,
-                    price: listing.price,
-                    fuel_type: listing.fuel_type,
-                    transmission: listing.transmission
-                })}'>
+                <div class="car-card" data-id="${listing.id}" data-listing="${listingDataAttr}">
                     <div class="car-gallery">
                         <div class="car-gallery-main">
-                            <img src="${images[0]}" alt="${this.escapeHtml(listing.title)}"
+                            <img src="${images[0]}" alt="${escapedTitle}"
                                  onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
                             ${badgeHTML}
                             ${imageCountBadge}
@@ -1769,7 +1788,7 @@ class MotorLink {
                         ${galleryStripHTML}
                     </div>
                     <div class="car-info">
-                        <h3 class="car-title">${this.escapeHtml(listing.title)}</h3>
+                        <h3 class="car-title">${escapedTitle}</h3>
                         <div class="car-price-section">
                             <div class="car-price">
                                 <span class="currency">${CONFIG.CURRENCY_CODE || 'MWK'}</span>
@@ -1784,11 +1803,11 @@ class MotorLink {
                         <div class="car-details">
                             <div class="car-detail">
                                 <i class="fas fa-calendar"></i>
-                                <span>${listing.year}</span>
+                                <span>${yearText}</span>
                             </div>
                             <div class="car-detail">
                                 <i class="fas fa-map-marker-alt"></i>
-                                <span>${this.escapeHtml(listing.location_name)}</span>
+                                <span>${locationText}</span>
                             </div>
                             ${listing.distance !== undefined ? `
                             <div class="car-detail distance-detail">
@@ -1804,7 +1823,7 @@ class MotorLink {
                             ` : ''}
                             <div class="car-detail">
                                 <i class="fas fa-gas-pump"></i>
-                                <span>${this.capitalize(listing.fuel_type)}</span>
+                                <span>${fuelTypeText}</span>
                             </div>
                         </div>
                         <div class="car-meta">
@@ -1826,7 +1845,8 @@ class MotorLink {
                     
                     // Track the view for recommendation engine
                     try {
-                        const listingData = JSON.parse(card.dataset.listing || '{}');
+                        const listingPayload = card.dataset.listing ? decodeURIComponent(card.dataset.listing) : '{}';
+                        const listingData = JSON.parse(listingPayload);
                         if (listingData && listingData.id) {
                             this.trackCarView(listingData);
                         }
@@ -1861,20 +1881,24 @@ class MotorLink {
                 filters.category = activeTab.dataset.category;
             }
             
-            // Search term - get from ALL search inputs and use the one with value
-            const searchInputs = document.querySelectorAll('.search-input');
-            let searchValue = '';
-            searchInputs.forEach(input => {
-                if (input.value.trim()) {
-                    searchValue = input.value.trim();
-                }
-            });
+            // Search term - keep both search bars synchronized and resolve to one value
+            const searchInputs = Array.from(document.querySelectorAll('.search-input'));
+            const primarySearchValue = document.querySelector('.listings-search .search-input')?.value.trim() || '';
+            const sidebarSearchValue = document.querySelector('.sidebar .search-input')?.value.trim() || '';
+            const fallbackSearchValue = searchInputs.map(input => input.value.trim()).find(Boolean) || '';
+            const searchValue = primarySearchValue || sidebarSearchValue || fallbackSearchValue;
+
             if (searchValue) {
                 filters.search = searchValue;
+                searchInputs.forEach(input => {
+                    if (input.value.trim() !== searchValue) {
+                        input.value = searchValue;
+                    }
+                });
             }
             
-            // Filter inputs
-            const filterInputs = document.querySelectorAll('.filter-select, .filter-input');
+            // Filter inputs (search is already handled above)
+            const filterInputs = document.querySelectorAll('.filter-select, .filter-input:not([name="search"])');
             filterInputs.forEach(input => {
                 if (input.value && input.name) {
                     filters[input.name] = input.value;
@@ -1908,6 +1932,24 @@ class MotorLink {
             filterInputs.forEach(input => {
                 input.value = '';
             });
+
+            // Clear all search bars (sidebar + top search)
+            const searchInputs = document.querySelectorAll('.search-input');
+            searchInputs.forEach(input => {
+                input.value = '';
+            });
+
+            // Reset sort to default and hide nearby helper button
+            const sortSelect = document.querySelector('.sort-select');
+            if (sortSelect) {
+                sortSelect.value = 'newest';
+            }
+            const findNearbyBtn = document.getElementById('findNearbyBtn');
+            if (findNearbyBtn) {
+                findNearbyBtn.style.display = 'none';
+                findNearbyBtn.disabled = false;
+                findNearbyBtn.innerHTML = '<i class="fas fa-location-arrow"></i> Find Nearby';
+            }
             
             // Reset category tabs
             const tabs = document.querySelectorAll('.category-tab');
@@ -1916,15 +1958,9 @@ class MotorLink {
             if (allTab) {
                 allTab.classList.add('active');
             }
-            
-            // Clear search
-            const searchInput = document.querySelector('.search-input');
-            if (searchInput) {
-                searchInput.value = '';
-            }
-            
+
             this.filters = {};
-            this.loadListings();
+            this.applyFilters();
             
             this.showToast('Filters cleared!', 'success');
         }
@@ -4907,14 +4943,14 @@ async function loadAIChatbot() {
                             id="aiChatInput" 
                             placeholder="Ask me anything..." 
                             rows="1"
-                            maxlength="500"
+                            maxlength="1500"
                         ></textarea>
                         <button class="ai-chat-send-btn" id="aiChatSendBtn">
                             <i class="fas fa-paper-plane"></i>
                         </button>
                     </div>
                     <div class="ai-chat-char-count">
-                        <span id="aiChatCharCount">0</span>/500
+                        <span id="aiChatCharCount">0</span>/1500
                     </div>
                 </div>
             </div>

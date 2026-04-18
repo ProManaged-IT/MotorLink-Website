@@ -18,6 +18,10 @@ class AICarChat {
         this.currentRetryTimeout = null;
         this.pendingMessage = null;
         this._lastDragWasMove = false;
+        this.storagePrefix = 'ai_chat';
+        this.storageVersion = 2;
+        this._conversationSaveTimeout = null;
+        this._persistEventsBound = false;
         this.init();
     }
 
@@ -25,7 +29,7 @@ class AICarChat {
         await this.checkAuth();
         this.bindEvents();
         this.setupWidgetVisibility();
-        this.restoreConversation(); // Restore chat across page navigations
+        await this.restoreConversation(); // Restore chat across page navigations/reloads
         await this.loadUsageIndicator();
     }
 
@@ -53,12 +57,120 @@ class AICarChat {
     /**
      * Save conversation to sessionStorage so it persists across page navigations
      */
-    saveConversation() {
+    getStorageKey(suffix, useLegacyFormat = false) {
+        if (useLegacyFormat) {
+            return `${this.storagePrefix}_${suffix}`;
+        }
+
+        const userId = this.currentUser && this.currentUser.id ? String(this.currentUser.id) : 'anonymous';
+        return `${this.storagePrefix}_${userId}_${suffix}`;
+    }
+
+    getDismissedStorageKeys() {
+        return [this.getStorageKey('dismissed'), 'ai_chat_dismissed'];
+    }
+
+    isChatDismissed() {
+        return this.getDismissedStorageKeys().some((key) => sessionStorage.getItem(key) === '1');
+    }
+
+    getPositionStorageKeys(preferFabPosition = false) {
+        return preferFabPosition
+            ? [this.getStorageKey('fab_pos'), this.getStorageKey('chat_pos'), 'ai_fab_pos', 'ai_chat_pos']
+            : [this.getStorageKey('chat_pos'), this.getStorageKey('fab_pos'), 'ai_chat_pos', 'ai_fab_pos'];
+    }
+
+    serializeMessagesHtml(messagesContainer) {
+        if (!messagesContainer) {
+            return '';
+        }
+
+        const clone = messagesContainer.cloneNode(true);
+        clone.querySelectorAll('#aiChatTypingIndicator, .ai-chat-error').forEach((element) => element.remove());
+        return clone.innerHTML;
+    }
+
+    queueConversationSave(delay = 120) {
+        if (this._conversationSaveTimeout) {
+            clearTimeout(this._conversationSaveTimeout);
+        }
+
+        this._conversationSaveTimeout = setTimeout(() => {
+            this._conversationSaveTimeout = null;
+            this.saveConversation();
+        }, delay);
+    }
+
+    getLegacyConversationState() {
         try {
-            sessionStorage.setItem('ai_chat_history', JSON.stringify(this.conversationHistory.slice(-20)));
+            const savedHistory = sessionStorage.getItem('ai_chat_history');
+            const savedHTML = sessionStorage.getItem('ai_chat_messages_html');
+            const history = savedHistory ? JSON.parse(savedHistory) : [];
+
+            if (!Array.isArray(history) || history.length === 0) {
+                return null;
+            }
+
+            return {
+                version: 1,
+                history,
+                messagesHtml: savedHTML || '',
+                isMinimized: true,
+                isOpen: false,
+                dismissed: sessionStorage.getItem('ai_chat_dismissed') === '1',
+                draft: '',
+                scrollTop: null
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    getSavedConversationState() {
+        try {
+            const raw = sessionStorage.getItem(this.getStorageKey('state'));
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && Array.isArray(parsed.history)) {
+                    return parsed;
+                }
+            }
+        } catch (error) {
+            console.warn('Could not parse saved AI chat state:', error);
+        }
+
+        return this.getLegacyConversationState();
+    }
+
+    saveConversation() {
+        if (!this.currentUser) {
+            return;
+        }
+
+        try {
             const messagesContainer = document.getElementById('aiChatMessages');
-            if (messagesContainer) {
-                sessionStorage.setItem('ai_chat_messages_html', messagesContainer.innerHTML);
+            const input = document.getElementById('aiChatInput');
+            const widget = document.getElementById('aiCarChatWidget');
+            const dismissed = widget ? widget.classList.contains('dismissed') : this.isChatDismissed();
+
+            const state = {
+                version: this.storageVersion,
+                history: this.conversationHistory.slice(-20),
+                messagesHtml: this.serializeMessagesHtml(messagesContainer),
+                isMinimized: this.isMinimized,
+                isOpen: this.isOpen,
+                dismissed,
+                draft: input ? input.value : '',
+                scrollTop: messagesContainer ? messagesContainer.scrollTop : 0,
+                updatedAt: Date.now()
+            };
+
+            sessionStorage.setItem(this.getStorageKey('state'), JSON.stringify(state));
+
+            if (dismissed) {
+                sessionStorage.setItem(this.getStorageKey('dismissed'), '1');
+            } else {
+                sessionStorage.removeItem(this.getStorageKey('dismissed'));
             }
         } catch (e) { /* sessionStorage full or unavailable */ }
     }
@@ -66,28 +178,117 @@ class AICarChat {
     /**
      * Restore conversation from sessionStorage after page navigation
      */
-    restoreConversation() {
+    async restoreConversation() {
+        if (!this.currentUser) {
+            return;
+        }
+
         try {
-            const savedHistory = sessionStorage.getItem('ai_chat_history');
-            const savedHTML = sessionStorage.getItem('ai_chat_messages_html');
-            if (savedHistory && savedHTML) {
-                this.conversationHistory = JSON.parse(savedHistory);
-                const messagesContainer = document.getElementById('aiChatMessages');
-                if (messagesContainer && this.conversationHistory.length > 0) {
-                    messagesContainer.innerHTML = savedHTML;
-                    // Re-bind interactions on restored messages
-                    messagesContainer.querySelectorAll('.ai-chat-message').forEach(msg => {
-                        this.bindMessageInteractions(msg);
+            const savedState = this.getSavedConversationState();
+            const messagesContainer = document.getElementById('aiChatMessages');
+            const chatInput = document.getElementById('aiChatInput');
+
+            if (savedState && Array.isArray(savedState.history) && savedState.history.length > 0) {
+                this.conversationHistory = savedState.history;
+
+                if (messagesContainer) {
+                    if (typeof savedState.messagesHtml === 'string' && savedState.messagesHtml.trim() !== '') {
+                        messagesContainer.innerHTML = savedState.messagesHtml;
+                        messagesContainer.querySelectorAll('.ai-chat-message').forEach((msg) => {
+                            this.bindMessageInteractions(msg);
+                        });
+                    } else {
+                        this.renderConversationHistory(savedState.history);
+                    }
+                }
+
+                if (chatInput && typeof savedState.draft === 'string') {
+                    chatInput.value = savedState.draft;
+                    this.updateCharCount(chatInput.value.length);
+                    this.autoResizeTextarea(chatInput);
+                }
+
+                if (savedState.dismissed) {
+                    this.dismissChat(true);
+                } else if (savedState.isOpen) {
+                    this.openChat({ focus: false, saveState: false });
+                } else {
+                    this.minimizeChat({ saveState: false });
+                }
+
+                if (messagesContainer) {
+                    requestAnimationFrame(() => {
+                        if (typeof savedState.scrollTop === 'number' && Number.isFinite(savedState.scrollTop)) {
+                            const maxScrollTop = Math.max(0, messagesContainer.scrollHeight - messagesContainer.clientHeight);
+                            messagesContainer.scrollTop = Math.max(0, Math.min(savedState.scrollTop, maxScrollTop));
+                        } else {
+                            this.scrollToBottom();
+                        }
                     });
                 }
+
+                return;
+            }
+
+            const serverHistory = await this.fetchSessionHistoryFromServer();
+            if (messagesContainer && Array.isArray(serverHistory) && serverHistory.length > 0) {
+                this.conversationHistory = serverHistory;
+                this.renderConversationHistory(serverHistory);
+                this.scrollToBottom();
+                this.saveConversation();
             }
         } catch (e) { /* ignore parse errors */ }
     }
 
+    renderConversationHistory(history) {
+        const messagesContainer = document.getElementById('aiChatMessages');
+        if (!messagesContainer || !Array.isArray(history) || history.length === 0) {
+            return;
+        }
+
+        messagesContainer.innerHTML = '';
+        history.forEach((item) => {
+            if (!item || !item.role || !item.content) {
+                return;
+            }
+
+            this.addMessage(item.role, item.content, null, 0, null, null, {
+                persist: false,
+                scroll: false,
+                includeFeedback: false
+            });
+        });
+    }
+
+    async fetchSessionHistoryFromServer() {
+        if (!this.currentUser) {
+            return [];
+        }
+
+        try {
+            const response = await fetch(`${CONFIG.API_URL}?action=get_ai_chat_session_history`, {
+                headers: {
+                    'X-Skip-Global-Loader': '1'
+                },
+                credentials: 'include'
+            });
+            const data = await response.json();
+
+            if (!data.success || !Array.isArray(data.history)) {
+                return [];
+            }
+
+            return data.history.filter((item) => {
+                return item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string' && item.content.trim() !== '';
+            });
+        } catch (error) {
+            console.warn('Could not hydrate AI chat session history from server:', error);
+            return [];
+        }
+    }
+
     getSavedWidgetPosition(preferFabPosition = false) {
-        const keys = preferFabPosition
-            ? ['ai_fab_pos', 'ai_chat_pos']
-            : ['ai_chat_pos', 'ai_fab_pos'];
+        const keys = this.getPositionStorageKeys(preferFabPosition);
 
         for (const key of keys) {
             const raw = sessionStorage.getItem(key);
@@ -141,7 +342,7 @@ class AICarChat {
             // Show widget for logged-in users
             widget.style.display = 'block';
             // Check if dismissed this session
-            if (sessionStorage.getItem('ai_chat_dismissed') === '1') {
+            if (this.isChatDismissed()) {
                 widget.classList.add('dismissed');
                 widget.classList.add('loaded');
                 // Create restore button
@@ -219,11 +420,110 @@ class AICarChat {
             chatInput.addEventListener('input', (e) => {
                 this.updateCharCount(e.target.value.length);
                 this.autoResizeTextarea(e.target);
+                this.queueConversationSave();
             });
         }
 
         this.ensureInputStatusElement();
         this.initDrag();
+        this.bindPersistenceEvents();
+        this.bindScrollContainment();
+    }
+
+    bindPersistenceEvents() {
+        if (this._persistEventsBound) {
+            return;
+        }
+
+        const persist = () => this.saveConversation();
+
+        window.addEventListener('pagehide', persist);
+        window.addEventListener('beforeunload', persist);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                persist();
+            }
+        });
+
+        this._persistEventsBound = true;
+    }
+
+    bindScrollContainment() {
+        this.bindScrollableElement(document.getElementById('aiChatMessages'), true);
+        this.bindScrollableElement(document.getElementById('aiChatInput'), false);
+    }
+
+    bindScrollableElement(element, shouldTrackState) {
+        if (!element || element.dataset.aiScrollBound === '1') {
+            return;
+        }
+
+        element.dataset.aiScrollBound = '1';
+
+        const canElementScroll = () => element.scrollHeight > element.clientHeight + 1;
+        const isAtTop = () => element.scrollTop <= 0;
+        const isAtBottom = () => Math.ceil(element.scrollTop + element.clientHeight) >= element.scrollHeight;
+
+        element.addEventListener('wheel', (event) => {
+            if (!this.isOpen) {
+                return;
+            }
+
+            if (!canElementScroll()) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
+            const scrollingUp = event.deltaY < 0;
+            const scrollingDown = event.deltaY > 0;
+
+            if ((scrollingUp && isAtTop()) || (scrollingDown && isAtBottom())) {
+                event.preventDefault();
+            }
+
+            event.stopPropagation();
+
+            if (shouldTrackState) {
+                this.queueConversationSave(140);
+            }
+        }, { passive: false });
+
+        let touchStartY = 0;
+        element.addEventListener('touchstart', (event) => {
+            if (event.touches && event.touches[0]) {
+                touchStartY = event.touches[0].clientY;
+            }
+        }, { passive: true });
+
+        element.addEventListener('touchmove', (event) => {
+            if (!this.isOpen) {
+                return;
+            }
+
+            if (!canElementScroll()) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
+            const currentY = event.touches && event.touches[0] ? event.touches[0].clientY : touchStartY;
+            const deltaY = touchStartY - currentY;
+            const pullingDown = deltaY < 0;
+            const pushingUp = deltaY > 0;
+
+            if ((pullingDown && isAtTop()) || (pushingUp && isAtBottom())) {
+                event.preventDefault();
+            }
+
+            event.stopPropagation();
+        }, { passive: false });
+
+        if (shouldTrackState) {
+            element.addEventListener('scroll', () => {
+                this.queueConversationSave(160);
+            }, { passive: true });
+        }
     }
 
     initDrag() {
@@ -284,7 +584,7 @@ class AICarChat {
             widget.classList.remove('dragging');
 
             if (hasMoved) {
-                const key = fromFab ? 'ai_fab_pos' : 'ai_chat_pos';
+                const key = this.getStorageKey(fromFab ? 'fab_pos' : 'chat_pos');
                 sessionStorage.setItem(key, JSON.stringify({
                     left: parseInt(widget.style.left),
                     top:  parseInt(widget.style.top)
@@ -324,7 +624,8 @@ class AICarChat {
         }
     }
 
-    openChat() {
+    openChat(options = {}) {
+        const { focus = true, saveState = true } = options;
         const chatBody     = document.getElementById('aiChatBody');
         const widget       = document.getElementById('aiCarChatWidget');
         const minimizedBtn = document.getElementById('aiChatMinimized');
@@ -343,11 +644,16 @@ class AICarChat {
             this.isOpen = true;
 
             const chatInput = document.getElementById('aiChatInput');
-            if (chatInput) setTimeout(() => chatInput.focus(), 100);
+            if (chatInput && focus) setTimeout(() => chatInput.focus(), 100);
+
+            if (saveState) {
+                this.saveConversation();
+            }
         }
     }
 
-    minimizeChat() {
+    minimizeChat(options = {}) {
+        const { saveState = true } = options;
         const chatBody    = document.getElementById('aiChatBody');
         const widget      = document.getElementById('aiCarChatWidget');
         const minimizedBtn = document.getElementById('aiChatMinimized');
@@ -358,14 +664,18 @@ class AICarChat {
             if (minimizedBtn) minimizedBtn.style.display = 'flex';
             this.isMinimized = true;
             this.isOpen = false;
+
+            if (saveState) {
+                this.saveConversation();
+            }
         }
     }
 
-    dismissChat() {
+    dismissChat(skipSave = false) {
         const widget = document.getElementById('aiCarChatWidget');
         if (widget) {
             widget.classList.add('dismissed');
-            sessionStorage.setItem('ai_chat_dismissed', '1');
+            sessionStorage.setItem(this.getStorageKey('dismissed'), '1');
             // Create restore button
             if (!document.getElementById('aiChatRestore')) {
                 const restoreBtn = document.createElement('button');
@@ -376,6 +686,10 @@ class AICarChat {
                 restoreBtn.addEventListener('click', () => this.restoreChat());
                 document.body.appendChild(restoreBtn);
             }
+
+            if (!skipSave) {
+                this.saveConversation();
+            }
         }
     }
 
@@ -383,19 +697,25 @@ class AICarChat {
         const widget = document.getElementById('aiCarChatWidget');
         if (widget) {
             widget.classList.remove('dismissed');
-            sessionStorage.removeItem('ai_chat_dismissed');
+            sessionStorage.removeItem(this.getStorageKey('dismissed'));
         }
         const restoreBtn = document.getElementById('aiChatRestore');
         if (restoreBtn) restoreBtn.remove();
+        this.saveConversation();
     }
 
     updateCharCount(count) {
         const charCount = document.getElementById('aiChatCharCount');
         if (charCount) {
+            const input = document.getElementById('aiChatInput');
+            const maxLength = Math.max(1, Number(input?.getAttribute('maxlength') || 1500));
+            const warningThreshold = Math.floor(maxLength * 0.85);
+            const dangerThreshold = Math.floor(maxLength * 0.95);
+
             charCount.textContent = count;
-            if (count > 450) {
+            if (count >= dangerThreshold) {
                 charCount.style.color = '#f44336';
-            } else if (count > 400) {
+            } else if (count >= warningThreshold) {
                 charCount.style.color = '#ff9800';
             } else {
                 charCount.style.color = '#999';
@@ -542,7 +862,7 @@ class AICarChat {
                 signal: controller.signal,
                 body: JSON.stringify({
                     message: message,
-                    conversation_history: this.conversationHistory.slice(-10) // Last 10 messages for context
+                    conversation_history: this.conversationHistory.slice(-20) // Last 20 messages for context
                 })
             });
 
@@ -741,9 +1061,13 @@ class AICarChat {
         this.retryCount = 0;
     }
 
-    addMessage(role, content, searchResults = null, totalResults = 0, garages = null, carHireCompanies = null) {
+    addMessage(role, content, searchResults = null, totalResults = 0, garages = null, carHireCompanies = null, options = {}) {
         const messagesContainer = document.getElementById('aiChatMessages');
         if (!messagesContainer) return;
+
+        const persist = options.persist !== false;
+        const scroll = options.scroll !== false;
+        const includeFeedback = options.includeFeedback !== false;
 
         // Remove welcome message if present
         const welcome = messagesContainer.querySelector('.ai-chat-welcome');
@@ -786,7 +1110,7 @@ class AICarChat {
             <div class="ai-chat-message-content">
                 <div class="ai-chat-message-bubble">${formattedContent}</div>
                 <div class="ai-chat-message-time">${time}</div>
-                ${role === 'ai' ? this.buildFeedbackMarkup(feedbackId) : ''}
+                ${role === 'ai' && includeFeedback ? this.buildFeedbackMarkup(feedbackId) : ''}
             </div>
         `;
 
@@ -794,8 +1118,12 @@ class AICarChat {
 
         this.bindMessageInteractions(messageDiv);
         
-        this.scrollToBottom();
-        this.saveConversation();
+        if (scroll) {
+            this.scrollToBottom();
+        }
+        if (persist) {
+            this.saveConversation();
+        }
     }
 
     buildFeedbackMarkup(messageId) {
