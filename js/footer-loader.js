@@ -65,7 +65,7 @@ class FooterLoader {
                 footer_support_cookie_type: 'page'
             },
             contact: {
-                contact_phone: '+265 991 234 567',
+                contact_phone: '',
                 contact_email: supportEmail
             },
             social: {}

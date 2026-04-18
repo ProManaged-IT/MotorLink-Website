@@ -6749,7 +6749,7 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
                 $response .= ".\n\n";
 
                 if (!empty($company['daily_rate_from'])) {
-                    $response .= "\ud83d\udcb0 From \" . getChatCurrencyCode($db) . \" \" . number_format($company['daily_rate_from']) . \"/day\n";
+                    $response .= "💰 From " . getChatCurrencyCode($db) . " " . number_format($company['daily_rate_from']) . "/day\n";
                 }
                 if (!empty($company['phone'])) {
                     $response .= "📞 {$company['phone']}\n";

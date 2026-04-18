@@ -146,6 +146,7 @@ const DEFAULT_PUBLIC_SITE_CONFIG = {
     currency_symbol: 'LOCAL',
     market_scope_label: 'nationwide',
     contact_support_email: 'support@example.com',
+    phone_dial_code: '',
     fuel_price_country_slug: '',
     geo_region: '',
     geo_placename: '',
@@ -363,6 +364,7 @@ function applyRuntimeSiteConfig(runtimeConfig = {}) {
     CONFIG.CURRENCY_SYMBOL = merged.currency_symbol || merged.currency_code || DEFAULT_PUBLIC_SITE_CONFIG.currency_symbol;
     CONFIG.MARKET_SCOPE_LABEL = merged.market_scope_label || DEFAULT_PUBLIC_SITE_CONFIG.market_scope_label;
     CONFIG.SUPPORT_EMAIL = merged.contact_support_email || DEFAULT_PUBLIC_SITE_CONFIG.contact_support_email;
+    CONFIG.PHONE_DIAL_CODE = merged.phone_dial_code || '';
     CONFIG.FUEL_PRICE_COUNTRY_SLUG = merged.fuel_price_country_slug || '';
     CONFIG.GEO_REGION = merged.geo_region || '';
     CONFIG.GEO_PLACENAME = merged.geo_placename || '';
@@ -398,6 +400,7 @@ function getPublicSiteConfigSnapshot() {
         currency_symbol: CONFIG.CURRENCY_SYMBOL,
         market_scope_label: CONFIG.MARKET_SCOPE_LABEL,
         contact_support_email: CONFIG.SUPPORT_EMAIL,
+        phone_dial_code: CONFIG.PHONE_DIAL_CODE,
         fuel_price_country_slug: CONFIG.FUEL_PRICE_COUNTRY_SLUG,
         geo_region: CONFIG.GEO_REGION,
         geo_placename: CONFIG.GEO_PLACENAME,
@@ -535,6 +538,7 @@ const CONFIG = {
     CURRENCY_SYMBOL: DEFAULT_PUBLIC_SITE_CONFIG.currency_symbol,
     MARKET_SCOPE_LABEL: DEFAULT_PUBLIC_SITE_CONFIG.market_scope_label,
     SUPPORT_EMAIL: DEFAULT_PUBLIC_SITE_CONFIG.contact_support_email,
+    PHONE_DIAL_CODE: DEFAULT_PUBLIC_SITE_CONFIG.phone_dial_code,
     FUEL_PRICE_COUNTRY_SLUG: DEFAULT_PUBLIC_SITE_CONFIG.fuel_price_country_slug,
     GEO_REGION: DEFAULT_PUBLIC_SITE_CONFIG.geo_region,
     GEO_PLACENAME: DEFAULT_PUBLIC_SITE_CONFIG.geo_placename,

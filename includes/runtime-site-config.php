@@ -88,6 +88,7 @@ function motorlink_get_site_runtime_config_keys($includePrivate = false) {
         'icbm',
         'contact_email',
         'contact_support_email',
+        'phone_dial_code',
         'smtp_from_name'
     ];
 

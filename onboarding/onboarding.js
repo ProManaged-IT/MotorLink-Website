@@ -243,18 +243,31 @@ class OnboardingForm {
     saveProgress() {
         try {
             const form = document.getElementById('onboardingForm');
-            const formData = new FormData(form);
             const data = {};
-            
-            // Convert FormData to object
-            for (let [key, value] of formData.entries()) {
-                data[key] = value;
-            }
-            
-            // Save checkboxes separately (FormData doesn't include unchecked)
-            const checkboxes = form.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(cb => {
-                data[cb.name] = cb.checked;
+
+            // Persist each form control explicitly so grouped checkboxes/radios restore correctly.
+            const fields = form.querySelectorAll('input, select, textarea');
+            fields.forEach(field => {
+                if (!field.name) return;
+
+                if (field.type === 'checkbox') {
+                    if (!Array.isArray(data[field.name])) {
+                        data[field.name] = [];
+                    }
+                    if (field.checked) {
+                        data[field.name].push(field.value);
+                    }
+                    return;
+                }
+
+                if (field.type === 'radio') {
+                    if (field.checked) {
+                        data[field.name] = field.value;
+                    }
+                    return;
+                }
+
+                data[field.name] = field.value;
             });
             
             const progressData = {
@@ -292,14 +305,32 @@ class OnboardingForm {
                 const form = document.getElementById('onboardingForm');
                 
                 Object.keys(progressData.formData).forEach(key => {
-                    const element = form.elements[key];
-                    if (element) {
-                        if (element.type === 'checkbox') {
-                            element.checked = progressData.formData[key];
-                        } else {
-                            element.value = progressData.formData[key];
-                        }
+                    const elements = form.querySelectorAll(`[name="${key}"]`);
+                    if (!elements || elements.length === 0) {
+                        return;
                     }
+
+                    const first = elements[0];
+                    const savedValue = progressData.formData[key];
+
+                    if (first.type === 'checkbox') {
+                        const selectedValues = Array.isArray(savedValue)
+                            ? savedValue.map(String)
+                            : [];
+                        elements.forEach(el => {
+                            el.checked = selectedValues.includes(String(el.value));
+                        });
+                        return;
+                    }
+
+                    if (first.type === 'radio') {
+                        elements.forEach(el => {
+                            el.checked = String(el.value) === String(savedValue);
+                        });
+                        return;
+                    }
+
+                    first.value = savedValue;
                 });
                 
                 // Restore business type
@@ -312,10 +343,14 @@ class OnboardingForm {
                     if (selectedOption) {
                         selectedOption.classList.add('selected');
                     }
+
+                    this.handleBusinessTypeChange(progressData.businessType);
                 }
                 
                 // Restore step
                 this.currentStep = progressData.step || 1;
+
+                this.updateCarHireEventTypesVisibility();
                 
                 alert('Your previous application has been restored. You can continue from where you left off.');
             } else {
@@ -445,14 +480,13 @@ class OnboardingForm {
             if (e.target.type === 'checkbox' || e.target.type === 'radio' || e.target.tagName === 'SELECT') {
                 this.validateCurrentStep();
             }
-            // Show/hide event types section based on hire category
+            // Keep event types visibility and state consistent with hire category.
             if (e.target.id === 'hire_category') {
-                const group = document.getElementById('eventTypesGroup');
-                if (group) {
-                    group.style.display = (e.target.value === 'events' || e.target.value === 'all') ? '' : 'none';
-                }
+                this.updateCarHireEventTypesVisibility();
             }
         });
+
+        this.updateCarHireEventTypesVisibility();
 
         // Add specific event listeners for email and phone (with debouncing)
         const emailField = document.getElementById('email');
@@ -774,7 +808,38 @@ class OnboardingForm {
             }
         }
 
+        if (type === 'car_hire') {
+            this.updateCarHireEventTypesVisibility();
+        } else {
+            const eventTypes = document.querySelectorAll('input[name="event_types"]');
+            eventTypes.forEach(cb => {
+                cb.checked = false;
+            });
+            const group = document.getElementById('eventTypesGroup');
+            if (group) {
+                group.style.display = 'none';
+            }
+        }
+
         this.businessType = type;
+    }
+
+    updateCarHireEventTypesVisibility() {
+        const hireCategoryEl = document.getElementById('hire_category');
+        const group = document.getElementById('eventTypesGroup');
+        if (!hireCategoryEl || !group) {
+            return;
+        }
+
+        const shouldShow = hireCategoryEl.value === 'events' || hireCategoryEl.value === 'all';
+        group.style.display = shouldShow ? '' : 'none';
+
+        if (!shouldShow) {
+            const eventTypes = document.querySelectorAll('input[name="event_types"]');
+            eventTypes.forEach(cb => {
+                cb.checked = false;
+            });
+        }
     }
 
     showStep(step) {
@@ -1066,6 +1131,15 @@ class OnboardingForm {
                     this.showFieldMessage('Please select at least one vehicle type');
                 } else {
                     this.clearFieldMessage();
+                }
+
+                const hireCategory = (document.getElementById('hire_category') || {}).value || 'standard';
+                if (hireCategory === 'events' || hireCategory === 'all') {
+                    const eventTypes = document.querySelectorAll('input[name="event_types"]:checked');
+                    if (eventTypes.length === 0) {
+                        isValid = false;
+                        this.showFieldMessage('Please select at least one event type for Events/All category.');
+                    }
                 }
             }
             
@@ -1647,7 +1721,7 @@ class OnboardingForm {
         const fallbackServices = [
             "Engine Repair", "Brake Service", "Oil Change", "AC Repair", "Transmission Service",
             "Electrical Repair", "Body Work", "Painting", "Dent Removal", "Glass Replacement",
-            "Tire Service", "Battery Replacement"
+            "Tire Service", "Battery Replacement", "Computer Diagnostics", "Hybrid Service", "Performance Tuning"
         ];
         
         const container = document.getElementById('servicesContainer');
@@ -2141,8 +2215,9 @@ class OnboardingForm {
                 baseData.special_services = Array.from(document.querySelectorAll('input[name="special_services"]:checked'))
                     .map(cb => cb.value);
                 baseData.hire_category = (document.getElementById('hire_category') || {}).value || 'standard';
-                baseData.event_types = Array.from(document.querySelectorAll('input[name="event_types"]:checked'))
-                    .map(cb => cb.value);
+                baseData.event_types = (baseData.hire_category === 'events' || baseData.hire_category === 'all')
+                    ? Array.from(document.querySelectorAll('input[name="event_types"]:checked')).map(cb => cb.value)
+                    : [];
                 baseData.daily_rate_from = data.daily_rate_from ? parseFloat(data.daily_rate_from) : null;
                 baseData.weekly_rate_from = data.weekly_rate_from ? parseFloat(data.weekly_rate_from) : null;
                 baseData.monthly_rate_from = data.monthly_rate_from ? parseFloat(data.monthly_rate_from) : null;

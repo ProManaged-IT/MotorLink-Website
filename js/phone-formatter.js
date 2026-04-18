@@ -1,66 +1,76 @@
 /**
  * Phone Number Formatter
- * Automatically formats phone numbers as user types
- * Format: +265 991 234 567
+ * Formats phone numbers as user types using the site's configured dial code (CONFIG.PHONE_DIAL_CODE).
  */
 
-function formatMalawiPhone(input) {
-    // Get raw digits only
+function getPhoneDialCode() {
+    return (window.CONFIG && typeof CONFIG.PHONE_DIAL_CODE === 'string')
+        ? CONFIG.PHONE_DIAL_CODE.replace(/\D/g, '')
+        : '';
+}
+
+function formatLocalPhone(input) {
     let value = input.value.replace(/\D/g, '');
-    
-    // Handle local numbers
-    if (value.startsWith('0')) {
-        // Remove leading 0 and add 265
-        value = '265' + value.substring(1);
-    } else if (!value.startsWith('265') && value.length > 0) {
-        // Add 265 prefix if missing
-        value = '265' + value;
+    const dialCode = getPhoneDialCode();
+
+    if (dialCode !== '') {
+        // Strip leading 0 and add dial code, or add dial code if missing
+        if (value.startsWith('0')) {
+            value = dialCode + value.substring(1);
+        } else if (!value.startsWith(dialCode) && value.length > 0) {
+            value = dialCode + value;
+        }
+
+        // Limit to dial code length + 9 local digits
+        value = value.substring(0, dialCode.length + 9);
     }
-    
-    // Limit to 12 digits (265 + 9 digits)
-    value = value.substring(0, 12);
-    
-    // Format: +265 991 234 567
+
+    // Format: +[dialCode] XXX XXX XXX or plain groups of 3
     let formatted = '';
-    if (value.length > 0) {
-        formatted = '+' + value.substring(0, 3);
-        if (value.length > 3) {
-            formatted += ' ' + value.substring(3, 6);
+    if (dialCode !== '' && value.length > 0) {
+        formatted = '+' + value.substring(0, dialCode.length);
+        const local = value.substring(dialCode.length);
+        if (local.length > 0) {
+            formatted += ' ' + local.substring(0, 3);
         }
-        if (value.length > 6) {
-            formatted += ' ' + value.substring(6, 9);
+        if (local.length > 3) {
+            formatted += ' ' + local.substring(3, 6);
         }
-        if (value.length > 9) {
-            formatted += ' ' + value.substring(9, 12);
+        if (local.length > 6) {
+            formatted += ' ' + local.substring(6, 9);
+        }
+    } else if (value.length > 0) {
+        // No dial code configured — format in groups of 3
+        for (let i = 0; i < value.length; i += 3) {
+            if (i > 0) formatted += ' ';
+            formatted += value.substring(i, Math.min(i + 3, value.length));
         }
     }
-    
+
     input.value = formatted;
 }
 
+// Backward compatibility alias
+const formatMalawiPhone = formatLocalPhone;
+
 function setupPhoneFormatting() {
-    // Find all phone input fields
     const phoneInputs = document.querySelectorAll('input[type="tel"]');
-    
+
     phoneInputs.forEach(input => {
-        // Format on input
         input.addEventListener('input', function() {
-            formatMalawiPhone(this);
+            formatLocalPhone(this);
         });
-        
-        // Format on paste
-        input.addEventListener('paste', function(e) {
-            setTimeout(() => formatMalawiPhone(this), 10);
+
+        input.addEventListener('paste', function() {
+            setTimeout(() => formatLocalPhone(this), 10);
         });
-        
-        // Add placeholder if not set
+
         if (!input.placeholder) {
-            input.placeholder = '+265 991 234 567';
+            input.placeholder = '+XXX XXX XXX XXX';
         }
     });
 }
 
-// Auto-initialize when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', setupPhoneFormatting);
 } else {

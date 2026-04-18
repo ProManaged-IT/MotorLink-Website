@@ -660,16 +660,18 @@ function sendOnboardingWelcomeEmail($db, $payload) {
 
 /**
  * Normalize phone to WhatsApp-friendly international format.
+ * @param string $phone   Raw phone input from user
+ * @param string $dialCode Country dial code digits only (e.g. '265' for Malawi, '27' for South Africa)
  */
-function normalizeWhatsappPhone($phone) {
+function normalizeWhatsappPhone($phone, string $dialCode = '') {
     $digits = preg_replace('/\D+/', '', (string)$phone);
     if ($digits === '') {
         return '';
     }
 
-    // Local format 0XXXXXXXXX -> 265XXXXXXXXX
-    if (strpos($digits, '0') === 0 && strlen($digits) >= 9) {
-        return '265' . ltrim($digits, '0');
+    // Local format 0XXXXXXXXX -> {dialCode}XXXXXXXXX
+    if ($dialCode !== '' && strpos($digits, '0') === 0 && strlen($digits) >= 9) {
+        return $dialCode . ltrim($digits, '0');
     }
 
     return $digits;
@@ -710,7 +712,8 @@ function sendOnboardingWelcomeWhatsApp($db, $payload) {
             ];
         }
 
-        $targetPhone = normalizeWhatsappPhone($payload['whatsapp'] ?? ($payload['phone'] ?? ''));
+        $siteConfig = motorlink_get_site_runtime_config($db);
+        $targetPhone = normalizeWhatsappPhone($payload['whatsapp'] ?? ($payload['phone'] ?? ''), $siteConfig['phone_dial_code'] ?? '');
         if ($targetPhone === '') {
             return [
                 'sent' => false,
@@ -1440,9 +1443,52 @@ function addCarHireCompany($db) {
 
         // Sanitise hire_category
         $allowed_hire_categories = ['standard', 'events', 'vans_trucks', 'all'];
-        $hire_category = in_array($input['hire_category'] ?? '', $allowed_hire_categories)
+        $hire_category = in_array($input['hire_category'] ?? '', $allowed_hire_categories, true)
             ? $input['hire_category']
             : 'standard';
+
+        $sanitizeMultiSelect = function($values, $allowedValues) {
+            $sanitized = [];
+            if (is_array($values)) {
+                foreach ($values as $value) {
+                    $value = trim((string)$value);
+                    if ($value !== '' && in_array($value, $allowedValues, true)) {
+                        $sanitized[] = $value;
+                    }
+                }
+            }
+            return array_values(array_unique($sanitized));
+        };
+
+        $allowed_vehicle_types = [
+            'Economy', 'Compact', 'Sedan', 'SUV', 'Pickup', 'Luxury',
+            'Sports Car', 'Van', 'Truck', 'Minibus', '4WD', 'Executive', 'Limousine'
+        ];
+        $allowed_car_hire_services = [
+            'Self Drive', 'With Driver', 'Airport Pickup', 'Long Distance',
+            'Wedding Cars', 'Corporate Rental', 'Van Hire', 'Truck Hire'
+        ];
+        $allowed_special_services = [
+            'VIP Service', 'Tourist Packages', '24/7 Service', 'Chauffeur Service'
+        ];
+
+        $sanitized_vehicle_types = $sanitizeMultiSelect($input['vehicle_types'] ?? [], $allowed_vehicle_types);
+        $sanitized_services = $sanitizeMultiSelect($input['services'] ?? [], $allowed_car_hire_services);
+        $sanitized_special_services = $sanitizeMultiSelect($input['special_services'] ?? [], $allowed_special_services);
+
+        $allowed_event_types = [
+            'Wedding',
+            'Corporate Event',
+            'Funeral',
+            'Birthday Party',
+            'Prom Night',
+            'Airport VIP Transfer',
+            'Graduation',
+            'Church Event'
+        ];
+        $sanitized_event_types = ($hire_category === 'events' || $hire_category === 'all')
+            ? $sanitizeMultiSelect($input['event_types'] ?? [], $allowed_event_types)
+            : [];
 
         // Create car hire company and link to user
         $stmt = $db->prepare("
@@ -1463,11 +1509,11 @@ function addCarHireCompany($db) {
             $input['whatsapp'] ?? null,
             $input['address'],
             $input['location_id'],
-            !empty($input['vehicle_types']) ? json_encode($input['vehicle_types']) : null,
-            !empty($input['services']) ? json_encode($input['services']) : null,
-            !empty($input['special_services']) ? json_encode($input['special_services']) : null,
+            !empty($sanitized_vehicle_types) ? json_encode($sanitized_vehicle_types) : null,
+            !empty($sanitized_services) ? json_encode($sanitized_services) : null,
+            !empty($sanitized_special_services) ? json_encode($sanitized_special_services) : null,
             $hire_category,
-            !empty($input['event_types']) ? json_encode($input['event_types']) : null,
+            !empty($sanitized_event_types) ? json_encode($sanitized_event_types) : null,
             $input['daily_rate_from'] ?? null,
             $input['weekly_rate_from'] ?? null,
             $input['monthly_rate_from'] ?? null,

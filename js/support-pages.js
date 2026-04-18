@@ -60,7 +60,7 @@
 
             const supportEmail = this.getValue('contact_support_email', this.getValue('contact_email', runtimeSupportEmail));
             const mainEmail = this.getValue('contact_email', supportEmail);
-            const phone = this.getValue('contact_phone', '+265 991 234 567');
+            const phone = this.getValue('contact_phone', '');
             const whatsapp = this.getValue('contact_whatsapp', phone);
             const address = this.getValue('business_address', '');
             const city = this.getValue('business_city', '');
