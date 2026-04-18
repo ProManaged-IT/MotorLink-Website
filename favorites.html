@@ -72,23 +72,71 @@
     <!-- Favorites Section -->
     <section class="favorites-section">
         <div class="container">
-            <!-- Saved Cars Grid -->
-            <div class="favorites-grid" id="favoritesGrid">
-                <!-- Loading State -->
-                <div class="loading-state" id="loadingState">
-                    <div class="loading-spinner"></div>
-                    <p>Loading your saved cars...</p>
+            <div class="favorites-shell">
+                <div class="favorites-shell-header">
+                    <div class="favorites-shell-title-wrap">
+                        <p class="favorites-shell-kicker"><i class="fas fa-layer-group"></i> My Collection</p>
+                        <h2 class="favorites-shell-title">Saved Cars Workspace</h2>
+                        <p class="favorites-shell-subtitle">Search, compare, and jump back into your top picks quickly.</p>
+                    </div>
+                    <div class="favorites-shell-actions">
+                        <button type="button" class="btn btn-outline-primary btn-sm btn-clear-all" id="clearAllFavoritesBtn" disabled>
+                            <i class="fas fa-trash"></i> Clear All Saved
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Empty State -->
-            <div class="empty-state hidden" id="emptyState">
-                <i class="fas fa-heart"></i>
-                <h3>No Saved Cars Yet</h3>
-                <p>Start browsing and save cars you're interested in!</p>
-                <a href="index.html" class="btn btn-primary">
-                    <i class="fas fa-search"></i> Browse Cars
-                </a>
+                <div class="favorites-toolbar" id="favoritesToolbar">
+                    <label class="favorites-search" for="favoritesSearch">
+                        <i class="fas fa-search"></i>
+                        <input
+                            type="search"
+                            id="favoritesSearch"
+                            placeholder="Search by title, make, model, location, or fuel..."
+                            autocomplete="off">
+                    </label>
+
+                    <label class="favorites-sort" for="favoritesSort">
+                        <span>Sort</span>
+                        <select id="favoritesSort">
+                            <option value="newest_saved">Recently Saved</option>
+                            <option value="price_low">Price: Low to High</option>
+                            <option value="price_high">Price: High to Low</option>
+                            <option value="year_new">Year: Newest First</option>
+                            <option value="year_old">Year: Oldest First</option>
+                            <option value="title_az">Title: A to Z</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="favorites-summary" id="favoritesSummary" aria-live="polite">
+                    <span class="summary-chip" id="favoritesCountChip"><i class="fas fa-heart"></i> 0 saved</span>
+                    <span class="summary-chip" id="favoritesVisibleChip"><i class="fas fa-filter"></i> 0 visible</span>
+                </div>
+
+                <!-- Saved Cars Grid -->
+                <div class="favorites-grid" id="favoritesGrid">
+                    <!-- Loading State -->
+                    <div class="loading-state" id="loadingState">
+                        <div class="loading-spinner"></div>
+                        <p>Loading your saved cars...</p>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div class="empty-state hidden" id="emptyState">
+                    <i class="fas fa-heart"></i>
+                    <h3>No Saved Cars Yet</h3>
+                    <p>Start browsing and save cars you are interested in to build your shortlist.</p>
+                    <div class="empty-state-actions">
+                        <a href="index.html" class="btn btn-primary">
+                            <i class="fas fa-search"></i> Browse Cars
+                        </a>
+                        <a href="dealers.html" class="btn btn-outline-primary">
+                            <i class="fas fa-store"></i> Explore Dealers
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
     </section>

@@ -645,6 +645,37 @@ class AdminDashboard {
         }
     }
 
+    async unsuspendCar(carId) {
+        if (!confirm('Reactivate this car listing? It will become visible to the public.')) return;
+        try {
+            const response = await this.apiCall('update_car', 'POST', { id: carId, status: 'active' });
+            if (response.success) {
+                this.showAlert('success', 'Car listing reactivated successfully');
+                await this.loadCars();
+            } else {
+                throw new Error(response.message);
+            }
+        } catch (error) {
+            this.showAlert('error', error.message || 'Failed to reactivate car listing');
+        }
+    }
+
+    async restoreCar(carId) {
+        if (!confirm('Restore this deleted car listing? It will be set back to active.')) return;
+        try {
+            const response = await this.apiCall('restore_car', 'POST', { id: carId });
+            if (response.success) {
+                this.showAlert('success', 'Car listing restored successfully');
+                await this.loadDeletedCars();
+                await this.loadCars();
+            } else {
+                throw new Error(response.message);
+            }
+        } catch (error) {
+            this.showAlert('error', error.message || 'Failed to restore car listing');
+        }
+    }
+
     async updateCar() {
         const form = document.getElementById('editCarForm');
         const formData = new FormData(form);
@@ -4468,6 +4499,13 @@ async filterMakesModels() {
                                 title="${car.is_featured ? 'Remove' : 'Set'} Featured">
                             <i class="fas fa-star"></i>
                         </button>
+                        ${car.status === 'suspended' ? `
+                        <button class="btn btn-xs btn-success" onclick="admin.unsuspendCar(${car.id})" title="Unsuspend">
+                            <i class="fas fa-play"></i>
+                        </button>` : car.status === 'active' ? `
+                        <button class="btn btn-xs btn-warning" onclick="admin.suspendCar(${car.id})" title="Suspend">
+                            <i class="fas fa-ban"></i>
+                        </button>` : ''}
                         <button class="btn btn-xs btn-danger" onclick="admin.deleteCarFromTable(${car.id})" title="Delete">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -4525,10 +4563,13 @@ async filterMakesModels() {
                 <td>${car.views_count || 0}</td>
                 <td>
                     <div class="d-flex gap-5">
+                        <button class="btn btn-sm btn-success" onclick="admin.restoreCar(${car.id})" title="Restore Listing">
+                            <i class="fas fa-undo"></i> Restore
+                        </button>
                         <button class="btn btn-sm btn-info" onclick="admin.viewCarDetails(${car.id})" title="View Details">
                             <i class="fas fa-eye"></i>
                         </button>
-                        <button class="btn btn-sm btn-success" onclick="admin.viewCarImages(${car.id}, '${this.escapeHtml(car.title).replace(/'/g, "\\'")}')" title="View Images">
+                        <button class="btn btn-sm btn-secondary" onclick="admin.viewCarImages(${car.id}, '${this.escapeHtml(car.title).replace(/'/g, "\\'")}')" title="View Images">
                             <i class="fas fa-images"></i>
                         </button>
                     </div>
@@ -6929,8 +6970,30 @@ async function loadAIChatSettings() {
                     }
                 }
                 syncAIModelInputState(savedModel);
-                updateModelBadge();
             }
+
+            const reasoningEnabledInput = document.getElementById('ai-openai-reasoning-enabled');
+            if (reasoningEnabledInput) {
+                reasoningEnabledInput.checked = data.settings.openai_reasoning_enabled != 0;
+            }
+
+            const reasoningEffortSelect = document.getElementById('ai-openai-reasoning-effort');
+            if (reasoningEffortSelect) {
+                reasoningEffortSelect.value = data.settings.openai_reasoning_effort || 'medium';
+            }
+
+            const deepseekAutoProfileInput = document.getElementById('ai-deepseek-auto-profile-enabled');
+            if (deepseekAutoProfileInput) {
+                deepseekAutoProfileInput.checked = data.settings.deepseek_auto_profile_enabled != 0;
+            }
+
+            const glmAutoProfileInput = document.getElementById('ai-glm-auto-profile-enabled');
+            if (glmAutoProfileInput) {
+                glmAutoProfileInput.checked = data.settings.glm_auto_profile_enabled != 0;
+            }
+
+            syncAIReasoningControlsState();
+            updateModelBadge();
             
             document.getElementById('ai-max-tokens').value = data.settings.max_tokens_per_request || 600;
             document.getElementById('ai-temperature').value = data.settings.temperature || 0.8;
@@ -6960,6 +7023,10 @@ async function saveAIChatSettings() {
         const temperature = parseFloat(document.getElementById('ai-temperature').value);
         const requestsPerDay = parseInt(document.getElementById('ai-requests-per-day').value);
         const requestsPerHour = parseInt(document.getElementById('ai-requests-per-hour').value);
+        const openAIReasoningEnabled = document.getElementById('ai-openai-reasoning-enabled')?.checked ? 1 : 0;
+        const openAIReasoningEffort = document.getElementById('ai-openai-reasoning-effort')?.value || 'medium';
+        const deepseekAutoProfileEnabled = document.getElementById('ai-deepseek-auto-profile-enabled')?.checked ? 1 : 0;
+        const glmAutoProfileEnabled = document.getElementById('ai-glm-auto-profile-enabled')?.checked ? 1 : 0;
 
         if (!selectedModel) {
             admin.showAlert('error', 'Enter a valid model name before saving AI chat settings');
@@ -6987,11 +7054,19 @@ async function saveAIChatSettings() {
             admin.showAlert('error', 'Requests per hour must be between 1 and 100');
             return;
         }
+        if (!['minimal', 'low', 'medium', 'high'].includes(openAIReasoningEffort)) {
+            admin.showAlert('error', 'OpenAI reasoning effort must be minimal, low, medium, or high');
+            return;
+        }
         
         const settings = {
             enabled: enabled,
             ai_provider: selectedProvider,
             model_name: selectedModel,
+            openai_reasoning_enabled: openAIReasoningEnabled,
+            openai_reasoning_effort: openAIReasoningEffort,
+            deepseek_auto_profile_enabled: deepseekAutoProfileEnabled,
+            glm_auto_profile_enabled: glmAutoProfileEnabled,
             max_tokens_per_request: maxTokens,
             temperature: temperature,
             requests_per_day: requestsPerDay,
@@ -7023,6 +7098,10 @@ async function saveAIChatSettings() {
             const successMsg = `AI Chat settings saved successfully! ` +
                 `Provider: ${savedSettings.ai_provider || selectedProvider}, ` +
                 `Model: ${savedSettings.model_name}, ` +
+                `OpenAI reasoning auto-tuning: ${(savedSettings.openai_reasoning_enabled ?? openAIReasoningEnabled) ? 'On' : 'Off'}, ` +
+                `Reasoning effort: ${savedSettings.openai_reasoning_effort || openAIReasoningEffort}, ` +
+                `DeepSeek auto-profile: ${(savedSettings.deepseek_auto_profile_enabled ?? deepseekAutoProfileEnabled) ? 'On' : 'Off'}, ` +
+                `GLM auto-profile: ${(savedSettings.glm_auto_profile_enabled ?? glmAutoProfileEnabled) ? 'On' : 'Off'}, ` +
                 `Max Tokens: ${savedSettings.max_tokens_per_request}, ` +
                 `Temperature: ${savedSettings.temperature}, ` +
                 `Daily Limit: ${savedSettings.requests_per_day}, ` +
@@ -7112,6 +7191,8 @@ function updateModelBadge() {
         badge.style.display = 'inline-block';
         badge.title = `Current model: ${optionText}`;
     }
+
+    updateAITuningProfileState();
 }
 
 function getProviderDefaultChatModel(provider) {
@@ -7123,6 +7204,248 @@ function getProviderDefaultChatModel(provider) {
     };
 
     return providerDefaultModels[provider] || 'gpt-4o-mini';
+}
+
+function isOpenAIReasoningCapableModel(modelName) {
+    const normalized = String(modelName || '').trim().toLowerCase();
+    return /^(o\d|gpt-5(?:$|[-._:]))/.test(normalized);
+}
+
+function isDeepSeekReasonerModel(modelName) {
+    const normalized = String(modelName || '').trim().toLowerCase();
+    return /^deepseek-reasoner(?:$|[-._:])/.test(normalized);
+}
+
+function isGLMThinkingCapableModel(modelName) {
+    const normalized = String(modelName || '').trim().toLowerCase();
+    return /^glm-(4\.5|4\.6|4\.7|5\.1)(?:$|[-._:])/.test(normalized);
+}
+
+function getCurrentAITuningProfile() {
+    const provider = document.getElementById('ai-chat-provider')?.value || 'openai';
+    const modelName = getSelectedAIModelName();
+    const openAIReasoningEnabled = document.getElementById('ai-openai-reasoning-enabled')?.checked !== false;
+    const openAIReasoningEffort = document.getElementById('ai-openai-reasoning-effort')?.value || 'medium';
+    const deepseekAutoProfileEnabled = document.getElementById('ai-deepseek-auto-profile-enabled')?.checked !== false;
+    const glmAutoProfileEnabled = document.getElementById('ai-glm-auto-profile-enabled')?.checked !== false;
+
+    if (provider === 'openai') {
+        if (isOpenAIReasoningCapableModel(modelName)) {
+            if (!openAIReasoningEnabled) {
+                return {
+                    badgeClass: 'badge-warning',
+                    badgeText: 'OpenAI generic',
+                    statusText: `Reasoning-capable OpenAI model selected, but auto-tuning is off. ${modelName || 'This model'} will stay on the generic chat-completions payload and continue using the saved temperature setting.`
+                };
+            }
+
+            return {
+                badgeClass: 'badge-success',
+                badgeText: 'OpenAI reasoning',
+                statusText: `${modelName || 'This OpenAI model'} will use reasoning-compatible request fields with ${openAIReasoningEffort} effort. The backend swaps max_tokens for max_completion_tokens and removes generic sampling controls for compatibility.`
+            };
+        }
+
+        return {
+            badgeClass: 'badge-secondary',
+            badgeText: 'OpenAI generic',
+            statusText: `${modelName || 'This OpenAI model'} is using the standard OpenAI chat payload with the saved max token and temperature controls.`
+        };
+    }
+
+    if (provider === 'deepseek' && isDeepSeekReasonerModel(modelName)) {
+        if (!deepseekAutoProfileEnabled) {
+            return {
+                badgeClass: 'badge-warning',
+                badgeText: 'DeepSeek generic',
+                statusText: `${modelName || 'This DeepSeek model'} matches the DeepSeek reasoner profile, but the auto-profile toggle is off. Requests will stay on the generic compatible payload.`
+            };
+        }
+
+        return {
+            badgeClass: 'badge-info',
+            badgeText: 'DeepSeek reasoner',
+            statusText: `${modelName || 'This DeepSeek model'} uses the DeepSeek reasoner compatibility profile. The backend strips unsupported sampling fields such as temperature, top_p, and penalty settings so requests stay clean.`
+        };
+    }
+
+    if (provider === 'deepseek') {
+        return {
+            badgeClass: 'badge-secondary',
+            badgeText: 'DeepSeek generic',
+            statusText: `${modelName || 'This DeepSeek model'} is using the standard DeepSeek-compatible payload with the saved max token and temperature controls.`
+        };
+    }
+
+    if (provider === 'glm' && isGLMThinkingCapableModel(modelName)) {
+        if (!glmAutoProfileEnabled) {
+            return {
+                badgeClass: 'badge-warning',
+                badgeText: 'GLM generic',
+                statusText: `${modelName || 'This GLM model'} supports GLM thinking mode, but the auto-profile toggle is off. Requests will stay on the generic GLM payload.`
+            };
+        }
+
+        return {
+            badgeClass: 'badge-success',
+            badgeText: 'GLM thinking',
+            statusText: `${modelName || 'This GLM model'} uses GLM thinking-mode tuning. The backend enables thinking for user-facing replies and disables it for lean helper calls like intent resolution and JSON extraction.`
+        };
+    }
+
+    if (provider === 'glm') {
+        return {
+            badgeClass: 'badge-secondary',
+            badgeText: 'GLM generic',
+            statusText: `${modelName || 'This GLM model'} is using the standard GLM chat payload with the saved max token and temperature controls.`
+        };
+    }
+
+    if (provider === 'qwen') {
+        return {
+            badgeClass: 'badge-secondary',
+            badgeText: 'Qwen generic',
+            statusText: `${modelName || 'This Qwen model'} is using the standard Qwen-compatible payload with the saved max token and temperature controls.`
+        };
+    }
+
+    return {
+        badgeClass: 'badge-secondary',
+        badgeText: 'Generic payload',
+        statusText: `${modelName || 'This model'} is using the standard ${provider} chat payload with the saved max token and temperature controls.`
+    };
+}
+
+function updateAITuningProfileState() {
+    const badge = document.getElementById('ai-tuning-profile-badge');
+    const status = document.getElementById('ai-tuning-profile-status');
+    const profile = getCurrentAITuningProfile();
+
+    if (!badge || !status || !profile) {
+        return;
+    }
+
+    badge.className = `badge ${profile.badgeClass}`;
+    badge.textContent = profile.badgeText;
+    status.textContent = profile.statusText;
+}
+
+function getAIChatUsageProfileMeta(profileCode) {
+    const normalized = String(profileCode || 'generic_payload').trim().toLowerCase();
+
+    if (normalized === 'deterministic_no_provider') {
+        return {
+            badgeClass: 'badge-secondary',
+            label: 'Deterministic',
+            title: 'No provider API call was needed for this response.'
+        };
+    }
+
+    if (normalized.startsWith('openai_reasoning_')) {
+        const effort = normalized.replace('openai_reasoning_', '').replace(/_/g, ' ');
+        const effortLabel = effort.charAt(0).toUpperCase() + effort.slice(1);
+        return {
+            badgeClass: 'badge-success',
+            label: `OpenAI reasoning (${effortLabel})`,
+            title: `OpenAI reasoning-compatible payload using ${effortLabel.toLowerCase()} effort.`
+        };
+    }
+
+    const profileMap = {
+        openai_generic: {
+            badgeClass: 'badge-secondary',
+            label: 'OpenAI generic',
+            title: 'Standard OpenAI chat-completions payload.'
+        },
+        deepseek_reasoner_profile: {
+            badgeClass: 'badge-info',
+            label: 'DeepSeek reasoner',
+            title: 'DeepSeek reasoner compatibility profile.'
+        },
+        deepseek_generic: {
+            badgeClass: 'badge-secondary',
+            label: 'DeepSeek generic',
+            title: 'Standard DeepSeek-compatible payload.'
+        },
+        glm_thinking_enabled: {
+            badgeClass: 'badge-success',
+            label: 'GLM thinking',
+            title: 'GLM payload with thinking.type=enabled.'
+        },
+        glm_thinking_disabled: {
+            badgeClass: 'badge-warning',
+            label: 'GLM helper',
+            title: 'GLM payload with thinking.type=disabled for a lean helper request.'
+        },
+        glm_generic: {
+            badgeClass: 'badge-secondary',
+            label: 'GLM generic',
+            title: 'Standard GLM chat payload.'
+        },
+        qwen_generic: {
+            badgeClass: 'badge-secondary',
+            label: 'Qwen generic',
+            title: 'Standard Qwen-compatible payload.'
+        },
+        generic_payload: {
+            badgeClass: 'badge-secondary',
+            label: 'Generic payload',
+            title: 'Standard provider payload with no special tuning profile.'
+        }
+    };
+
+    if (profileMap[normalized]) {
+        return profileMap[normalized];
+    }
+
+    const fallback = normalized.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+    return {
+        badgeClass: 'badge-secondary',
+        label: fallback,
+        title: fallback
+    };
+}
+
+function syncAIReasoningControlsState() {
+    const provider = document.getElementById('ai-chat-provider')?.value || 'openai';
+    const reasoningEnabledInput = document.getElementById('ai-openai-reasoning-enabled');
+    const reasoningEffortSelect = document.getElementById('ai-openai-reasoning-effort');
+    const reasoningStatus = document.getElementById('ai-openai-reasoning-status');
+    const selectedModel = getSelectedAIModelName();
+    const isOpenAIProvider = provider === 'openai';
+    const isReasoningModel = isOpenAIProvider && isOpenAIReasoningCapableModel(selectedModel);
+
+    if (!reasoningEnabledInput || !reasoningEffortSelect || !reasoningStatus) {
+        updateAITuningProfileState();
+        return;
+    }
+
+    reasoningEffortSelect.disabled = !reasoningEnabledInput.checked;
+
+    if (!isOpenAIProvider) {
+        reasoningStatus.textContent = 'Saved only for OpenAI. The current provider is not OpenAI, so this setting has no effect right now.';
+        reasoningStatus.style.color = '#6d4c41';
+        updateAITuningProfileState();
+        return;
+    }
+
+    if (!isReasoningModel) {
+        reasoningStatus.textContent = 'The selected OpenAI model is not detected as reasoning-capable. Auto-tuning will activate automatically if you switch to o3, o4-mini, GPT-5, or a compatible custom OpenAI model.';
+        reasoningStatus.style.color = '#455a64';
+        updateAITuningProfileState();
+        return;
+    }
+
+    if (!reasoningEnabledInput.checked) {
+        reasoningStatus.textContent = 'Reasoning auto-tuning is currently off for this OpenAI reasoning model. Requests will use the generic chat-completions payload.';
+        reasoningStatus.style.color = '#c62828';
+        updateAITuningProfileState();
+        return;
+    }
+
+    reasoningStatus.textContent = `Reasoning auto-tuning is active for ${selectedModel}. The backend will switch to OpenAI reasoning-compatible request fields and use ${reasoningEffortSelect.value} effort automatically.`;
+    reasoningStatus.style.color = '#2e7d32';
+    updateAITuningProfileState();
 }
 
 function syncAIModelInputState(prefillValue = '') {
@@ -7149,6 +7472,8 @@ function syncAIModelInputState(prefillValue = '') {
     if (!useCustomModel) {
         customModelInput.value = '';
     }
+
+    syncAIReasoningControlsState();
 }
 
 function getSelectedAIModelName() {
@@ -7503,7 +7828,7 @@ async function loadAIChatUsage(page = 1) {
             return;
         }
         
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">Loading...</td></tr>';
         
         currentAIChatPage = page;
         const userId = document.getElementById('ai-usage-user-select')?.value || '';
@@ -7545,20 +7870,24 @@ async function loadAIChatUsage(page = 1) {
             
             // Update table
             if (data.logs && data.logs.length > 0) {
-                tbody.innerHTML = data.logs.map(log => `
-                    <tr>
-                        <td>${log.id}</td>
-                        <td>${new Date(log.created_at).toLocaleString()}</td>
-                        <td>${log.username || 'N/A'} (${log.user_id})<br><small>${log.email || ''}</small></td>
-                        <td><small>${(log.message || '').substring(0, 50)}${(log.message || '').length > 50 ? '...' : ''}</small></td>
-                        <td>${parseInt(log.tokens_used || 0).toLocaleString()}</td>
-                        <td><small>${log.model_used || 'N/A'}</small></td>
-                        <td>$${parseFloat(log.cost_estimate || 0).toFixed(6)}</td>
-                        <td><small>${log.ip_address || 'N/A'}</small></td>
-                    </tr>
-                `).join('');
+                tbody.innerHTML = data.logs.map(log => {
+                    const profileMeta = getAIChatUsageProfileMeta(log.tuning_profile);
+                    return `
+                        <tr>
+                            <td>${log.id}</td>
+                            <td>${new Date(log.created_at).toLocaleString()}</td>
+                            <td>${log.username || 'N/A'} (${log.user_id})<br><small>${log.email || ''}</small></td>
+                            <td><small>${(log.message || '').substring(0, 50)}${(log.message || '').length > 50 ? '...' : ''}</small></td>
+                            <td>${parseInt(log.tokens_used || 0).toLocaleString()}</td>
+                            <td><small>${log.model_used || 'N/A'}</small></td>
+                            <td><span class="badge ${profileMeta.badgeClass}" title="${profileMeta.title}">${profileMeta.label}</span></td>
+                            <td>$${parseFloat(log.cost_estimate || 0).toFixed(6)}</td>
+                            <td><small>${log.ip_address || 'N/A'}</small></td>
+                        </tr>
+                    `;
+                }).join('');
             } else {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center">No usage logs found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center">No usage logs found</td></tr>';
             }
             
             // Update pagination
@@ -7583,13 +7912,13 @@ async function loadAIChatUsage(page = 1) {
                 }
             }
         } else {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center">Error: ${data.message || 'Failed to load usage logs'}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center">Error: ${data.message || 'Failed to load usage logs'}</td></tr>`;
         }
     } catch (error) {
         console.error('Error loading AI chat usage:', error);
         const tbody = document.getElementById('aiChatUsageTableBody');
         if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center">Error loading usage logs: ${error.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center">Error loading usage logs: ${error.message}</td></tr>`;
         }
     }
 }

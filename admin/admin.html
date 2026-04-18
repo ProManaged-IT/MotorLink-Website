@@ -1878,6 +1878,12 @@
                             <div class="form-group">
                                 <label for="ai-model-name">AI Model <span id="current-model-badge" class="badge badge-info" style="margin-left: 10px; display: none;">Current</span></label>
                                 <select id="ai-model-name" class="form-control" onchange="syncAIModelInputState(); updateModelBadge()">
+                                    <option value="gpt-5">gpt-5 (OpenAI Reasoning)</option>
+                                    <option value="gpt-5-mini">gpt-5-mini (OpenAI Reasoning)</option>
+                                    <option value="gpt-5-nano">gpt-5-nano (OpenAI Reasoning)</option>
+                                    <option value="o4-mini">o4-mini (OpenAI Reasoning)</option>
+                                    <option value="o3">o3 (OpenAI Reasoning)</option>
+                                    <option value="o3-mini">o3-mini (OpenAI Reasoning)</option>
                                     <option value="gpt-4o-mini">gpt-4o-mini (OpenAI)</option>
                                     <option value="gpt-4o">gpt-4o (OpenAI)</option>
                                     <option value="gpt-4-turbo">gpt-4-turbo (OpenAI)</option>
@@ -1904,6 +1910,54 @@
                                     <strong>Custom model IDs:</strong> If your provider account exposes a newer model not listed here, choose <em>Custom model ID...</em> and enter the exact API model name.
                                     <br>
                                     <em><strong>Cost Impact:</strong> Changing models affects API costs. Monitor usage in "AI Chat Usage Logs" section.</em>
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <label for="ai-tuning-profile-badge">Current Request Profile <span id="ai-tuning-profile-badge" class="badge badge-secondary" style="margin-left: 10px;">Generic payload</span></label>
+                                <small id="ai-tuning-profile-status" class="form-text" style="display: block; margin-top: 6px; color: #455a64;">
+                                    Shows which provider-specific payload tuning will be used for the currently selected provider and model.
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <label for="ai-deepseek-auto-profile-enabled">
+                                    <input type="checkbox" id="ai-deepseek-auto-profile-enabled" checked onchange="updateAITuningProfileState()">
+                                    Enable DeepSeek reasoner auto-profile
+                                </label>
+                                <small class="form-text">
+                                    <strong>What this does:</strong> When turned on, <em>deepseek-reasoner</em> requests automatically drop the sampling and logprob fields that DeepSeek marks as unsupported or ineffective. Turn it off if you want that model to receive the generic compatible payload.
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <label for="ai-glm-auto-profile-enabled">
+                                    <input type="checkbox" id="ai-glm-auto-profile-enabled" checked onchange="updateAITuningProfileState()">
+                                    Enable GLM thinking auto-profile
+                                </label>
+                                <small class="form-text">
+                                    <strong>What this does:</strong> When turned on, documented GLM thinking-capable models such as GLM-4.5, GLM-4.6, GLM-4.7, and GLM-5.1 automatically receive <em>thinking.type</em> tuning. Turn it off to keep those models on the generic chat payload.
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <label for="ai-openai-reasoning-enabled">
+                                    <input type="checkbox" id="ai-openai-reasoning-enabled" checked onchange="syncAIReasoningControlsState()">
+                                    Enable OpenAI reasoning auto-tuning
+                                </label>
+                                <small id="ai-openai-reasoning-status" class="form-text" style="display: block; margin-top: 6px; color: #455a64;">
+                                    Applies only to reasoning-capable OpenAI models such as o3, o4-mini, GPT-5, or compatible custom OpenAI model IDs.
+                                </small>
+                                <small class="form-text">
+                                    <strong>What this does:</strong> When turned on, reasoning-capable OpenAI models automatically switch to safer OpenAI reasoning request fields and use the selected reasoning effort. Turn it off if you want those models to use the generic chat-completions payload instead.
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <label for="ai-openai-reasoning-effort">OpenAI Reasoning Effort</label>
+                                <select id="ai-openai-reasoning-effort" class="form-control" onchange="syncAIReasoningControlsState()">
+                                    <option value="minimal">Minimal (GPT-5 family only)</option>
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                                <small class="form-text">
+                                    <strong>What this does:</strong> Controls how much reasoning budget OpenAI reasoning models get when auto-tuning is enabled. If you choose <em>Minimal</em> for an o-series model, the backend safely normalizes it to <em>Low</em>.
                                 </small>
                             </div>
                             <div class="form-group">
@@ -2307,12 +2361,13 @@
                                     <th>Message Preview</th>
                                     <th>Tokens</th>
                                     <th>Model</th>
+                                    <th>Profile</th>
                                     <th>Cost</th>
                                     <th>IP Address</th>
                                 </tr>
                             </thead>
                             <tbody id="aiChatUsageTableBody">
-                                <tr><td colspan="8" class="text-center">Loading...</td></tr>
+                                <tr><td colspan="9" class="text-center">Loading...</td></tr>
                             </tbody>
                         </table>
                     </div>

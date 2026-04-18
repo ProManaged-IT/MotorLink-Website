@@ -284,6 +284,10 @@ try {
         case 'delete_car':
             handleDeleteCar($db);
             break;
+
+        case 'restore_car':
+            handleRestoreCar($db);
+            break;
             
         case 'get_car_images':
             handleGetCarImages($db);
@@ -3191,8 +3195,18 @@ function handleUpdateCar($db) {
         $allowedFields = [
             'title', 'description', 'make_id', 'model_id', 'year', 'price', 
             'negotiable', 'location_id', 'fuel_type', 'transmission', 
-            'mileage', 'condition_type', 'color', 'body_type', 'engine_size', 'features'
+            'mileage', 'condition_type', 'color', 'body_type', 'engine_size', 'features',
+            'status'
         ];
+
+        // Validate status if provided
+        if (isset($input['status'])) {
+            $allowedStatuses = ['active', 'suspended', 'pending_approval', 'rejected'];
+            if (!in_array($input['status'], $allowedStatuses, true)) {
+                echo json_encode(['success' => false, 'message' => 'Invalid status value']);
+                return;
+            }
+        }
         
         $updateData = [];
         foreach ($allowedFields as $field) {
@@ -3267,6 +3281,35 @@ function handleDeleteCar($db) {
     } catch (Exception $e) {
         error_log("handleDeleteCar error: " . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to delete car']);
+        exit();
+    }
+}
+
+function handleRestoreCar($db) {
+    requireAdmin();
+    $input = json_decode(file_get_contents('php://input'), true);
+    $id = intval($input['id'] ?? 0);
+
+    if (empty($id)) {
+        echo json_encode(['success' => false, 'message' => 'Car ID is required']);
+        return;
+    }
+
+    try {
+        $stmt = $db->prepare(
+            "UPDATE car_listings SET status = 'active', updated_at = NOW() WHERE id = ? AND status = 'deleted'"
+        );
+        $stmt->execute([$id]);
+
+        if ($stmt->rowCount() > 0) {
+            echo json_encode(['success' => true, 'message' => 'Car listing restored successfully']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Car not found or not in deleted state']);
+        }
+        exit();
+    } catch (Exception $e) {
+        error_log("handleRestoreCar error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to restore car']);
         exit();
     }
 }
@@ -6114,9 +6157,13 @@ function handleGetAIChatSettings($db) {
             ai_provider VARCHAR(20) DEFAULT 'openai',
             model_name VARCHAR(120) DEFAULT 'gpt-4o',
             openai_enabled TINYINT(1) DEFAULT 1,
+            openai_reasoning_enabled TINYINT(1) DEFAULT 1,
+            openai_reasoning_effort VARCHAR(20) DEFAULT 'medium',
             deepseek_enabled TINYINT(1) DEFAULT 1,
+            deepseek_auto_profile_enabled TINYINT(1) DEFAULT 1,
             qwen_enabled TINYINT(1) DEFAULT 1,
             glm_enabled TINYINT(1) DEFAULT 1,
+            glm_auto_profile_enabled TINYINT(1) DEFAULT 1,
             max_tokens_per_request INT DEFAULT 600,
             temperature DECIMAL(3,2) DEFAULT 0.8,
             requests_per_day INT DEFAULT 50,
@@ -6132,7 +6179,7 @@ function handleGetAIChatSettings($db) {
         
         if (!$settings) {
             // Insert defaults with all values
-            $db->exec("INSERT INTO ai_chat_settings (id, ai_provider, model_name, openai_enabled, deepseek_enabled, qwen_enabled, glm_enabled, max_tokens_per_request, temperature, requests_per_day, requests_per_hour, enabled) VALUES (1, 'openai', 'gpt-4o', 1, 1, 1, 1, 600, 0.8, 50, 10, 1)");
+            $db->exec("INSERT INTO ai_chat_settings (id, ai_provider, model_name, openai_enabled, openai_reasoning_enabled, openai_reasoning_effort, deepseek_enabled, deepseek_auto_profile_enabled, qwen_enabled, glm_enabled, glm_auto_profile_enabled, max_tokens_per_request, temperature, requests_per_day, requests_per_hour, enabled) VALUES (1, 'openai', 'gpt-4o', 1, 1, 'medium', 1, 1, 1, 1, 1, 600, 0.8, 50, 10, 1)");
             $stmt->execute();
             $settings = $stmt->fetch(PDO::FETCH_ASSOC);
         }
@@ -6149,7 +6196,22 @@ function handleGetAIChatSettings($db) {
             // ignore
         }
         try {
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN openai_reasoning_enabled TINYINT(1) DEFAULT 1");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN openai_reasoning_effort VARCHAR(20) DEFAULT 'medium'");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
             $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN deepseek_enabled TINYINT(1) DEFAULT 1");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN deepseek_auto_profile_enabled TINYINT(1) DEFAULT 1");
         } catch (Exception $e) {
             // ignore
         }
@@ -6160,6 +6222,11 @@ function handleGetAIChatSettings($db) {
         }
         try {
             $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN glm_enabled TINYINT(1) DEFAULT 1");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN glm_auto_profile_enabled TINYINT(1) DEFAULT 1");
         } catch (Exception $e) {
             // ignore
         }
@@ -6177,9 +6244,13 @@ function handleGetAIChatSettings($db) {
         $settings['ai_provider'] = $settings['ai_provider'] ?? 'openai';
         $settings['model_name'] = $settings['model_name'] ?? 'gpt-4o';
         $settings['openai_enabled'] = (int)($settings['openai_enabled'] ?? 1);
+        $settings['openai_reasoning_enabled'] = (int)($settings['openai_reasoning_enabled'] ?? 1);
+        $settings['openai_reasoning_effort'] = $settings['openai_reasoning_effort'] ?? 'medium';
         $settings['deepseek_enabled'] = (int)($settings['deepseek_enabled'] ?? 1);
+        $settings['deepseek_auto_profile_enabled'] = (int)($settings['deepseek_auto_profile_enabled'] ?? 1);
         $settings['qwen_enabled'] = (int)($settings['qwen_enabled'] ?? 1);
         $settings['glm_enabled'] = (int)($settings['glm_enabled'] ?? 1);
+        $settings['glm_auto_profile_enabled'] = (int)($settings['glm_auto_profile_enabled'] ?? 1);
         $settings['max_tokens_per_request'] = (int)($settings['max_tokens_per_request'] ?? 600);
         $settings['temperature'] = (float)($settings['temperature'] ?? 0.8);
         $settings['requests_per_day'] = (int)($settings['requests_per_day'] ?? 50);
@@ -6205,14 +6276,21 @@ function handleSaveAIChatSettings($db) {
         $aiProvider = trim($data['ai_provider'] ?? 'openai');
         $modelName = trim($data['model_name'] ?? 'gpt-4o');
         $openaiEnabled = isset($data['openai_enabled']) ? (int)$data['openai_enabled'] : 1;
+        $openAIReasoningEnabled = isset($data['openai_reasoning_enabled']) ? (int)$data['openai_reasoning_enabled'] : 1;
+        $openAIReasoningEffort = strtolower(trim((string)($data['openai_reasoning_effort'] ?? 'medium')));
         $deepseekEnabled = isset($data['deepseek_enabled']) ? (int)$data['deepseek_enabled'] : 1;
+        $deepseekAutoProfileEnabled = isset($data['deepseek_auto_profile_enabled']) ? (int)$data['deepseek_auto_profile_enabled'] : 1;
         $qwenEnabled = isset($data['qwen_enabled']) ? (int)$data['qwen_enabled'] : 1;
         $glmEnabled = isset($data['glm_enabled']) ? (int)$data['glm_enabled'] : 1;
+        $glmAutoProfileEnabled = isset($data['glm_auto_profile_enabled']) ? (int)$data['glm_auto_profile_enabled'] : 1;
         $maxTokens = (int)($data['max_tokens_per_request'] ?? 600);
         $temperature = (float)($data['temperature'] ?? 0.8);
         $requestsPerDay = (int)($data['requests_per_day'] ?? 50);
         $requestsPerHour = (int)($data['requests_per_hour'] ?? 10);
         $enabled = isset($data['enabled']) ? (int)$data['enabled'] : 1;
+
+        $deepseekAutoProfileEnabled = $deepseekAutoProfileEnabled === 0 ? 0 : 1;
+        $glmAutoProfileEnabled = $glmAutoProfileEnabled === 0 ? 0 : 1;
 
         // Validate provider/model
         $allowedProviders = ['openai', 'deepseek', 'qwen', 'glm'];
@@ -6221,6 +6299,10 @@ function handleSaveAIChatSettings($db) {
         }
         if ($modelName === '' || strlen($modelName) > 120 || !preg_match('/^[a-zA-Z0-9._:-]+$/', $modelName)) {
             throw new Exception('Invalid model name format. Use letters, numbers, dot, underscore, dash, and colon only (max 120 chars).');
+        }
+        $allowedReasoningEfforts = ['minimal', 'low', 'medium', 'high'];
+        if (!in_array($openAIReasoningEffort, $allowedReasoningEfforts, true)) {
+            throw new Exception('OpenAI reasoning effort must be one of: ' . implode(', ', $allowedReasoningEfforts));
         }
         
         // Validate
@@ -6248,7 +6330,22 @@ function handleSaveAIChatSettings($db) {
             // ignore
         }
         try {
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN openai_reasoning_enabled TINYINT(1) DEFAULT 1");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN openai_reasoning_effort VARCHAR(20) DEFAULT 'medium'");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
             $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN deepseek_enabled TINYINT(1) DEFAULT 1");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN deepseek_auto_profile_enabled TINYINT(1) DEFAULT 1");
         } catch (Exception $e) {
             // ignore
         }
@@ -6259,6 +6356,11 @@ function handleSaveAIChatSettings($db) {
         }
         try {
             $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN glm_enabled TINYINT(1) DEFAULT 1");
+        } catch (Exception $e) {
+            // ignore
+        }
+        try {
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN glm_auto_profile_enabled TINYINT(1) DEFAULT 1");
         } catch (Exception $e) {
             // ignore
         }
@@ -6293,15 +6395,19 @@ function handleSaveAIChatSettings($db) {
             // Table has updated_by column
             $stmt = $db->prepare("
                 INSERT INTO ai_chat_settings 
-                (id, ai_provider, model_name, openai_enabled, deepseek_enabled, qwen_enabled, glm_enabled, max_tokens_per_request, temperature, requests_per_day, requests_per_hour, enabled, updated_by)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, ai_provider, model_name, openai_enabled, openai_reasoning_enabled, openai_reasoning_effort, deepseek_enabled, deepseek_auto_profile_enabled, qwen_enabled, glm_enabled, glm_auto_profile_enabled, max_tokens_per_request, temperature, requests_per_day, requests_per_hour, enabled, updated_by)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                 ai_provider = VALUES(ai_provider),
                 model_name = VALUES(model_name),
                 openai_enabled = VALUES(openai_enabled),
+                openai_reasoning_enabled = VALUES(openai_reasoning_enabled),
+                openai_reasoning_effort = VALUES(openai_reasoning_effort),
                 deepseek_enabled = VALUES(deepseek_enabled),
+                deepseek_auto_profile_enabled = VALUES(deepseek_auto_profile_enabled),
                 qwen_enabled = VALUES(qwen_enabled),
                 glm_enabled = VALUES(glm_enabled),
+                glm_auto_profile_enabled = VALUES(glm_auto_profile_enabled),
                 max_tokens_per_request = VALUES(max_tokens_per_request),
                 temperature = VALUES(temperature),
                 requests_per_day = VALUES(requests_per_day),
@@ -6310,20 +6416,24 @@ function handleSaveAIChatSettings($db) {
                 updated_by = VALUES(updated_by),
                 updated_at = NOW()
             ");
-            $result = $stmt->execute([$aiProvider, $modelName, $openaiEnabled, $deepseekEnabled, $qwenEnabled, $glmEnabled, $maxTokens, $temperature, $requestsPerDay, $requestsPerHour, $enabled, $adminId]);
+            $result = $stmt->execute([$aiProvider, $modelName, $openaiEnabled, $openAIReasoningEnabled, $openAIReasoningEffort, $deepseekEnabled, $deepseekAutoProfileEnabled, $qwenEnabled, $glmEnabled, $glmAutoProfileEnabled, $maxTokens, $temperature, $requestsPerDay, $requestsPerHour, $enabled, $adminId]);
         } else {
             // Table doesn't have updated_by column (older schema)
             $stmt = $db->prepare("
                 INSERT INTO ai_chat_settings 
-                (id, ai_provider, model_name, openai_enabled, deepseek_enabled, qwen_enabled, glm_enabled, max_tokens_per_request, temperature, requests_per_day, requests_per_hour, enabled)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, ai_provider, model_name, openai_enabled, openai_reasoning_enabled, openai_reasoning_effort, deepseek_enabled, deepseek_auto_profile_enabled, qwen_enabled, glm_enabled, glm_auto_profile_enabled, max_tokens_per_request, temperature, requests_per_day, requests_per_hour, enabled)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                 ai_provider = VALUES(ai_provider),
                 model_name = VALUES(model_name),
                 openai_enabled = VALUES(openai_enabled),
+                openai_reasoning_enabled = VALUES(openai_reasoning_enabled),
+                openai_reasoning_effort = VALUES(openai_reasoning_effort),
                 deepseek_enabled = VALUES(deepseek_enabled),
+                deepseek_auto_profile_enabled = VALUES(deepseek_auto_profile_enabled),
                 qwen_enabled = VALUES(qwen_enabled),
                 glm_enabled = VALUES(glm_enabled),
+                glm_auto_profile_enabled = VALUES(glm_auto_profile_enabled),
                 max_tokens_per_request = VALUES(max_tokens_per_request),
                 temperature = VALUES(temperature),
                 requests_per_day = VALUES(requests_per_day),
@@ -6331,7 +6441,7 @@ function handleSaveAIChatSettings($db) {
                 enabled = VALUES(enabled),
                 updated_at = NOW()
             ");
-            $result = $stmt->execute([$aiProvider, $modelName, $openaiEnabled, $deepseekEnabled, $qwenEnabled, $glmEnabled, $maxTokens, $temperature, $requestsPerDay, $requestsPerHour, $enabled]);
+            $result = $stmt->execute([$aiProvider, $modelName, $openaiEnabled, $openAIReasoningEnabled, $openAIReasoningEffort, $deepseekEnabled, $deepseekAutoProfileEnabled, $qwenEnabled, $glmEnabled, $glmAutoProfileEnabled, $maxTokens, $temperature, $requestsPerDay, $requestsPerHour, $enabled]);
         }
         
         if (!$result) {
@@ -6348,7 +6458,7 @@ function handleSaveAIChatSettings($db) {
         }
         
         // Log the change
-        error_log("AI Chat Settings updated by admin ID {$adminId}: provider={$aiProvider}, model={$modelName}, max_tokens={$maxTokens}, temp={$temperature}, daily_limit={$requestsPerDay}, hourly_limit={$requestsPerHour}, enabled={$enabled}");
+        error_log("AI Chat Settings updated by admin ID {$adminId}: provider={$aiProvider}, model={$modelName}, reasoning_enabled={$openAIReasoningEnabled}, reasoning_effort={$openAIReasoningEffort}, deepseek_auto_profile_enabled={$deepseekAutoProfileEnabled}, glm_auto_profile_enabled={$glmAutoProfileEnabled}, max_tokens={$maxTokens}, temp={$temperature}, daily_limit={$requestsPerDay}, hourly_limit={$requestsPerHour}, enabled={$enabled}");
         
         echo json_encode([
             'success' => true, 
@@ -6357,9 +6467,13 @@ function handleSaveAIChatSettings($db) {
                 'ai_provider' => $savedSettings['ai_provider'],
                 'model_name' => $savedSettings['model_name'],
                 'openai_enabled' => (int)($savedSettings['openai_enabled'] ?? 1),
+                'openai_reasoning_enabled' => (int)($savedSettings['openai_reasoning_enabled'] ?? 1),
+                'openai_reasoning_effort' => (string)($savedSettings['openai_reasoning_effort'] ?? 'medium'),
                 'deepseek_enabled' => (int)($savedSettings['deepseek_enabled'] ?? 1),
+                'deepseek_auto_profile_enabled' => (int)($savedSettings['deepseek_auto_profile_enabled'] ?? 1),
                 'qwen_enabled' => (int)($savedSettings['qwen_enabled'] ?? 1),
                 'glm_enabled' => (int)($savedSettings['glm_enabled'] ?? 1),
+                'glm_auto_profile_enabled' => (int)($savedSettings['glm_auto_profile_enabled'] ?? 1),
                 'max_tokens_per_request' => (int)$savedSettings['max_tokens_per_request'],
                 'temperature' => (float)$savedSettings['temperature'],
                 'requests_per_day' => (int)$savedSettings['requests_per_day'],
@@ -6380,6 +6494,12 @@ function handleGetAIChatUsage($db) {
     requireAdmin();
     
     try {
+        try {
+            $db->exec("ALTER TABLE ai_chat_usage ADD COLUMN tuning_profile VARCHAR(80) DEFAULT 'generic_payload' AFTER model_used");
+        } catch (Exception $e) {
+            // ignore
+        }
+
         $page = (int)($_GET['page'] ?? 1);
         $limit = (int)($_GET['limit'] ?? 50);
         $userId = isset($_GET['user_id']) ? (int)$_GET['user_id'] : null;
@@ -6954,9 +7074,13 @@ function handleSetAIChatEnabled($db) {
             ai_provider VARCHAR(20) DEFAULT 'openai',
             model_name VARCHAR(120) DEFAULT 'gpt-4o',
             openai_enabled TINYINT(1) DEFAULT 1,
+            openai_reasoning_enabled TINYINT(1) DEFAULT 1,
+            openai_reasoning_effort VARCHAR(20) DEFAULT 'medium',
             deepseek_enabled TINYINT(1) DEFAULT 1,
+            deepseek_auto_profile_enabled TINYINT(1) DEFAULT 1,
             qwen_enabled TINYINT(1) DEFAULT 1,
             glm_enabled TINYINT(1) DEFAULT 1,
+            glm_auto_profile_enabled TINYINT(1) DEFAULT 1,
             max_tokens_per_request INT DEFAULT 600,
             temperature DECIMAL(3,2) DEFAULT 0.8,
             requests_per_day INT DEFAULT 50,

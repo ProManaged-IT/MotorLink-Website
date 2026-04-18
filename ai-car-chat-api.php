@@ -180,6 +180,148 @@ function normalizeAIChatModelName($provider, $modelName, $fallbackModel = '') {
     return $fallbackModel !== '' ? $fallbackModel : getAIChatProviderConfig($provider)['default_model'];
 }
 
+function isOpenAIReasoningCapableModel($modelName) {
+    $model = strtolower(trim((string)$modelName));
+    if ($model === '') {
+        return false;
+    }
+
+    return preg_match('/^(o\d|gpt-5(?:$|[-._:]))/', $model) === 1;
+}
+
+function isOpenAIGPT5ReasoningModel($modelName) {
+    $model = strtolower(trim((string)$modelName));
+    return $model !== '' && preg_match('/^gpt-5(?:$|[-._:])/', $model) === 1;
+}
+
+function isDeepSeekReasonerModel($modelName) {
+    $model = strtolower(trim((string)$modelName));
+    return $model !== '' && preg_match('/^deepseek-reasoner(?:$|[-._:])/', $model) === 1;
+}
+
+function isGLMThinkingCapableModel($modelName) {
+    $model = strtolower(trim((string)$modelName));
+    if ($model === '') {
+        return false;
+    }
+
+    return preg_match('/^glm-(4\.5|4\.6|4\.7|5\.1)(?:$|[-._:])/', $model) === 1;
+}
+
+function normalizeOpenAIReasoningEffort($effort, $modelName = '') {
+    $effort = strtolower(trim((string)$effort));
+    $isGPT5 = isOpenAIGPT5ReasoningModel($modelName);
+    $allowed = $isGPT5 ? ['minimal', 'low', 'medium', 'high'] : ['low', 'medium', 'high'];
+
+    if ($effort === 'minimal' && !$isGPT5) {
+        return 'low';
+    }
+
+    return in_array($effort, $allowed, true) ? $effort : 'medium';
+}
+
+function getAIChatRequestTuningProfile($provider, $modelName, $settings = [], $purpose = 'main_chat', $providerCallUsed = true) {
+    if (!$providerCallUsed) {
+        return 'deterministic_no_provider';
+    }
+
+    $provider = normalizeAIChatProvider($provider);
+    $purpose = strtolower(trim((string)$purpose));
+
+    if ($provider === 'openai') {
+        $reasoningEnabled = (int)($settings['openai_reasoning_enabled'] ?? 1) === 1;
+        if ($reasoningEnabled && isOpenAIReasoningCapableModel($modelName)) {
+            $effort = normalizeOpenAIReasoningEffort($settings['openai_reasoning_effort'] ?? 'medium', $modelName);
+            if (in_array($purpose, ['intent', 'json_extraction', 'structured_extraction'], true)) {
+                $effort = normalizeOpenAIReasoningEffort('low', $modelName);
+            }
+
+            return 'openai_reasoning_' . $effort;
+        }
+
+        return 'openai_generic';
+    }
+
+    if ($provider === 'deepseek') {
+        $autoProfileEnabled = (int)($settings['deepseek_auto_profile_enabled'] ?? 1) === 1;
+        if ($autoProfileEnabled && isDeepSeekReasonerModel($modelName)) {
+            return 'deepseek_reasoner_profile';
+        }
+
+        return 'deepseek_generic';
+    }
+
+    if ($provider === 'glm') {
+        $autoProfileEnabled = (int)($settings['glm_auto_profile_enabled'] ?? 1) === 1;
+        if ($autoProfileEnabled && isGLMThinkingCapableModel($modelName)) {
+            $thinkingType = in_array($purpose, ['intent', 'json_extraction', 'structured_extraction'], true) ? 'disabled' : 'enabled';
+            return 'glm_thinking_' . $thinkingType;
+        }
+
+        return 'glm_generic';
+    }
+
+    if ($provider === 'qwen') {
+        return 'qwen_generic';
+    }
+
+    return 'generic_payload';
+}
+
+function applyAIChatProviderRequestTuning($provider, $modelName, array $payload, $settings = [], $purpose = 'main_chat') {
+    $provider = normalizeAIChatProvider($provider);
+    $purpose = strtolower(trim((string)$purpose));
+
+    if ($provider === 'openai') {
+        $reasoningEnabled = (int)($settings['openai_reasoning_enabled'] ?? 1) === 1;
+        if (!$reasoningEnabled || !isOpenAIReasoningCapableModel($modelName)) {
+            return $payload;
+        }
+
+        $effort = normalizeOpenAIReasoningEffort($settings['openai_reasoning_effort'] ?? 'medium', $modelName);
+        if (in_array($purpose, ['intent', 'json_extraction', 'structured_extraction'], true)) {
+            $effort = normalizeOpenAIReasoningEffort('low', $modelName);
+        }
+
+        $payload['reasoning_effort'] = $effort;
+
+        if (isset($payload['max_tokens']) && !isset($payload['max_completion_tokens'])) {
+            $payload['max_completion_tokens'] = max(1, (int)$payload['max_tokens']);
+            unset($payload['max_tokens']);
+        }
+
+        unset($payload['temperature'], $payload['top_p'], $payload['frequency_penalty'], $payload['presence_penalty']);
+
+        return $payload;
+    }
+
+    if ($provider === 'deepseek' && isDeepSeekReasonerModel($modelName)) {
+        $autoProfileEnabled = (int)($settings['deepseek_auto_profile_enabled'] ?? 1) === 1;
+        if (!$autoProfileEnabled) {
+            return $payload;
+        }
+
+        unset($payload['temperature'], $payload['top_p'], $payload['frequency_penalty'], $payload['presence_penalty'], $payload['logprobs'], $payload['top_logprobs']);
+
+        return $payload;
+    }
+
+    if ($provider === 'glm' && isGLMThinkingCapableModel($modelName)) {
+        $autoProfileEnabled = (int)($settings['glm_auto_profile_enabled'] ?? 1) === 1;
+        if (!$autoProfileEnabled) {
+            return $payload;
+        }
+
+        $payload['thinking'] = [
+            'type' => in_array($purpose, ['intent', 'json_extraction', 'structured_extraction'], true) ? 'disabled' : 'enabled'
+        ];
+
+        return $payload;
+    }
+
+    return $payload;
+}
+
 function isAIChatModelErrorResponse($httpCode, $errorMessage, $errorType = null, $errorCode = null) {
     if ((int)$httpCode !== 400) {
         return false;
@@ -1769,7 +1911,7 @@ function handleAICarChat($db) {
         }
 
         $logDeterministicUsage = function() use ($db, $user, $message, $modelName) {
-            logAIChatUsage($db, $user['id'], $message, 0, 0, $modelName, 0.0);
+            logAIChatUsage($db, $user['id'], $message, 0, 0, $modelName, 0.0, 'deterministic_no_provider');
         };
 
         // Get user context (type, business info, etc.)
@@ -2427,6 +2569,7 @@ REMEMBER (MANDATORY WORKFLOW):
             'frequency_penalty' => 0.1, // Lower penalty for more natural flow
             'presence_penalty' => 0.1 // Lower penalty for more direct answers
         ];
+        $requestBody = applyAIChatProviderRequestTuning($provider, $modelName, $requestBody, $settings, 'main_chat');
         
         // Set provider auth headers
         $headers = [
@@ -2580,9 +2723,10 @@ REMEMBER (MANDATORY WORKFLOW):
         $inputTokens = $data['usage']['prompt_tokens'] ?? 0;
         $outputTokens = $data['usage']['completion_tokens'] ?? 0;
         $costEstimate = ($inputTokens / 1000000 * 0.15) + ($outputTokens / 1000000 * 0.60);
+        $tuningProfile = getAIChatRequestTuningProfile($provider, $modelName, $settings, 'main_chat');
         
         // Log usage to database
-        logAIChatUsage($db, $user['id'], $message, $responseLength, $tokensUsed, $modelName, $costEstimate);
+        logAIChatUsage($db, $user['id'], $message, $responseLength, $tokensUsed, $modelName, $costEstimate, $tuningProfile);
         updateAIChatPersistenceContext([
             'resolved_message' => $message,
             'model_name' => $modelName
@@ -3395,6 +3539,7 @@ function resolveConversationalIntentWithAI($db, $message, $conversationHistory, 
         'temperature' => 0.1,
         'max_tokens' => 220
     ];
+    $payload = applyAIChatProviderRequestTuning($provider, $modelName, $payload, $settings, 'intent');
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $providerConfig['url']);
@@ -4789,6 +4934,7 @@ function callOpenAIAPIForSpecs($db, $user, $messages) {
         'frequency_penalty' => 0.1,
         'presence_penalty' => 0.1
     ];
+    $requestBody = applyAIChatProviderRequestTuning($provider, $modelName, $requestBody, $settings, 'specs');
     
     // Make API call
     $ch = curl_init();
@@ -4829,8 +4975,9 @@ function callOpenAIAPIForSpecs($db, $user, $messages) {
     $tokensUsed = $responseData['usage']['total_tokens'] ?? 0;
     
     // Log usage
+    $tuningProfile = getAIChatRequestTuningProfile($provider, $modelName, $settings, 'specs');
     logAIChatUsage($db, $user['id'], $messages[count($messages) - 1]['content'], 
-                   strlen($aiResponse), $tokensUsed, $modelName, 0);
+                   strlen($aiResponse), $tokensUsed, $modelName, 0, $tuningProfile);
     
     return [
         'response' => $aiResponse,
@@ -5319,7 +5466,7 @@ Return ONLY the JSON object, no other text:";
         'Content-Type: application/json',
         'Authorization: Bearer ' . $providerApiKey
     ]);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+    $requestBody = [
         'model' => $modelName,
         'messages' => [
             ['role' => 'system', 'content' => 'You are a precise JSON extraction assistant. Extract ONLY the exact requirements mentioned. Return only valid JSON, no other text.'],
@@ -5327,7 +5474,9 @@ Return ONLY the JSON object, no other text:";
         ],
         'temperature' => 0.1,
         'max_tokens' => 200
-    ]));
+    ];
+    $requestBody = applyAIChatProviderRequestTuning($provider, $modelName, $requestBody, $settings, 'json_extraction');
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
     curl_setopt($ch, CURLOPT_TIMEOUT, 15);
     
     // Disable SSL for Windows/localhost development
@@ -5658,7 +5807,7 @@ Return ONLY the JSON object, no other text:";
         'Content-Type: application/json',
         'Authorization: Bearer ' . $providerApiKey
     ]);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+    $requestBody = [
         'model' => $modelName,
         'messages' => [
             ['role' => 'system', 'content' => 'You are a precise JSON extraction assistant. Extract ONLY the exact specifications mentioned by the user. Do NOT add anything that was not explicitly stated. Return only valid JSON, no other text.'],
@@ -5666,7 +5815,9 @@ Return ONLY the JSON object, no other text:";
         ],
         'temperature' => 0.1, // Lower temperature for more precise extraction
         'max_tokens' => 300
-    ]));
+    ];
+    $requestBody = applyAIChatProviderRequestTuning($provider, $modelName, $requestBody, $settings, 'structured_extraction');
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     // Disable SSL for Windows/localhost development
@@ -10015,9 +10166,13 @@ function getAIChatSettings($db) {
                 'ai_provider' => 'openai',
                 'model_name' => 'gpt-4o',
                 'openai_enabled' => 1,
+                'openai_reasoning_enabled' => 1,
+                'openai_reasoning_effort' => 'medium',
                 'deepseek_enabled' => 1,
+                'deepseek_auto_profile_enabled' => 1,
                 'qwen_enabled' => 1,
                 'glm_enabled' => 1,
+                'glm_auto_profile_enabled' => 1,
                 'max_tokens_per_request' => 1200,
                 'temperature' => 0.7,
                 'requests_per_day' => 50,
@@ -10032,9 +10187,13 @@ function getAIChatSettings($db) {
         $settings['ai_provider'] = normalizeAIChatProvider($settings['ai_provider'] ?? 'openai');
         $settings['model_name'] = $settings['model_name'] ?? 'gpt-4o-mini';
         $settings['openai_enabled'] = (int)($settings['openai_enabled'] ?? 1);
+        $settings['openai_reasoning_enabled'] = (int)($settings['openai_reasoning_enabled'] ?? 1);
+        $settings['openai_reasoning_effort'] = normalizeOpenAIReasoningEffort($settings['openai_reasoning_effort'] ?? 'medium', $settings['model_name']);
         $settings['deepseek_enabled'] = (int)($settings['deepseek_enabled'] ?? 1);
+        $settings['deepseek_auto_profile_enabled'] = (int)($settings['deepseek_auto_profile_enabled'] ?? 1);
         $settings['qwen_enabled'] = (int)($settings['qwen_enabled'] ?? 1);
         $settings['glm_enabled'] = (int)($settings['glm_enabled'] ?? 1);
+        $settings['glm_auto_profile_enabled'] = (int)($settings['glm_auto_profile_enabled'] ?? 1);
         $settings['max_tokens_per_request'] = (int)($settings['max_tokens_per_request'] ?? 1200);
         $settings['temperature'] = (float)($settings['temperature'] ?? 0.7);
         $settings['requests_per_day'] = (int)($settings['requests_per_day'] ?? 50);
@@ -10053,9 +10212,13 @@ function getAIChatSettings($db) {
             'ai_provider' => 'openai',
             'model_name' => 'gpt-4o',
             'openai_enabled' => 1,
+            'openai_reasoning_enabled' => 1,
+            'openai_reasoning_effort' => 'medium',
             'deepseek_enabled' => 1,
+            'deepseek_auto_profile_enabled' => 1,
             'qwen_enabled' => 1,
             'glm_enabled' => 1,
+            'glm_auto_profile_enabled' => 1,
             'max_tokens_per_request' => 1200,
             'temperature' => 0.7,
             'requests_per_day' => 50,
@@ -10199,15 +10362,30 @@ function getUserAIChatUsageRemaining($db, $userId) {
 /**
  * Log AI chat usage to database
  */
-function logAIChatUsage($db, $userId, $message, $responseLength, $tokensUsed, $modelUsed, $costEstimate) {
+function logAIChatUsage($db, $userId, $message, $responseLength, $tokensUsed, $modelUsed, $costEstimate, $tuningProfile = null) {
     try {
+        static $tuningProfileColumnEnsured = false;
         $ipAddress = $_SERVER['REMOTE_ADDR'] ?? null;
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $tuningProfile = strtolower(trim((string)($tuningProfile ?? 'generic_payload')));
+
+        if ($tuningProfile === '') {
+            $tuningProfile = 'generic_payload';
+        }
+
+        if (!$tuningProfileColumnEnsured) {
+            try {
+                $db->exec("ALTER TABLE ai_chat_usage ADD COLUMN tuning_profile VARCHAR(80) DEFAULT 'generic_payload' AFTER model_used");
+            } catch (Exception $e) {
+                // ignore
+            }
+            $tuningProfileColumnEnsured = true;
+        }
         
         $stmt = $db->prepare("
             INSERT INTO ai_chat_usage 
-            (user_id, message, response_length, tokens_used, model_used, cost_estimate, ip_address, user_agent, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            (user_id, message, response_length, tokens_used, model_used, tuning_profile, cost_estimate, ip_address, user_agent, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ");
         
         $stmt->execute([
@@ -10216,6 +10394,7 @@ function logAIChatUsage($db, $userId, $message, $responseLength, $tokensUsed, $m
             $responseLength,
             $tokensUsed,
             $modelUsed,
+            substr($tuningProfile, 0, 80),
             $costEstimate,
             $ipAddress,
             $userAgent
