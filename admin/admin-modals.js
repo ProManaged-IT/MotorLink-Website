@@ -330,22 +330,22 @@ function showAddCarHireModal() {
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="add-carhire-daily">Daily Rate From (MWK)</label>
+                            <label for="add-carhire-daily">Daily Rate From (Configured Currency)</label>
                             <input type="number" id="add-carhire-daily" name="daily_rate_from" class="form-control">
                         </div>
                         <div class="form-group">
-                            <label for="add-carhire-daily-to">Daily Rate To (MWK)</label>
+                            <label for="add-carhire-daily-to">Daily Rate To (Configured Currency)</label>
                             <input type="number" id="add-carhire-daily-to" name="daily_rate_to" class="form-control">
                         </div>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="add-carhire-weekly">Weekly Rate From (MWK)</label>
+                            <label for="add-carhire-weekly">Weekly Rate From (Configured Currency)</label>
                             <input type="number" id="add-carhire-weekly" name="weekly_rate_from" class="form-control">
                         </div>
                         <div class="form-group">
-                            <label for="add-carhire-monthly">Monthly Rate From (MWK)</label>
+                            <label for="add-carhire-monthly">Monthly Rate From (Configured Currency)</label>
                             <input type="number" id="add-carhire-monthly" name="monthly_rate_from" class="form-control">
                         </div>
                     </div>

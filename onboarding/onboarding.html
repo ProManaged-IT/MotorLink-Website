@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MotorLink Malawi - Business Onboarding</title>
+    <title>MotorLink - Business Onboarding</title>
     <!-- Suppress browser extension console errors -->
     <script src="../js/suppress-extension-errors.js"></script>
+    <script src="../config.js"></script>
     <link rel="stylesheet" href="onboarding.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../css/mobile-enhancements.css">
@@ -18,7 +19,7 @@
             <div class="logo">
                 <i class="fas fa-car"></i>
                 <div>
-                    <h1>MotorLink Malawi</h1>
+                    <h1>MotorLink</h1>
                     <p class="subtitle">Business Onboarding Portal</p>
                 </div>
             </div>
@@ -132,7 +133,7 @@
                             </label>
                             <input type="text" id="businessName" name="business_name" required
                                    autocomplete="organization"
-                                   placeholder="e.g., Malawi Premium Rentals">
+                                placeholder="e.g., Premium Rentals">
                             <div class="field-info">Official registered business name</div>
                         </div>
 
@@ -492,20 +493,20 @@
                             <div class="form-group">
                                 <label for="dailyRate">
                                     <i class="fas fa-money-bill-wave"></i>
-                                    Daily Rate From (MWK)
+                                    Daily Rate From (Configured Currency)
                                 </label>
                                 <input type="number" id="dailyRate" name="daily_rate_from"
-                                       placeholder="25000" min="0">
+                                       placeholder="250" min="0">
                                 <div class="field-info">Starting price per day</div>
                             </div>
 
                             <div class="form-group">
                                 <label for="weeklyRate">
                                     <i class="fas fa-money-bill-wave"></i>
-                                    Weekly Rate From (MWK)
+                                    Weekly Rate From (Configured Currency)
                                 </label>
                                 <input type="number" id="weeklyRate" name="weekly_rate_from"
-                                       placeholder="150000" min="0">
+                                       placeholder="1500" min="0">
                                 <div class="field-info">Starting price per week</div>
                             </div>
                         </div>
@@ -513,10 +514,10 @@
                         <div class="form-group">
                             <label for="monthlyRate">
                                 <i class="fas fa-money-bill-wave"></i>
-                                Monthly Rate From (MWK)
+                                Monthly Rate From (Configured Currency)
                             </label>
                             <input type="number" id="monthlyRate" name="monthly_rate_from"
-                                   placeholder="500000" min="0">
+                                   placeholder="5000" min="0">
                             <div class="field-info">Starting price per month</div>
                         </div>
 

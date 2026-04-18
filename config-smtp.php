@@ -17,6 +17,6 @@ define('SMTP_PASSWORD', getenv('SMTP_PASSWORD') ?: '');
 
 // Email Settings
 define('SMTP_FROM_EMAIL', 'johnpaulchirwa@promanaged-it.com');
-define('SMTP_FROM_NAME', 'MotorLink Malawi');
+define('SMTP_FROM_NAME', getenv('SMTP_FROM_NAME') ?: 'MotorLink');
 define('SMTP_REPLY_TO', 'johnpaulchirwa@promanaged-it.com');
 

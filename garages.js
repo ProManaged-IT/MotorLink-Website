@@ -872,7 +872,8 @@ async function geocodeGarageAddress(address, locationName) {
     if (!address || !address.trim()) return null;
     
     // Create a full address string
-    const fullAddress = `${address}, ${locationName || 'Malawi'}, Malawi`;
+    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : '';
+    const fullAddress = [address, locationName, countryName].map((part) => String(part || '').trim()).filter(Boolean).join(', ');
     
     // Check cache first
     if (geocodedGarages.has(fullAddress)) {

@@ -122,20 +122,26 @@
 
                 <!-- Stats -->
                 <div class="showroom-stats" id="showroomStats" style="display: none;">
-                    <div class="stat-item">
+                    <div class="showroom-feature-box">
                         <i class="fas fa-car"></i>
-                        <span class="stat-value" id="totalCarsCount">0</span>
-                        <span class="stat-label">Cars Available</span>
+                        <div class="showroom-feature-copy">
+                            <strong class="showroom-feature-value" id="totalCarsCount">0</strong>
+                            <small class="showroom-feature-label">Cars Available</small>
+                            </div>
                     </div>
-                    <div class="stat-item" id="salesStatItem">
+                    <div class="showroom-feature-box" id="salesStatItem">
                         <i class="fas fa-check-circle"></i>
-                        <span class="stat-value" id="totalSalesCount">0</span>
-                        <span class="stat-label">Successful Sales</span>
+                        <div class="showroom-feature-copy">
+                            <strong class="showroom-feature-value" id="totalSalesCount">0</strong>
+                            <small class="showroom-feature-label">Successful Sales</small>
+                            </div>
                     </div>
-                    <div class="stat-item" id="yearsStatItem" style="display: none;">
+                    <div class="showroom-feature-box" id="yearsStatItem" style="display: none;">
                         <i class="fas fa-calendar"></i>
-                        <span class="stat-value" id="yearsInBusiness">0</span>
-                        <span class="stat-label">Years in Business</span>
+                        <div class="showroom-feature-copy">
+                            <strong class="showroom-feature-value" id="yearsInBusiness">0</strong>
+                            <small class="showroom-feature-label">Years in Business</small>
+                            </div>
                     </div>
                 </div>
             </div>
@@ -332,15 +338,18 @@
 
                     <!-- Quick Actions - Moved below contact info -->
                     <div class="dealer-quick-actions contact-actions">
-                        <a href="#" id="dealerPhoneLink" class="quick-action-btn phone" style="display: none;">
+                        <a href="#" id="dealerPhoneLink" class="quick-action-btn" style="display: none;">
                             <i class="fas fa-phone"></i> Call
                         </a>
                         <a href="#" id="dealerWhatsappLink" class="quick-action-btn whatsapp" style="display: none;">
                             <i class="fab fa-whatsapp"></i> WhatsApp
                         </a>
-                        <button class="quick-action-btn" onclick="shareDealer()">
-                            <i class="fas fa-share-alt"></i> Share
-                        </button>
+                        <a href="#" id="dealerEmailLink" class="quick-action-btn" style="display: none;">
+                            <i class="fas fa-envelope"></i> Email
+                        </a>
+                        <a href="#" id="dealerWebsiteLink" class="quick-action-btn website" target="_blank" rel="noopener" style="display: none;">
+                            <i class="fas fa-globe"></i> Website
+                        </a>
                     </div>
 
                     <!-- Social Media - Sleek -->

@@ -54,7 +54,11 @@
         }
 
         populateContactData() {
-            const supportEmail = this.getValue('contact_support_email', this.getValue('contact_email', 'support@motorlink.mw'));
+            const runtimeSiteName = (window.CONFIG && CONFIG.SITE_NAME) ? CONFIG.SITE_NAME : 'MotorLink';
+            const runtimeCountryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : '';
+            const runtimeSupportEmail = (window.CONFIG && CONFIG.SUPPORT_EMAIL) ? CONFIG.SUPPORT_EMAIL : 'support@example.com';
+
+            const supportEmail = this.getValue('contact_support_email', this.getValue('contact_email', runtimeSupportEmail));
             const mainEmail = this.getValue('contact_email', supportEmail);
             const phone = this.getValue('contact_phone', '+265 991 234 567');
             const whatsapp = this.getValue('contact_whatsapp', phone);
@@ -81,8 +85,8 @@
             this.applyText('.js-whatsapp-text', whatsapp);
             this.applyLink('.js-whatsapp-link', `https://wa.me/${whatsappDigits}`, whatsapp);
 
-            this.applyText('.js-address-text', address || 'MotorLink Malawi');
-            this.applyText('.js-location-text', locationLine || 'Malawi');
+            this.applyText('.js-address-text', address || runtimeSiteName);
+            this.applyText('.js-location-text', locationLine || runtimeCountryName);
             this.applyText('.js-hours-weekday-text', weekdayHours);
             this.applyText('.js-hours-saturday-text', saturdayHours);
             this.applyText('.js-hours-sunday-text', sundayHours);

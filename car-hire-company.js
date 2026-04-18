@@ -168,7 +168,8 @@ async function loadCompanyData(id) {
             companyData = data.company;
             renderCompanyHeader(companyData);
             renderContactCard(companyData);
-            document.title = `${companyData.business_name} - Car Hire - MotorLink Malawi`;
+            const siteName = (window.CONFIG && CONFIG.SITE_NAME) ? CONFIG.SITE_NAME : 'MotorLink';
+            document.title = `${companyData.business_name} - Car Hire - ${siteName}`;
             // Re-trigger mobile description move after async render completes
             if (typeof moveDescriptionsOnMobile === 'function') {
                 setTimeout(moveDescriptionsOnMobile, 50);

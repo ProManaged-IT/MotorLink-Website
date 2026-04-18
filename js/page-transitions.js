@@ -14,6 +14,7 @@ class PageTransitionManager {
     }
 
     init() {
+        this.resetPageVisualState();
         this.injectLoaderStyles();
 
         // Create page loader overlay
@@ -34,12 +35,14 @@ class PageTransitionManager {
         
         // Handle browser back/forward
         window.addEventListener('popstate', () => {
+            this.resetPageVisualState();
             this.showPageLoader();
             setTimeout(() => this.hidePageLoader(), 300);
         });
         
         // Hide loader on page load
         window.addEventListener('load', () => {
+            this.resetPageVisualState();
             setTimeout(() => this.hidePageLoader(), 100);
         });
 
@@ -47,11 +50,13 @@ class PageTransitionManager {
         window.addEventListener('pageshow', () => {
             this.isTransitioning = false;
             this.activeAsyncRequests = 0;
+            this.resetPageVisualState();
             this.hidePageLoader();
         });
         
         // Hide loader if page is already loaded
         if (document.readyState === 'complete') {
+            this.resetPageVisualState();
             setTimeout(() => this.hidePageLoader(), 100);
         }
 
@@ -198,8 +203,14 @@ class PageTransitionManager {
             loader.classList.add('fade-out');
             setTimeout(() => {
                 loader.style.display = 'none';
+                this.resetPageVisualState();
             }, 300);
         }
+    }
+
+    resetPageVisualState() {
+        document.body.style.opacity = '';
+        document.body.style.transition = '';
     }
 
     trackUserActions() {

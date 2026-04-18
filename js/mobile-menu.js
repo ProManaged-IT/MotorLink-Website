@@ -149,6 +149,18 @@ function initMobileMenu() {
         }
     };
 
+    const setMobileMenuOpenState = (isOpen) => {
+        document.body.classList.toggle('mobile-menu-open', Boolean(isOpen));
+    };
+
+    const resetToggleIcon = () => {
+        const icon = toggle ? toggle.querySelector('i') : null;
+        if (!icon) return;
+
+        icon.className = 'fas fa-bars';
+        icon.style.transform = 'rotate(0deg)';
+    };
+
     // Ensure tablet account toggle exists on pages that have user menu but no explicit button.
     if (!tabletUserMenuToggle && userMenu) {
         const headerContainer = userMenu.closest('.header-container');
@@ -172,6 +184,22 @@ function initMobileMenu() {
         if (staleBackdrop) {
             staleBackdrop.remove();
         }
+
+        if (nav) {
+            nav.classList.remove('active');
+        }
+
+        if (toggle) {
+            toggle.classList.remove('active');
+        }
+
+        if (userMenu) {
+            userMenu.classList.remove('active');
+        }
+
+        closeTabletUserMenu();
+        setMobileMenuOpenState(false);
+        resetToggleIcon();
         document.body.style.overflow = '';
     };
 
@@ -403,6 +431,7 @@ function initMobileMenu() {
         if (userMenu) {
             userMenu.classList.add('active');
         }
+        setMobileMenuOpenState(true);
         
         // Change icon to X with faster animation (180deg for smoother transition)
         const icon = toggle.querySelector('i');
@@ -449,6 +478,7 @@ function initMobileMenu() {
         if (userMenu) {
             userMenu.classList.remove('active');
         }
+        setMobileMenuOpenState(false);
         
         // Change icon back to hamburger with faster animation (180deg for smoother transition)
         const icon = toggle.querySelector('i');
@@ -538,6 +568,14 @@ function moveDescriptionsOnMobile() {
 // Add Page Indicator/Breadcrumb Navigation
 // ============================================================================
 function addPageIndicatorToMobileMenu() {
+    const existingIndicator = document.querySelector('.mobile-page-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
+
+    // Retired: this breadcrumb chip competes with the header/nav on smaller screens.
+    return;
+
     const nav = document.getElementById('mainNav');
     if (!nav) return;
 

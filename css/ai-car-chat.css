@@ -1918,11 +1918,28 @@
     transform: scale(0.92) !important;
 }
 
-/* Hide all inner markup — the button now contains just the <i> icon */
-.ai-chat-minimized .ai-min-icon,
+/* Keep only the icon visible in the launcher. */
+.ai-chat-minimized .ai-min-icon {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: auto !important;
+    height: auto !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: inherit !important;
+}
+
 .ai-chat-minimized .ai-min-label,
 .ai-chat-minimized .ai-min-live {
     display: none !important;
+}
+
+.ai-chat-minimized .ai-min-icon i {
+    font-size: 36px !important;
+    line-height: 1;
+    color: inherit !important;
+    pointer-events: none;
 }
 
 /* Direct <i> inside the button */
@@ -1973,7 +1990,8 @@
         font-size: 32px !important;
     }
 
-    .ai-chat-minimized > i { font-size: 32px !important; }
+    .ai-chat-minimized > i,
+    .ai-chat-minimized .ai-min-icon i { font-size: 32px !important; }
 }
 
 /* ── Mobile ──────────────────────────────────────────────────────────────── */
@@ -1996,7 +2014,8 @@
         font-size: 30px !important;
     }
 
-    .ai-chat-minimized > i { font-size: 30px !important; }
+    .ai-chat-minimized > i,
+    .ai-chat-minimized .ai-min-icon i { font-size: 30px !important; }
 
     .ai-chat-header { padding: 14px !important; }
     .ai-chat-title h3 { font-size: 15px !important; }
@@ -2028,7 +2047,17 @@
         font-size: 28px !important;
     }
 
-    .ai-chat-minimized > i { font-size: 28px !important; }
+    .ai-chat-minimized > i,
+    .ai-chat-minimized .ai-min-icon i { font-size: 28px !important; }
+}
+
+@media (max-width: 1024px) {
+    body.mobile-menu-open .ai-car-chat-widget,
+    body.mobile-menu-open .ai-chat-restore {
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
 }
 
 

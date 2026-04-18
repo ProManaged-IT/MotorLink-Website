@@ -2976,8 +2976,8 @@ a.btn-primary:hover {
     /* Solid white on scroll (no blur to keep it fast on mobile) */
     body.has-hero .header.scrolled {
         background: #ffffff !important;
-        border-bottom: 1px solid rgba(0, 200, 83, 0.07) !important;
-        box-shadow: 0 1px 16px rgba(0, 0, 0, 0.08) !important;
+        border-bottom: none !important;
+        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08) !important;
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
     }
@@ -2987,11 +2987,16 @@ a.btn-primary:hover {
         color: #ffffff !important;
         z-index: 10002 !important;
         position: relative !important;
+        display: flex !important;
+        align-items: center !important;
+        flex-shrink: 0 !important;
+        white-space: nowrap !important;
     }
 
     body.has-hero .logo i {
-        background: rgba(255, 255, 255, 0.16) !important;
+        background: rgba(255, 255, 255, 0.22) !important;
         box-shadow: none !important;
+        flex-shrink: 0 !important;
     }
 
     body.has-hero .header.scrolled .logo {
@@ -3120,8 +3125,8 @@ body.has-hero .header.scrolled .mobile-menu-toggle {
     .header {
         height: 64px !important;
         background: #ffffff !important;
-        border-bottom: 1px solid rgba(0, 200, 83, 0.06) !important;
-        box-shadow: 0 1px 12px rgba(0, 0, 0, 0.06) !important;
+        border-bottom: none !important;
+        box-shadow: none !important;
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
     }
@@ -3431,5 +3436,276 @@ body.has-hero .header.scrolled .mobile-menu-toggle {
         padding-top: 95px !important;
         padding-right: 20px !important;
         padding-left: 20px !important;
+    }
+}
+
+/* ============================================================================
+   SHARED BREADCRUMBS + HERO BLEND
+   Applied to every public page that uses nav-loader.js.
+   ============================================================================ */
+.page-breadcrumbs-wrap {
+    position: relative;
+    z-index: 60;
+}
+
+.page-breadcrumbs-wrap .container {
+    max-width: 1360px;
+    padding: 0 32px;
+}
+
+.page-breadcrumbs {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 100%;
+    min-height: 46px;
+    margin: 14px 0 20px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(13, 31, 18, 0.08);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 10px 30px rgba(13, 31, 18, 0.08);
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    scrollbar-width: none;
+}
+
+.page-breadcrumbs::-webkit-scrollbar {
+    display: none;
+}
+
+.page-breadcrumbs__link,
+.page-breadcrumbs__current {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    border-radius: 999px;
+    font-size: 13px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.page-breadcrumbs__link {
+    padding: 0 12px;
+    color: #496151;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.page-breadcrumbs__link:hover {
+    background: rgba(0, 200, 83, 0.08);
+    color: #0d7b41;
+    transform: translateY(-1px);
+}
+
+.page-breadcrumbs__current {
+    padding: 0 13px;
+    color: #0d7b41;
+    font-weight: 700;
+    border: 1px solid rgba(0, 200, 83, 0.18);
+    background: rgba(0, 200, 83, 0.1);
+}
+
+.page-breadcrumbs__sep {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(73, 97, 81, 0.45);
+    font-size: 10px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+body.has-hero.has-breadcrumbs .page-breadcrumbs-wrap {
+    height: 0;
+    padding-top: 92px;
+    margin-bottom: -156px;
+    z-index: 80;
+}
+
+body.has-hero.has-breadcrumbs .page-breadcrumbs {
+    margin: 0;
+    transform: none;
+    position: relative;
+    z-index: 12;
+    border: 1px solid rgba(255, 255, 255, 0.56);
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: 0 16px 34px rgba(8, 46, 24, 0.16);
+    backdrop-filter: blur(18px) saturate(165%);
+    -webkit-backdrop-filter: blur(18px) saturate(165%);
+}
+
+body.has-hero.has-breadcrumbs .page-breadcrumbs__link {
+    color: #0f5132;
+}
+
+body.has-hero.has-breadcrumbs .page-breadcrumbs__link:hover {
+    background: rgba(22, 163, 74, 0.1);
+    color: #0b3d27;
+}
+
+body.has-hero.has-breadcrumbs .page-breadcrumbs__current {
+    color: #ffffff;
+    border-color: rgba(22, 101, 52, 0.24);
+    background: linear-gradient(135deg, #16a34a 0%, #0f766e 100%);
+}
+
+body.has-hero.has-breadcrumbs .page-breadcrumbs__sep {
+    color: rgba(15, 81, 50, 0.52);
+}
+
+@media (min-width: 1024px) {
+    body.has-hero .contact-hero,
+    body.has-hero .support-hero,
+    body.has-hero .safety-hero {
+        padding-top: 130px !important;
+    }
+
+    body.has-hero .showroom-header-minimal {
+        padding-top: 132px !important;
+        min-height: 360px !important;
+    }
+
+    body.has-hero.has-breadcrumbs .hero {
+        padding-top: 180px !important;
+    }
+
+    body.has-hero.has-breadcrumbs .contact-hero,
+    body.has-hero.has-breadcrumbs .support-hero,
+    body.has-hero.has-breadcrumbs .safety-hero {
+        padding-top: 160px !important;
+    }
+
+    body.has-hero.has-breadcrumbs .showroom-header-minimal {
+        padding-top: 164px !important;
+        min-height: 380px !important;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1023px) {
+    .page-breadcrumbs-wrap .container {
+        padding: 0 24px;
+    }
+
+    .page-breadcrumbs {
+        min-height: 42px;
+        margin: 12px 0 18px;
+        padding: 7px 14px;
+        gap: 8px;
+    }
+
+    .page-breadcrumbs__link,
+    .page-breadcrumbs__current {
+        font-size: 12.5px;
+    }
+
+    body.has-hero.has-breadcrumbs .page-breadcrumbs-wrap {
+        padding-top: 78px;
+        margin-bottom: -136px;
+    }
+
+    body.has-hero.has-breadcrumbs .page-breadcrumbs {
+        margin: 0;
+        transform: none;
+    }
+
+    body.has-hero .contact-hero,
+    body.has-hero .support-hero,
+    body.has-hero .safety-hero {
+        padding-top: 105px !important;
+    }
+
+    body.has-hero .showroom-header-minimal {
+        padding-top: 114px !important;
+        min-height: 320px !important;
+    }
+
+    body.has-hero.has-breadcrumbs .hero {
+        padding-top: 154px !important;
+    }
+
+    body.has-hero.has-breadcrumbs .contact-hero,
+    body.has-hero.has-breadcrumbs .support-hero,
+    body.has-hero.has-breadcrumbs .safety-hero {
+        padding-top: 134px !important;
+    }
+
+    body.has-hero.has-breadcrumbs .showroom-header-minimal {
+        padding-top: 146px !important;
+        min-height: 340px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .page-breadcrumbs-wrap .container {
+        padding: 0 16px;
+    }
+
+    .page-breadcrumbs {
+        display: flex;
+        width: 100%;
+        min-height: 40px;
+        margin: 8px 0 14px;
+        padding: 6px 10px;
+        gap: 6px;
+        border-radius: 16px;
+    }
+
+    .page-breadcrumbs__link,
+    .page-breadcrumbs__current {
+        min-height: 28px;
+        font-size: 12px;
+    }
+
+    .page-breadcrumbs__link {
+        padding: 0 9px;
+    }
+
+    .page-breadcrumbs__current {
+        padding: 0 10px;
+    }
+
+    .page-breadcrumbs__sep {
+        font-size: 9px;
+    }
+
+    body.has-hero.has-breadcrumbs .page-breadcrumbs-wrap {
+        padding-top: 68px;
+        margin-bottom: -120px;
+    }
+
+    body.has-hero.has-breadcrumbs .page-breadcrumbs {
+        margin: 0;
+        transform: none;
+    }
+
+    body.has-hero .contact-hero,
+    body.has-hero .support-hero,
+    body.has-hero .safety-hero {
+        padding-top: 95px !important;
+    }
+
+    body.has-hero .showroom-header-minimal {
+        padding-top: 102px !important;
+        min-height: 280px !important;
+    }
+
+    body.has-hero.has-breadcrumbs .hero {
+        padding-top: 160px !important;
+    }
+
+    body.has-hero.has-breadcrumbs .contact-hero,
+    body.has-hero.has-breadcrumbs .support-hero,
+    body.has-hero.has-breadcrumbs .safety-hero {
+        padding-top: 118px !important;
+    }
+
+    body.has-hero.has-breadcrumbs .showroom-header-minimal {
+        padding-top: 126px !important;
+        min-height: 300px !important;
     }
 }

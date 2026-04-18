@@ -7,104 +7,390 @@
 let userVehicles = [];
 let makes = [];
 let models = [];
+let vehicleFeatureAuthState = {
+    checked: false,
+    authenticated: false
+};
+
+const VEHICLE_FEATURE_TABS = new Set(['journey-planner', 'my-vehicles']);
 
 document.addEventListener('DOMContentLoaded', async function() {
     // Initialize for both journey planner and my vehicles tabs
     const journeyPlannerTab = document.getElementById('journey-planner-tab');
     const myVehiclesTab = document.getElementById('my-vehicles-tab');
-    
-    if (journeyPlannerTab || myVehiclesTab) {
-        loadMakes();
-        
-        // Check if user is authenticated before loading vehicles
-        const isAuthenticated = await checkAuthForMyVehicles();
-        if (isAuthenticated) {
-            loadUserVehicles();
-        }
-        
-        setupVehicleFormListeners();
+
+    if (!(journeyPlannerTab || myVehiclesTab)) {
+        return;
     }
-    
-    // Setup tab switching
+
+    updateVehicleFeatureLoginLinks();
+    setupVehicleFormListeners();
     setupTabSwitching();
+
+    const requestedTab = getRequestedVehicleFeatureTab();
+    if (requestedTab) {
+        await activateTab(requestedTab, { syncUrl: false, refreshAccess: false });
+    }
+
+    loadMakes();
+
+    const isAuthenticated = await fetchVehicleFeatureAuth(true);
+    if (isAuthenticated) {
+        await loadUserVehicles();
+    } else {
+        clearUserVehicleState();
+    }
 });
+
+function getCarDatabasePagePath() {
+    const pageName = window.location.pathname.split('/').pop();
+    return pageName || 'car-database.html';
+}
+
+function getRequestedVehicleFeatureTab() {
+    const requestedTab = new URLSearchParams(window.location.search).get('tab') || '';
+    return VEHICLE_FEATURE_TABS.has(requestedTab) ? requestedTab : '';
+}
+
+function getLoginUrlForVehicleFeature(tabName) {
+    const redirectTarget = VEHICLE_FEATURE_TABS.has(tabName)
+        ? `${getCarDatabasePagePath()}?tab=${encodeURIComponent(tabName)}`
+        : getCarDatabasePagePath();
+
+    return `login.html?redirect=${encodeURIComponent(redirectTarget)}`;
+}
+
+function updateVehicleFeatureLoginLinks() {
+    const journeyLoginLink = document.getElementById('journeyLoginLink');
+    if (journeyLoginLink) {
+        journeyLoginLink.href = getLoginUrlForVehicleFeature('journey-planner');
+    }
+
+    const myVehiclesLoginLink = document.getElementById('myVehiclesLoginLink');
+    if (myVehiclesLoginLink) {
+        myVehiclesLoginLink.href = getLoginUrlForVehicleFeature('my-vehicles');
+    }
+}
+
+function updateVehicleFeatureUrl(tabName) {
+    if (!window.history || typeof window.history.replaceState !== 'function') {
+        return;
+    }
+
+    const url = new URL(window.location.href);
+    if (VEHICLE_FEATURE_TABS.has(tabName)) {
+        url.searchParams.set('tab', tabName);
+    } else {
+        url.searchParams.delete('tab');
+    }
+
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function clearUserVehicleState() {
+    userVehicles = [];
+    updateJourneyVehicleSelect();
+
+    const vehiclesContainer = document.getElementById('userVehiclesList');
+    if (vehiclesContainer) {
+        vehiclesContainer.innerHTML = '';
+    }
+}
+
+function applyJourneyPlannerAccess(isAuthenticated) {
+    const loginPrompt = document.getElementById('journeyLoginPrompt');
+    const plannerContent = document.getElementById('journeyPlannerContent');
+    const journeyResults = document.getElementById('journeyResults');
+
+    if (loginPrompt) {
+        loginPrompt.style.display = isAuthenticated ? 'none' : 'block';
+    }
+
+    if (plannerContent) {
+        plannerContent.style.display = isAuthenticated ? 'block' : 'none';
+    }
+
+    if (!isAuthenticated && journeyResults) {
+        journeyResults.style.display = 'none';
+    }
+}
+
+function applyMyVehiclesAccess(isAuthenticated) {
+    const loginPrompt = document.getElementById('myVehiclesLoginPrompt');
+    const content = document.getElementById('myVehiclesContent');
+    const addVehicleButton = document.getElementById('myVehiclesAddVehicleBtn');
+
+    if (loginPrompt) {
+        loginPrompt.style.display = isAuthenticated ? 'none' : 'block';
+    }
+
+    if (content) {
+        content.style.display = isAuthenticated ? 'block' : 'none';
+    }
+
+    if (addVehicleButton) {
+        addVehicleButton.style.display = isAuthenticated ? 'inline-flex' : 'none';
+    }
+}
+
+function applyVehicleFeatureAccess(isAuthenticated) {
+    updateVehicleFeatureLoginLinks();
+    applyJourneyPlannerAccess(isAuthenticated);
+    applyMyVehiclesAccess(isAuthenticated);
+
+    if (!isAuthenticated) {
+        clearUserVehicleState();
+    }
+}
+
+async function fetchVehicleFeatureAuth(forceRefresh = false) {
+    if (vehicleFeatureAuthState.checked && !forceRefresh) {
+        return vehicleFeatureAuthState.authenticated;
+    }
+
+    try {
+        const response = await fetch(`${CONFIG.API_URL}?action=check_auth`, {
+            headers: { 'X-Skip-Global-Loader': '1' },
+            ...(CONFIG.USE_CREDENTIALS && { credentials: 'include' })
+        });
+        const data = await response.json();
+
+        vehicleFeatureAuthState = {
+            checked: true,
+            authenticated: !!(data.success && data.authenticated)
+        };
+    } catch (error) {
+        vehicleFeatureAuthState = {
+            checked: true,
+            authenticated: false
+        };
+    }
+
+    applyVehicleFeatureAccess(vehicleFeatureAuthState.authenticated);
+    return vehicleFeatureAuthState.authenticated;
+}
+
+async function handleVehicleFeatureUnauthorized(feature = 'my-vehicles', redirectOnFail = false) {
+    vehicleFeatureAuthState = {
+        checked: true,
+        authenticated: false
+    };
+
+    applyVehicleFeatureAccess(false);
+
+    if (VEHICLE_FEATURE_TABS.has(feature)) {
+        await activateTab(feature, { syncUrl: true, refreshAccess: false });
+    }
+
+    if (redirectOnFail) {
+        window.location.href = getLoginUrlForVehicleFeature(feature);
+    }
+}
+
+async function ensureVehicleFeatureAccess(feature = 'my-vehicles', options = {}) {
+    const {
+        forceRefresh = false,
+        redirectOnFail = false
+    } = options;
+
+    const isAuthenticated = await fetchVehicleFeatureAuth(forceRefresh);
+    if (isAuthenticated) {
+        return true;
+    }
+
+    if (VEHICLE_FEATURE_TABS.has(feature)) {
+        await activateTab(feature, { syncUrl: true, refreshAccess: false });
+    }
+
+    if (redirectOnFail) {
+        window.location.href = getLoginUrlForVehicleFeature(feature);
+    }
+
+    return false;
+}
+
+window.ensureVehicleFeatureAccess = ensureVehicleFeatureAccess;
+window.handleVehicleFeatureUnauthorized = handleVehicleFeatureUnauthorized;
+
+function setFuelEstimateStatus(elementId, message, state = 'idle') {
+    const statusElement = document.getElementById(elementId);
+    if (!statusElement) {
+        return;
+    }
+
+    statusElement.textContent = message;
+    statusElement.dataset.state = state;
+}
+
+function toggleFuelEstimateButton(button, isLoading, loadingHtml) {
+    if (!button) {
+        return;
+    }
+
+    if (!button.dataset.originalHtml) {
+        button.dataset.originalHtml = button.innerHTML;
+    }
+
+    button.disabled = isLoading;
+    button.innerHTML = isLoading ? loadingHtml : button.dataset.originalHtml;
+}
+
+function getSelectedOptionText(selectElement) {
+    if (!selectElement || selectElement.selectedIndex < 0) {
+        return '';
+    }
+
+    return (selectElement.options[selectElement.selectedIndex]?.textContent || '').trim();
+}
+
+function normalizeTransmissionSelection(transmissionValue) {
+    const normalized = (transmissionValue || '').toString().trim().toLowerCase();
+
+    if (!normalized) {
+        return '';
+    }
+
+    if (normalized.includes('cvt') || normalized.includes('variable gear')) {
+        return 'cvt';
+    }
+
+    if (normalized.includes('dct') || normalized.includes('dual clutch')) {
+        return 'dct';
+    }
+
+    if (normalized.includes('semi') || normalized.includes('automated manual')) {
+        return 'semi-automatic';
+    }
+
+    if (normalized.includes('manual') || normalized.startsWith('man ')) {
+        return 'manual';
+    }
+
+    if (normalized.includes('auto')) {
+        return 'automatic';
+    }
+
+    return normalized;
+}
+
+async function lookupOnlineFuelConsumptionEstimate(payload, feature = 'journey-planner') {
+    const response = await fetch(`${CONFIG.API_URL}?action=lookup_online_fuel_consumption`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Skip-Global-Loader': '1'
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload)
+    });
+
+    if (response.status === 401) {
+        await handleVehicleFeatureUnauthorized(feature);
+        throw new Error('Please log in to fetch online fuel consumption estimates.');
+    }
+
+    const data = await response.json();
+    if (!data.success || !data.estimate) {
+        throw new Error(data.message || 'Unable to fetch an online fuel consumption estimate right now.');
+    }
+
+    return data;
+}
+
+window.lookupOnlineFuelConsumptionEstimate = lookupOnlineFuelConsumptionEstimate;
+
+function getActiveVehicleFeatureTab() {
+    return document.querySelector('.tab-btn.active[data-tab]')?.dataset.tab || 'vin-decoder';
+}
+
+async function activateTab(tabName, options = {}) {
+    const {
+        syncUrl = true,
+        refreshAccess = true
+    } = options;
+
+    const tabButtons = document.querySelectorAll('.tab-btn[data-tab]');
+
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+
+    tabButtons.forEach(btn => btn.classList.remove('active'));
+
+    const selectedTab = document.getElementById(`${tabName}-tab`);
+    if (selectedTab) {
+        selectedTab.classList.add('active');
+    }
+
+    const selectedButton = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+    if (selectedButton) {
+        selectedButton.classList.add('active');
+    }
+
+    if (syncUrl) {
+        updateVehicleFeatureUrl(tabName);
+    }
+
+    if (refreshAccess && VEHICLE_FEATURE_TABS.has(tabName)) {
+        const isAuthenticated = await fetchVehicleFeatureAuth(true);
+        if (isAuthenticated && tabName === 'my-vehicles') {
+            await loadUserVehiclesForDisplay();
+        }
+    }
+}
 
 function setupTabSwitching() {
     const tabButtons = document.querySelectorAll('.tab-btn[data-tab]');
     tabButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const tabName = this.dataset.tab;
-            
-            // Hide all tab contents
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            
-            // Remove active class from all buttons
-            tabButtons.forEach(btn => btn.classList.remove('active'));
-            
-            // Show selected tab
-            const selectedTab = document.getElementById(`${tabName}-tab`);
-            if (selectedTab) {
-                selectedTab.classList.add('active');
-            }
-            
-            // Add active class to clicked button
-            this.classList.add('active');
-            
-            // If my-vehicles tab, check auth and load vehicles
-            if (tabName === 'my-vehicles') {
-                checkAuthForMyVehicles();
-            }
+        button.addEventListener('click', async function() {
+            await activateTab(this.dataset.tab);
         });
     });
 }
 
-async function checkAuthForMyVehicles() {
-    const loginPrompt = document.getElementById('myVehiclesLoginPrompt');
-    const content = document.getElementById('myVehiclesContent');
-    
-    if (!loginPrompt || !content) return false;
-    
-    try {
-        const response = await fetch(`${CONFIG.API_URL}?action=check_auth`, {
-            headers: { 'X-Skip-Global-Loader': '1' },
-            ...(CONFIG.USE_CREDENTIALS && {credentials: 'include'})
-        });
-        const data = await response.json();
-        
-        if (data.success && data.authenticated) {
-            loginPrompt.style.display = 'none';
-            content.style.display = 'block';
-            await loadUserVehiclesForDisplay();
-            return true;
-        } else {
-            loginPrompt.style.display = 'block';
-            content.style.display = 'none';
-            return false;
-        }
-    } catch (error) {
-        loginPrompt.style.display = 'block';
-        content.style.display = 'none';
-        return false;
-    }
+async function checkAuthForMyVehicles(forceRefresh = false) {
+    return fetchVehicleFeatureAuth(forceRefresh);
 }
 
-async function loadUserVehiclesForDisplay() {
+async function fetchUserVehiclesFromApi() {
     try {
         const response = await fetch(`${CONFIG.API_URL}?action=get_user_vehicles`, {
             credentials: 'include',
             headers: { 'X-Skip-Global-Loader': '1' }
         });
-        const data = await response.json();
-        
-        if (data.success && data.vehicles) {
-            userVehicles = data.vehicles;
-            displayUserVehicles();
+
+        if (response.status === 401) {
+            await handleVehicleFeatureUnauthorized('my-vehicles');
+            return null;
         }
+
+        const data = await response.json();
+
+        if (data.success && Array.isArray(data.vehicles)) {
+            return data.vehicles;
+        }
+
+        return [];
     } catch (error) {
         console.error('Error loading user vehicles:', error);
+        return null;
     }
+}
+
+async function loadUserVehiclesForDisplay() {
+    const isAuthenticated = await ensureVehicleFeatureAccess('my-vehicles');
+    if (!isAuthenticated) {
+        return false;
+    }
+
+    const vehicles = await fetchUserVehiclesFromApi();
+    if (!vehicles) {
+        return false;
+    }
+
+    userVehicles = vehicles;
+    displayUserVehicles();
+    return true;
 }
 
 function displayUserVehicles() {
@@ -194,15 +480,19 @@ function displayUserVehicles() {
 function setupVehicleFormListeners() {
     const makeSelect = document.getElementById('vehicleMake');
     const modelSelect = document.getElementById('vehicleModel');
-    const yearInput = document.getElementById('vehicleYear');
+    const onlineEstimateButton = document.getElementById('vehicleOnlineFuelEstimateBtn');
+    const fuelConsumptionInput = document.getElementById('vehicleFuelConsumption');
     
     if (makeSelect) {
         makeSelect.addEventListener('change', function() {
             loadModels(this.value);
-            if (yearInput) {
-                yearInput.value = '';
-                yearInput.disabled = true;
+            const currentYearInput = document.getElementById('vehicleYear');
+            if (currentYearInput) {
+                currentYearInput.value = '';
+                currentYearInput.disabled = true;
             }
+
+             setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Select make, model, and year to fetch an official online estimate.', 'idle');
         });
     }
     
@@ -210,6 +500,20 @@ function setupVehicleFormListeners() {
         modelSelect.addEventListener('change', function() {
             loadYearsForModel(this.value);
             loadVehicleDetailsForModel(this.value);
+        });
+    }
+
+    if (onlineEstimateButton) {
+        onlineEstimateButton.addEventListener('click', handleVehicleOnlineFuelEstimate);
+    }
+
+    if (fuelConsumptionInput) {
+        fuelConsumptionInput.addEventListener('input', function() {
+            if (this.value.trim()) {
+                setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Using a custom fuel consumption value. You can still fetch an official online estimate.', 'manual');
+            } else {
+                setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Auto-fill from the database or fetch an official online estimate.', 'idle');
+            }
         });
     }
 }
@@ -333,8 +637,10 @@ function updateFieldsFromModel(model, option) {
         const fuelConsumption = model?.fuel_consumption_combined_l100km || option?.dataset.fuelConsumption;
         if (fuelConsumption) {
             fuelConsumptionInput.value = parseFloat(fuelConsumption).toFixed(2);
+            setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Auto-filled from the MotorLink vehicle database. You can override it or fetch an official online estimate.', 'database');
         } else {
             fuelConsumptionInput.value = '';
+            setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Auto-fill unavailable for this model. Select year, then fetch an official online estimate.', 'idle');
         }
     }
     
@@ -366,6 +672,7 @@ function updateFieldsFromVariation(variation) {
     const fuelConsumptionInput = document.getElementById('vehicleFuelConsumption');
     if (fuelConsumptionInput && variation.fuel_consumption_combined_l100km) {
         fuelConsumptionInput.value = parseFloat(variation.fuel_consumption_combined_l100km).toFixed(2);
+        setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Updated from the selected engine variation in the MotorLink database.', 'database');
     }
     
     // Update fuel tank capacity
@@ -509,6 +816,7 @@ async function loadModels(makeId) {
             yearInput.value = '';
             yearInput.disabled = true;
         }
+        setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Select make, model, and year to fetch an official online estimate.', 'idle');
         return;
     }
     
@@ -551,6 +859,13 @@ async function loadModels(makeId) {
             if (fuelTankInput) {
                 fuelTankInput.value = '';
             }
+
+            const fuelConsumptionInput = document.getElementById('vehicleFuelConsumption');
+            if (fuelConsumptionInput) {
+                fuelConsumptionInput.value = '';
+            }
+
+            setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Choose a model to auto-fill from the database or fetch an official online estimate.', 'idle');
         }
     } catch (error) {
         console.error('Error loading models:', error);
@@ -558,47 +873,25 @@ async function loadModels(makeId) {
 }
 
 async function loadUserVehicles() {
-    try {
-        const response = await fetch(`${CONFIG.API_URL}?action=get_user_vehicles`, {
-            headers: { 'X-Skip-Global-Loader': '1' },
-            ...(CONFIG.USE_CREDENTIALS && {credentials: 'include'})
-        });
-        
-        // Handle 401 (not logged in) gracefully
-        if (response.status === 401) {
-            // User not logged in - show journey planner but keep login prompt for vehicles
-            const journeyLoginPrompt = document.getElementById('journeyLoginPrompt');
-            const journeyPlannerContent = document.getElementById('journeyPlannerContent');
-            if (journeyLoginPrompt) journeyLoginPrompt.style.display = 'none';
-            if (journeyPlannerContent) journeyPlannerContent.style.display = 'block';
-            return;
-        }
-        
-        const data = await response.json();
-        
-        // Always show journey planner (it works without login)
-        const journeyLoginPrompt = document.getElementById('journeyLoginPrompt');
-        const journeyPlannerContent = document.getElementById('journeyPlannerContent');
-        if (journeyLoginPrompt) journeyLoginPrompt.style.display = 'none';
-        if (journeyPlannerContent) journeyPlannerContent.style.display = 'block';
-        
-        if (data.success && data.vehicles) {
-            userVehicles = data.vehicles;
-            updateJourneyVehicleSelect();
-            // Also update display if my vehicles tab is visible
-            const myVehiclesTab = document.getElementById('my-vehicles-tab');
-            if (myVehiclesTab && myVehiclesTab.classList.contains('active')) {
-                displayUserVehicles();
-            }
-        }
-    } catch (error) {
-        // Silently handle error - don't show console error for 401
-        // On error, still show journey planner (it works without vehicles)
-        const journeyLoginPrompt = document.getElementById('journeyLoginPrompt');
-        const journeyPlannerContent = document.getElementById('journeyPlannerContent');
-        if (journeyLoginPrompt) journeyLoginPrompt.style.display = 'none';
-        if (journeyPlannerContent) journeyPlannerContent.style.display = 'block';
+    const isAuthenticated = await ensureVehicleFeatureAccess(getActiveVehicleFeatureTab() === 'journey-planner' ? 'journey-planner' : 'my-vehicles');
+    if (!isAuthenticated) {
+        return false;
     }
+
+    const vehicles = await fetchUserVehiclesFromApi();
+    if (!vehicles) {
+        return false;
+    }
+
+    userVehicles = vehicles;
+    updateJourneyVehicleSelect();
+
+    const myVehiclesTab = document.getElementById('my-vehicles-tab');
+    if (myVehiclesTab && myVehiclesTab.classList.contains('active')) {
+        displayUserVehicles();
+    }
+
+    return true;
 }
 
 function updateJourneyVehicleSelect() {
@@ -614,6 +907,11 @@ function updateJourneyVehicleSelect() {
         option.textContent = `${vehicle.make} ${vehicle.model}${vehicle.year ? ' (' + vehicle.year + ')' : ''}`;
         option.dataset.fuelType = vehicle.fuel_type || 'petrol';
         option.dataset.fuelConsumption = vehicle.fuel_consumption_liters_per_100km || '';
+        option.dataset.make = vehicle.make || '';
+        option.dataset.model = vehicle.model || '';
+        option.dataset.year = vehicle.year || '';
+        option.dataset.engineSize = vehicle.engine_size_liters || '';
+        option.dataset.transmission = vehicle.transmission || '';
         
         // Mark primary vehicle
         if (vehicle.is_primary) {
@@ -630,6 +928,85 @@ function updateJourneyVehicleSelect() {
         vehicleSelect.dispatchEvent(event);
     }
 }
+
+async function handleVehicleOnlineFuelEstimate() {
+    const button = document.getElementById('vehicleOnlineFuelEstimateBtn');
+    const makeSelect = document.getElementById('vehicleMake');
+    const modelSelect = document.getElementById('vehicleModel');
+    const yearInput = document.getElementById('vehicleYear');
+    const fuelConsumptionInput = document.getElementById('vehicleFuelConsumption');
+    const transmissionSelect = document.getElementById('vehicleTransmission');
+    const engineCapacityInput = document.getElementById('vehicleEngineCapacity');
+
+    const make = getSelectedOptionText(makeSelect);
+    const model = getSelectedOptionText(modelSelect);
+    const year = parseInt(yearInput?.value || '', 10);
+
+    if (!makeSelect?.value || !modelSelect?.value) {
+        alert('Select the vehicle make and model first.');
+        return;
+    }
+
+    if (!year) {
+        alert('Select or enter the vehicle year first. The online estimate needs a model year.');
+        return;
+    }
+
+    toggleFuelEstimateButton(button, true, '<i class="fas fa-spinner fa-spin"></i> Looking up...');
+    setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Looking up the official combined fuel economy estimate online...', 'loading');
+
+    try {
+        const result = await lookupOnlineFuelConsumptionEstimate({
+            year,
+            make,
+            model,
+            transmission: transmissionSelect?.value || '',
+            engine_size_liters: engineCapacityInput?.value ? parseFloat(engineCapacityInput.value) : null
+        }, 'my-vehicles');
+
+        const estimate = result.estimate;
+        if (fuelConsumptionInput) {
+            fuelConsumptionInput.value = Number(estimate.fuel_consumption_l100km || 0).toFixed(2);
+        }
+
+        if (transmissionSelect && !transmissionSelect.value && estimate.transmission) {
+            transmissionSelect.value = normalizeTransmissionSelection(estimate.transmission);
+        }
+
+        setFuelEstimateStatus(
+            'vehicleFuelEstimateStatus',
+            `Official estimate applied from ${estimate.source}: ${estimate.matched_option} (${estimate.combined_mpg} MPG combined).`,
+            'online'
+        );
+    } catch (error) {
+        console.error('Error fetching vehicle online fuel estimate:', error);
+        setFuelEstimateStatus('vehicleFuelEstimateStatus', error.message || 'Failed to fetch the online estimate.', 'error');
+        alert(error.message || 'Failed to fetch the online estimate.');
+    } finally {
+        toggleFuelEstimateButton(button, false, '');
+    }
+}
+
+window.showAddVehicleModal = async function() {
+    const activeTab = getActiveVehicleFeatureTab();
+    const protectedFeature = activeTab === 'journey-planner' ? 'journey-planner' : 'my-vehicles';
+    const isAuthenticated = await ensureVehicleFeatureAccess(protectedFeature, {
+        forceRefresh: true,
+        redirectOnFail: true
+    });
+
+    if (!isAuthenticated) {
+        return;
+    }
+
+    const modalElement = document.getElementById('addVehicleModal');
+    if (!modalElement || typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+        return;
+    }
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    modal.show();
+};
 
 window.addUserVehicle = async function(event) {
     event.preventDefault();
@@ -693,6 +1070,11 @@ window.addUserVehicle = async function(event) {
                 is_primary: isPrimary
             })
         });
+
+        if (response.status === 401) {
+            await handleVehicleFeatureUnauthorized('my-vehicles', true);
+            return;
+        }
         
         const data = await response.json();
         
@@ -708,6 +1090,7 @@ window.addUserVehicle = async function(event) {
                     yearInput.innerHTML = '<option value="">Select Year (Optional)</option>';
                 }
             }
+            setFuelEstimateStatus('vehicleFuelEstimateStatus', 'Auto-fill from the database or fetch an official online estimate.', 'idle');
             
             // Reload vehicles
             await loadUserVehicles();
@@ -743,6 +1126,11 @@ async function deleteUserVehicle(vehicleId) {
         const response = await fetch(`${CONFIG.API_URL}?action=delete_user_vehicle&vehicle_id=${vehicleId}`, {
             credentials: 'include'
         });
+
+        if (response.status === 401) {
+            await handleVehicleFeatureUnauthorized('my-vehicles', true);
+            return;
+        }
         
         const data = await response.json();
         
@@ -763,6 +1151,11 @@ async function setPrimaryVehicle(vehicleId) {
         const response = await fetch(`${CONFIG.API_URL}?action=set_primary_vehicle&vehicle_id=${vehicleId}`, {
             credentials: 'include'
         });
+
+        if (response.status === 401) {
+            await handleVehicleFeatureUnauthorized('my-vehicles', true);
+            return;
+        }
         
         const data = await response.json();
         

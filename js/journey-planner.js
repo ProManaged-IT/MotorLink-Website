@@ -10,6 +10,111 @@ let journeyRoutePolyline = null;
 let journeyRouteMarkers = [];
 let currentFuelPrices = {};
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function cleanJourneyVehicleLabel(label) {
+    return String(label || '').replace(/\s*★$/, '').trim();
+}
+
+function updateJourneyFuelEstimateStatus(message, state = 'idle') {
+    const statusElement = document.getElementById('journeyFuelEstimateStatus');
+    if (!statusElement) {
+        return;
+    }
+
+    statusElement.textContent = message;
+    statusElement.dataset.state = state;
+}
+
+function setJourneyFuelConsumptionValue(value, meta = {}) {
+    const fuelInput = document.getElementById('journeyFuelConsumption');
+    if (!fuelInput) {
+        return;
+    }
+
+    fuelInput.value = value === '' || value === null || typeof value === 'undefined'
+        ? ''
+        : Number(value).toFixed(2);
+    fuelInput.dataset.sourceType = meta.type || '';
+    fuelInput.dataset.sourceLabel = meta.label || '';
+    fuelInput.dataset.sourceDetail = meta.detail || '';
+}
+
+function getSelectedJourneyVehicleContext() {
+    const vehicleSelect = document.getElementById('journeyVehicle');
+    if (!vehicleSelect || vehicleSelect.selectedIndex < 0) {
+        return null;
+    }
+
+    const selectedOption = vehicleSelect.options[vehicleSelect.selectedIndex];
+    if (!selectedOption || !selectedOption.value) {
+        return null;
+    }
+
+    return {
+        id: selectedOption.value,
+        label: cleanJourneyVehicleLabel(selectedOption.textContent),
+        make: selectedOption.dataset.make || '',
+        model: selectedOption.dataset.model || '',
+        year: parseInt(selectedOption.dataset.year || '', 10) || 0,
+        fuelType: selectedOption.dataset.fuelType || 'petrol',
+        fuelConsumption: selectedOption.dataset.fuelConsumption || '',
+        engineSizeLiters: selectedOption.dataset.engineSize ? parseFloat(selectedOption.dataset.engineSize) : null,
+        transmission: selectedOption.dataset.transmission || ''
+    };
+}
+
+function resolveJourneyFuelSourceMeta(selectedVehicle, manualInputValue, vehicleFuelConsumption, fuelType) {
+    const fuelInput = document.getElementById('journeyFuelConsumption');
+    const sourceType = fuelInput?.dataset.sourceType || '';
+    const sourceLabel = fuelInput?.dataset.sourceLabel || '';
+    const sourceDetail = fuelInput?.dataset.sourceDetail || '';
+
+    if (manualInputValue) {
+        return {
+            type: sourceType || 'manual',
+            label: sourceLabel || 'Manual fuel consumption',
+            detail: sourceDetail || 'Custom value entered in the journey planner'
+        };
+    }
+
+    if (selectedVehicle && vehicleFuelConsumption) {
+        return {
+            type: 'saved-vehicle',
+            label: 'Saved vehicle profile',
+            detail: selectedVehicle.label
+        };
+    }
+
+    return {
+        type: 'default',
+        label: 'Default journey estimate',
+        detail: `Using the Malawi ${fuelType === 'diesel' ? 'diesel' : 'petrol'} fallback average because no vehicle-specific fuel consumption was available`
+    };
+}
+
+function toggleJourneyLookupButton(button, isLoading) {
+    if (!button) {
+        return;
+    }
+
+    if (!button.dataset.originalHtml) {
+        button.dataset.originalHtml = button.innerHTML;
+    }
+
+    button.disabled = isLoading;
+    button.innerHTML = isLoading
+        ? '<i class="fas fa-spinner fa-spin"></i> Looking up...'
+        : button.dataset.originalHtml;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     loadFuelPrices();
     loadGoogleMapsAPI();
@@ -84,21 +189,66 @@ function initializeJourneyPlanner() {
     
     // Setup event listeners (these can be set up immediately)
     const calculateBtn = document.getElementById('calculateJourneyBtn');
-    if (calculateBtn) {
+    if (calculateBtn && !calculateBtn.dataset.listenerBound) {
         calculateBtn.addEventListener('click', calculateJourney);
+        calculateBtn.dataset.listenerBound = 'true';
     }
     
     const vehicleSelect = document.getElementById('journeyVehicle');
-    if (vehicleSelect) {
+    if (vehicleSelect && !vehicleSelect.dataset.listenerBound) {
         vehicleSelect.addEventListener('change', function() {
-            const selectedOption = this.options[this.selectedIndex];
-                if (selectedOption && selectedOption.dataset.fuelConsumption) {
-                const consumption = selectedOption.dataset.fuelConsumption;
-                if (consumption) {
-                    document.getElementById('journeyFuelConsumption').value = consumption;
-                }
+            const selectedVehicle = getSelectedJourneyVehicleContext();
+            const fuelInput = document.getElementById('journeyFuelConsumption');
+
+            if (selectedVehicle && selectedVehicle.fuelConsumption) {
+                setJourneyFuelConsumptionValue(selectedVehicle.fuelConsumption, {
+                    type: 'saved-vehicle',
+                    label: 'Saved vehicle profile',
+                    detail: selectedVehicle.label
+                });
+                updateJourneyFuelEstimateStatus(`Auto-filled from ${selectedVehicle.label}. You can override it or fetch an official online estimate.`, 'saved');
+                return;
+            }
+
+            if (fuelInput?.dataset.sourceType === 'saved-vehicle') {
+                setJourneyFuelConsumptionValue('', {
+                    type: '',
+                    label: '',
+                    detail: ''
+                });
+            }
+
+            if (fuelInput?.value.trim()) {
+                updateJourneyFuelEstimateStatus('Using the current custom fuel consumption value.', 'manual');
+            } else {
+                updateJourneyFuelEstimateStatus('Select a saved vehicle or enter your own fuel consumption.', 'idle');
             }
         });
+        vehicleSelect.dataset.listenerBound = 'true';
+    }
+
+    const fuelInput = document.getElementById('journeyFuelConsumption');
+    if (fuelInput && !fuelInput.dataset.listenerBound) {
+        fuelInput.addEventListener('input', function() {
+            if (this.value.trim()) {
+                this.dataset.sourceType = 'manual';
+                this.dataset.sourceLabel = 'Manual fuel consumption';
+                this.dataset.sourceDetail = 'Custom value entered in the journey planner';
+                updateJourneyFuelEstimateStatus('Using a custom fuel consumption value. Select a saved vehicle to fetch an official online estimate.', 'manual');
+            } else {
+                this.dataset.sourceType = '';
+                this.dataset.sourceLabel = '';
+                this.dataset.sourceDetail = '';
+                updateJourneyFuelEstimateStatus('Select a saved vehicle or enter your own fuel consumption.', 'idle');
+            }
+        });
+        fuelInput.dataset.listenerBound = 'true';
+    }
+
+    const onlineEstimateButton = document.getElementById('journeyOnlineFuelEstimateBtn');
+    if (onlineEstimateButton && !onlineEstimateButton.dataset.listenerBound) {
+        onlineEstimateButton.addEventListener('click', handleJourneyOnlineFuelEstimate);
+        onlineEstimateButton.dataset.listenerBound = 'true';
     }
     
 }
@@ -144,6 +294,7 @@ function initAutocomplete() {
             // Replace the input with the autocomplete element
             originInput.parentNode.replaceChild(originAutocomplete, originInput);
             originAutocomplete.id = 'journeyOrigin';
+            originAutocomplete.className = 'journey-place-autocomplete';
             originAutocomplete.placeholder = 'Enter origin location';
         } catch (error) {
             console.warn('PlaceAutocompleteElement initialization error (user can still type addresses):', error);
@@ -171,6 +322,7 @@ function initAutocomplete() {
             // Replace the input with the autocomplete element
             destinationInput.parentNode.replaceChild(destinationAutocomplete, destinationInput);
             destinationAutocomplete.id = 'journeyDestination';
+            destinationAutocomplete.className = 'journey-place-autocomplete';
             destinationAutocomplete.placeholder = 'Enter destination location';
         } catch (error) {
             console.warn('PlaceAutocompleteElement initialization error (user can still type addresses):', error);
@@ -262,10 +414,19 @@ function displayFuelPrices(prices) {
 }
 
 async function calculateJourney() {
+    if (typeof window.ensureVehicleFeatureAccess === 'function') {
+        const hasAccess = await window.ensureVehicleFeatureAccess('journey-planner', { forceRefresh: true });
+        if (!hasAccess) {
+            alert('Please log in to use the journey planner.');
+            return;
+        }
+    }
+
     const origin = document.getElementById('journeyOrigin').value.trim();
     const destination = document.getElementById('journeyDestination').value.trim();
     const vehicleId = document.getElementById('journeyVehicle').value;
     const fuelConsumption = document.getElementById('journeyFuelConsumption').value;
+    const selectedVehicle = getSelectedJourneyVehicleContext();
     
     if (!origin || !destination) {
         alert('Please enter both origin and destination');
@@ -292,17 +453,14 @@ async function calculateJourney() {
         let vehicleFuelType = 'petrol';
         let vehicleFuelConsumption = null;
         
-        if (vehicleId) {
-            const vehicleSelect = document.getElementById('journeyVehicle');
-            const selectedOption = vehicleSelect.options[vehicleSelect.selectedIndex];
-            if (selectedOption) {
-                vehicleFuelType = selectedOption.dataset.fuelType || 'petrol';
-                vehicleFuelConsumption = selectedOption.dataset.fuelConsumption || null;
-            }
+        if (vehicleId && selectedVehicle) {
+            vehicleFuelType = selectedVehicle.fuelType || 'petrol';
+            vehicleFuelConsumption = selectedVehicle.fuelConsumption || null;
         }
         
         // Use provided fuel consumption or vehicle's default
         const finalFuelConsumption = fuelConsumption || vehicleFuelConsumption || (vehicleFuelType === 'diesel' ? 8.5 : 9.5);
+        const fuelSource = resolveJourneyFuelSourceMeta(selectedVehicle, fuelConsumption, vehicleFuelConsumption, vehicleFuelType);
         
         // Calculate fuel cost
         const fuelPrice = currentFuelPrices[vehicleFuelType] || (vehicleFuelType === 'diesel' ? 1950.00 : 1850.00);
@@ -320,6 +478,7 @@ async function calculateJourney() {
             fuelNeeded: fuelNeeded,
             fuelPrice: fuelPrice,
             fuelCost: fuelCost,
+            fuelSource: fuelSource,
             originLat: route.start_location.lat(),
             originLng: route.start_location.lng(),
             destinationLat: route.end_location.lat(),
@@ -352,6 +511,52 @@ async function calculateJourney() {
     } finally {
         calculateBtn.disabled = false;
         calculateBtn.innerHTML = originalText;
+    }
+}
+
+async function handleJourneyOnlineFuelEstimate() {
+    const button = document.getElementById('journeyOnlineFuelEstimateBtn');
+    const selectedVehicle = getSelectedJourneyVehicleContext();
+
+    if (!selectedVehicle) {
+        alert('Select a saved vehicle first to fetch an official online estimate.');
+        return;
+    }
+
+    if (!selectedVehicle.year) {
+        alert('The selected saved vehicle needs a model year before an online estimate can be fetched. Update the vehicle details and try again.');
+        return;
+    }
+
+    toggleJourneyLookupButton(button, true);
+    updateJourneyFuelEstimateStatus('Looking up the official combined fuel economy estimate online...', 'loading');
+
+    try {
+        const result = await window.lookupOnlineFuelConsumptionEstimate({
+            year: selectedVehicle.year,
+            make: selectedVehicle.make,
+            model: selectedVehicle.model,
+            fuel_type: selectedVehicle.fuelType,
+            transmission: selectedVehicle.transmission,
+            engine_size_liters: selectedVehicle.engineSizeLiters
+        }, 'journey-planner');
+
+        const estimate = result.estimate;
+        setJourneyFuelConsumptionValue(estimate.fuel_consumption_l100km, {
+            type: 'online',
+            label: `${estimate.source} official estimate`,
+            detail: estimate.matched_option
+        });
+        updateJourneyFuelEstimateStatus(
+            `Official estimate applied from ${estimate.source}: ${estimate.matched_option} (${estimate.combined_mpg} MPG combined).`,
+            'online'
+        );
+    } catch (error) {
+        console.error('Error fetching journey online estimate:', error);
+        updateJourneyFuelEstimateStatus(error.message || 'Failed to fetch the online estimate.', 'error');
+        alert(error.message || 'Failed to fetch the online estimate.');
+    } finally {
+        toggleJourneyLookupButton(button, false);
     }
 }
 
@@ -529,48 +734,96 @@ function renderPathOnMap(path, startLoc, endLoc) {
     journeyMap.fitBounds(bounds, 60);
 }
 
+function formatCurrencyMWK(value) {
+    return `MWK ${Number(value || 0).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    })}`;
+}
+
 function displayJourneyResults(results) {
     const container = document.getElementById('journeyResults');
     if (!container) return;
+
+    const fuelSource = results.fuelSource || {
+        label: 'Manual fuel consumption',
+        detail: 'Custom value entered in the journey planner'
+    };
+    const updatedAt = new Date().toLocaleString();
+    const fuelTypeLabel = results.fuelType.charAt(0).toUpperCase() + results.fuelType.slice(1);
     
     container.style.display = 'block';
     container.innerHTML = `
-        <div class="journey-results-card">
-            <h3><i class="fas fa-route"></i> Journey Calculation Results</h3>
-            
-            <div class="results-grid">
-                <div class="result-item">
-                    <div class="result-label">Distance</div>
-                    <div class="result-value">${results.distanceKm.toFixed(1)} km</div>
+        <div class="journey-result-shell">
+            <div class="journey-result-header">
+                <div>
+                    <div class="journey-result-kicker">Trip estimate ready</div>
+                    <h3><i class="fas fa-route"></i> Journey Cost Breakdown</h3>
                 </div>
-                <div class="result-item">
-                    <div class="result-label">Duration</div>
-                    <div class="result-value">${formatDuration(results.durationMinutes)}</div>
+                <div class="journey-result-updated">${escapeHtml(updatedAt)}</div>
+            </div>
+
+            <div class="journey-result-route">
+                <div class="journey-route-stop">
+                    <span class="journey-route-dot journey-route-dot-origin"></span>
+                    <div>
+                        <span class="journey-route-label">From</span>
+                        <strong>${escapeHtml(results.origin)}</strong>
+                    </div>
                 </div>
-                <div class="result-item">
-                    <div class="result-label">Fuel Needed</div>
-                    <div class="result-value">${results.fuelNeeded.toFixed(2)} L</div>
-                </div>
-                <div class="result-item">
-                    <div class="result-label">Fuel Price</div>
-                    <div class="result-value">MWK ${parseFloat(results.fuelPrice || 0).toFixed(2)}/L</div>
-                </div>
-                <div class="result-item">
-                    <div class="result-label">Total Fuel Cost</div>
-                    <div class="result-value large">MWK ${parseFloat(results.fuelCost || 0).toFixed(2)}</div>
-                </div>
-                <div class="result-item">
-                    <div class="result-label">Fuel Type</div>
-                    <div class="result-value">${results.fuelType.charAt(0).toUpperCase() + results.fuelType.slice(1)}</div>
+                <div class="journey-route-line"></div>
+                <div class="journey-route-stop">
+                    <span class="journey-route-dot journey-route-dot-destination"></span>
+                    <div>
+                        <span class="journey-route-label">To</span>
+                        <strong>${escapeHtml(results.destination)}</strong>
+                    </div>
                 </div>
             </div>
-            
-            <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 6px;">
-                <h4 style="margin-top: 0;"><i class="fas fa-info-circle"></i> Journey Details</h4>
-                <p><strong>From:</strong> ${results.origin}</p>
-                <p><strong>To:</strong> ${results.destination}</p>
-                <p><strong>Fuel Consumption:</strong> ${results.fuelConsumption} L/100km</p>
-                <p style="margin-bottom: 0;"><strong>Last Updated:</strong> ${new Date().toLocaleString()}</p>
+
+            <div class="journey-result-grid">
+                <article class="journey-result-card journey-result-card-highlight">
+                    <span class="journey-result-label">Estimated fuel cost</span>
+                    <strong class="journey-result-value journey-result-value-cost">${escapeHtml(formatCurrencyMWK(results.fuelCost))}</strong>
+                    <span class="journey-result-subtext">Based on ${results.fuelNeeded.toFixed(2)} L at ${escapeHtml(formatCurrencyMWK(results.fuelPrice))}/L</span>
+                </article>
+                <article class="journey-result-card">
+                    <span class="journey-result-label">Distance</span>
+                    <strong class="journey-result-value">${results.distanceKm.toFixed(1)} km</strong>
+                    <span class="journey-result-subtext">Road distance from the calculated route</span>
+                </article>
+                <article class="journey-result-card">
+                    <span class="journey-result-label">Duration</span>
+                    <strong class="journey-result-value">${formatDuration(results.durationMinutes)}</strong>
+                    <span class="journey-result-subtext">Estimated drive time in normal conditions</span>
+                </article>
+                <article class="journey-result-card">
+                    <span class="journey-result-label">Fuel needed</span>
+                    <strong class="journey-result-value">${results.fuelNeeded.toFixed(2)} L</strong>
+                    <span class="journey-result-subtext">Fuel type: ${escapeHtml(fuelTypeLabel)}</span>
+                </article>
+                <article class="journey-result-card">
+                    <span class="journey-result-label">Consumption used</span>
+                    <strong class="journey-result-value">${Number(results.fuelConsumption).toFixed(2)} L/100km</strong>
+                    <span class="journey-result-subtext">${escapeHtml(fuelSource.label || 'Manual fuel consumption')}</span>
+                </article>
+                <article class="journey-result-card">
+                    <span class="journey-result-label">Fuel price</span>
+                    <strong class="journey-result-value">${escapeHtml(formatCurrencyMWK(results.fuelPrice))}/L</strong>
+                    <span class="journey-result-subtext">Latest available price loaded for this session</span>
+                </article>
+            </div>
+
+            <div class="journey-result-footer">
+                <div class="journey-result-source">
+                    <span class="journey-result-label">Fuel data source</span>
+                    <strong>${escapeHtml(fuelSource.label || 'Manual fuel consumption')}</strong>
+                    <span class="journey-result-subtext">${escapeHtml(fuelSource.detail || 'Custom value entered in the journey planner')}</span>
+                </div>
+                <div class="journey-result-meta">
+                    <span class="journey-result-label">Last updated</span>
+                    <strong>${escapeHtml(updatedAt)}</strong>
+                </div>
             </div>
         </div>
     `;
@@ -598,8 +851,20 @@ async function saveJourneyToHistory(journeyData) {
             credentials: 'include',
             body: JSON.stringify(journeyData)
         });
+
+        if (response.status === 401) {
+            if (typeof window.handleVehicleFeatureUnauthorized === 'function') {
+                await window.handleVehicleFeatureUnauthorized('journey-planner');
+            }
+            throw new Error('Please log in to save journey history.');
+        }
         
         const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.message || 'Failed to save journey history.');
+        }
+
         return data;
     } catch (error) {
         console.error('Error saving journey:', error);

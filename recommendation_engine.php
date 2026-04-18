@@ -70,6 +70,16 @@ class RecommendationEngine {
             $storedPrefs['preferred_body_types'] ?? []
         );
 
+        $defaults['preferred_fuel_types'] = $this->mergePreferenceLists(
+            $historyPrefs['preferred_fuel_types'] ?? [],
+            $storedPrefs['preferred_fuel_types'] ?? []
+        );
+
+        $defaults['preferred_transmissions'] = $this->mergePreferenceLists(
+            $historyPrefs['preferred_transmissions'] ?? [],
+            $storedPrefs['preferred_transmissions'] ?? []
+        );
+
         $defaults['interaction_score'] = $this->calculateInteractionScore();
 
         return $defaults;
@@ -96,18 +106,29 @@ class RecommendationEngine {
         }
 
         try {
+            // View-count weighted averages give stronger preference signals for
+            // cars the user kept coming back to, rather than treating all views equally.
             $sql = "
                 SELECT
-                    AVG(cl.price) AS avg_price,
-                    AVG(cl.year) AS avg_year,
-                    AVG(cl.mileage) AS avg_mileage,
-                    GROUP_CONCAT(DISTINCT cm.name) AS preferred_makes,
-                    GROUP_CONCAT(DISTINCT cmo.body_type) AS preferred_body_types,
-                    COUNT(DISTINCT vh.listing_id) AS total_views
+                    SUM(cl.price * COALESCE(vh.view_count, 1))
+                        / NULLIF(SUM(COALESCE(vh.view_count, 1)), 0)        AS avg_price,
+                    SUM(cl.year  * COALESCE(vh.view_count, 1))
+                        / NULLIF(SUM(COALESCE(vh.view_count, 1)), 0)        AS avg_year,
+                    SUM(cl.mileage * COALESCE(vh.view_count, 1))
+                        / NULLIF(SUM(COALESCE(vh.view_count, 1)), 0)        AS avg_mileage,
+                    GROUP_CONCAT(DISTINCT cm.name
+                        ORDER BY vh.view_count DESC SEPARATOR ',')          AS preferred_makes,
+                    GROUP_CONCAT(DISTINCT cmo.body_type
+                        ORDER BY vh.view_count DESC SEPARATOR ',')          AS preferred_body_types,
+                    GROUP_CONCAT(DISTINCT cl.fuel_type
+                        ORDER BY vh.view_count DESC SEPARATOR ',')          AS preferred_fuel_types,
+                    GROUP_CONCAT(DISTINCT cl.transmission
+                        ORDER BY vh.view_count DESC SEPARATOR ',')          AS preferred_transmissions,
+                    COUNT(DISTINCT vh.listing_id)                           AS total_views
                 FROM {$historyTable} vh
-                JOIN car_listings cl ON vh.listing_id = cl.id
-                JOIN car_makes cm ON cl.make_id = cm.id
-                JOIN car_models cmo ON cl.model_id = cmo.id
+                JOIN car_listings cl  ON vh.listing_id = cl.id
+                JOIN car_makes cm     ON cl.make_id = cm.id
+                JOIN car_models cmo   ON cl.model_id = cmo.id
                 WHERE vh.{$identity} = ?
                 AND vh.last_viewed > DATE_SUB(NOW(), INTERVAL 45 DAY)
             ";
@@ -121,11 +142,13 @@ class RecommendationEngine {
             }
 
             return [
-                'avg_price' => !empty($row['avg_price']) ? (float)$row['avg_price'] : null,
-                'avg_year' => !empty($row['avg_year']) ? (float)$row['avg_year'] : null,
-                'avg_mileage' => !empty($row['avg_mileage']) ? (float)$row['avg_mileage'] : null,
-                'preferred_makes' => $this->normalizePreferenceList($row['preferred_makes'] ?? ''),
-                'preferred_body_types' => $this->normalizePreferenceList($row['preferred_body_types'] ?? '')
+                'avg_price'              => !empty($row['avg_price'])  ? (float)$row['avg_price']  : null,
+                'avg_year'               => !empty($row['avg_year'])   ? (float)$row['avg_year']   : null,
+                'avg_mileage'            => !empty($row['avg_mileage'])? (float)$row['avg_mileage']: null,
+                'preferred_makes'        => $this->normalizePreferenceList($row['preferred_makes']        ?? ''),
+                'preferred_body_types'   => $this->normalizePreferenceList($row['preferred_body_types']   ?? ''),
+                'preferred_fuel_types'   => $this->normalizePreferenceList($row['preferred_fuel_types']   ?? ''),
+                'preferred_transmissions'=> $this->normalizePreferenceList($row['preferred_transmissions']?? ''),
             ];
         } catch (Exception $e) {
             error_log('Recommendation history preference query failed: ' . $e->getMessage());
@@ -159,10 +182,12 @@ class RecommendationEngine {
             }
 
             $stored = [
-                'preferred_makes' => $this->normalizePreferenceList($decoded['preferred_makes'] ?? ($decoded['makes'] ?? [])),
-                'preferred_body_types' => $this->normalizePreferenceList($decoded['preferred_body_types'] ?? ($decoded['body_types'] ?? [])),
+                'preferred_makes'         => $this->normalizePreferenceList($decoded['preferred_makes']  ?? ($decoded['makes']       ?? [])),
+                'preferred_body_types'    => $this->normalizePreferenceList($decoded['preferred_body_types'] ?? ($decoded['body_types'] ?? [])),
+                'preferred_fuel_types'    => $this->normalizePreferenceList($decoded['preferred_fuel_types']  ?? ($decoded['fuel_types']  ?? [])),
+                'preferred_transmissions' => $this->normalizePreferenceList($decoded['preferred_transmissions'] ?? ($decoded['transmissions'] ?? [])),
                 'avg_price' => null,
-                'avg_year' => null,
+                'avg_year'  => null,
                 'avg_mileage' => null
             ];
 
@@ -290,13 +315,15 @@ class RecommendationEngine {
         }
 
         try {
+            // Use SUM(view_count) instead of COUNT(DISTINCT listing_id) so users who
+            // repeatedly viewed the same shared listing produce a stronger similarity signal.
             $sql = "
                 SELECT
                     other.user_id,
-                    COUNT(DISTINCT other.listing_id) AS common_views,
+                    SUM(COALESCE(other.view_count, 1)) AS common_views,
                     GROUP_CONCAT(DISTINCT recommended.listing_id) AS recommendations
                 FROM viewing_history vh
-                JOIN viewing_history other ON vh.listing_id = other.listing_id
+                JOIN viewing_history other       ON vh.listing_id = other.listing_id
                 JOIN viewing_history recommended ON other.user_id = recommended.user_id
                 LEFT JOIN viewing_history already_seen
                     ON already_seen.listing_id = recommended.listing_id
@@ -353,22 +380,26 @@ class RecommendationEngine {
     private function contentBasedFiltering($preferences, $limit = 24) {
         $limit = max(8, min(60, (int)$limit));
 
-        $avgPrice = max(1, (float)($preferences['avg_price'] ?? 5000000));
-        $avgYear = max(1990, (float)($preferences['avg_year'] ?? 2018));
-        $avgMileage = max(1, (float)($preferences['avg_mileage'] ?? 50000));
+        $avgPrice   = max(1,    (float)($preferences['avg_price']   ?? 5000000));
+        $avgYear    = max(1990, (float)($preferences['avg_year']    ?? 2018));
+        $avgMileage = max(1,    (float)($preferences['avg_mileage'] ?? 50000));
 
-        $preferredMakes = $this->normalizePreferenceList($preferences['preferred_makes'] ?? []);
-        $preferredBodyTypes = $this->normalizePreferenceList($preferences['preferred_body_types'] ?? []);
+        $preferredMakes         = $this->normalizePreferenceList($preferences['preferred_makes']         ?? []);
+        $preferredBodyTypes     = $this->normalizePreferenceList($preferences['preferred_body_types']    ?? []);
+        $preferredFuelTypes     = $this->normalizePreferenceList($preferences['preferred_fuel_types']    ?? []);
+        $preferredTransmissions = $this->normalizePreferenceList($preferences['preferred_transmissions'] ?? []);
 
+        // Lower score = better match (similarity distance, not ranking score).
+        // Price/year/mileage deviation weights sum to 0.76; attribute bonuses bring it down further.
         $scoreSql = "
-            ABS(COALESCE(cl.price, ?) - ?) / ? * 0.36 +
-            ABS(COALESCE(cl.year, ?) - ?) / 12 * 0.22 +
-            ABS(COALESCE(cl.mileage, ?) - ?) / ? * 0.18
+            ABS(COALESCE(cl.price,   ?) - ?) / ? * 0.34 +
+            ABS(COALESCE(cl.year,    ?) - ?) / 12 * 0.20 +
+            ABS(COALESCE(cl.mileage, ?) - ?) / ? * 0.16
         ";
 
         $params = [
-            $avgPrice, $avgPrice, $avgPrice,
-            $avgYear, $avgYear,
+            $avgPrice,   $avgPrice,   $avgPrice,
+            $avgYear,    $avgYear,
             $avgMileage, $avgMileage, $avgMileage
         ];
 
@@ -384,6 +415,32 @@ class RecommendationEngine {
             $params = array_merge($params, $preferredBodyTypes);
         }
 
+        if (!empty($preferredFuelTypes)) {
+            $placeholders = implode(',', array_fill(0, count($preferredFuelTypes), '?'));
+            $scoreSql .= " + CASE WHEN cl.fuel_type IN ({$placeholders}) THEN -0.08 ELSE 0 END";
+            $params = array_merge($params, $preferredFuelTypes);
+        }
+
+        if (!empty($preferredTransmissions)) {
+            $placeholders = implode(',', array_fill(0, count($preferredTransmissions), '?'));
+            $scoreSql .= " + CASE WHEN cl.transmission IN ({$placeholders}) THEN -0.05 ELSE 0 END";
+            $params = array_merge($params, $preferredTransmissions);
+        }
+
+        // Exclude listings the user has already viewed in the past 7 days
+        // so recommendations are always fresh discoveries, not repeats.
+        $excludeViewedSql = '';
+        if ($this->userId) {
+            $excludeViewedSql = "
+                AND cl.id NOT IN (
+                    SELECT listing_id FROM viewing_history
+                    WHERE user_id = ?
+                    AND last_viewed > DATE_SUB(NOW(), INTERVAL 7 DAY)
+                )
+            ";
+            $params[] = $this->userId;
+        }
+
         $sql = "
             SELECT
                 cl.*,
@@ -393,11 +450,12 @@ class RecommendationEngine {
                 loc.name AS location_name,
                 ({$scoreSql}) AS similarity_score
             FROM car_listings cl
-            JOIN car_makes cm ON cl.make_id = cm.id
-            JOIN car_models cmo ON cl.model_id = cmo.id
-            JOIN locations loc ON cl.location_id = loc.id
+            JOIN car_makes cm  ON cl.make_id    = cm.id
+            JOIN car_models cmo ON cl.model_id  = cmo.id
+            JOIN locations loc  ON cl.location_id = loc.id
             WHERE cl.status = 'active'
             AND cl.approval_status = 'approved'
+            {$excludeViewedSql}
             ORDER BY similarity_score ASC, cl.created_at DESC
             LIMIT {$limit}
         ";
@@ -417,8 +475,10 @@ class RecommendationEngine {
      */
     private function mergeAndRank($collaborative, $content, $preferences) {
         $merged = [];
-        $preferredMakes = $this->normalizePreferenceList($preferences['preferred_makes'] ?? []);
-        $preferredBodyTypes = $this->normalizePreferenceList($preferences['preferred_body_types'] ?? []);
+        $preferredMakes         = $this->normalizePreferenceList($preferences['preferred_makes']         ?? []);
+        $preferredBodyTypes     = $this->normalizePreferenceList($preferences['preferred_body_types']    ?? []);
+        $preferredFuelTypes     = $this->normalizePreferenceList($preferences['preferred_fuel_types']    ?? []);
+        $preferredTransmissions = $this->normalizePreferenceList($preferences['preferred_transmissions'] ?? []);
 
         foreach ($collaborative as $item) {
             $id = (int)($item['id'] ?? 0);
@@ -456,6 +516,14 @@ class RecommendationEngine {
 
             if (!empty($item['body_type']) && in_array($item['body_type'], $preferredBodyTypes, true)) {
                 $merged[$id]['score'] += 0.04;
+            }
+
+            if (!empty($item['fuel_type']) && in_array($item['fuel_type'], $preferredFuelTypes, true)) {
+                $merged[$id]['score'] += 0.04;
+            }
+
+            if (!empty($item['transmission']) && in_array($item['transmission'], $preferredTransmissions, true)) {
+                $merged[$id]['score'] += 0.03;
             }
         }
 
@@ -595,12 +663,14 @@ class RecommendationEngine {
 
     private function getDefaultPreferences() {
         return [
-            'avg_price' => 5000000,
-            'avg_year' => 2018,
-            'avg_mileage' => 50000,
-            'preferred_makes' => ['Toyota', 'Nissan', 'Mazda'],
-            'preferred_body_types' => ['Sedan', 'SUV'],
-            'interaction_score' => 0
+            'avg_price'               => 5000000,
+            'avg_year'                => 2018,
+            'avg_mileage'             => 50000,
+            'preferred_makes'         => ['Toyota', 'Nissan', 'Mazda'],
+            'preferred_body_types'    => ['Sedan', 'SUV'],
+            'preferred_fuel_types'    => [],
+            'preferred_transmissions' => [],
+            'interaction_score'       => 0
         ];
     }
 
@@ -847,6 +917,13 @@ try {
     $action = $_GET['action'] ?? $_POST['action'] ?? ($jsonInput['action'] ?? '');
     if (!$action) {
         sendError('No action specified', 400);
+    }
+
+    // ── Auth gate: recommendation engine is for logged-in users only ──
+    if (empty($_SESSION['user_id'])) {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'message' => 'Authentication required']);
+        exit;
     }
 
     $sessionId = trim((string)($_GET['session_id'] ?? $_POST['session_id'] ?? ($jsonInput['session_id'] ?? '')));

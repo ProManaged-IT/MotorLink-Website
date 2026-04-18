@@ -1229,11 +1229,12 @@ class ChatManager {
 
     updateUnreadBadge() {
         const totalUnread = this.getTotalUnreadCount();
+        const siteName = (window.CONFIG && CONFIG.SITE_NAME) ? CONFIG.SITE_NAME : 'MotorLink';
         // Update page title with unread count
         if (totalUnread > 0) {
-            document.title = `(${totalUnread}) Messages - MotorLink Malawi`;
+            document.title = `(${totalUnread}) Messages - ${siteName}`;
         } else {
-            document.title = 'Messages - MotorLink Malawi';
+            document.title = `Messages - ${siteName}`;
         }
     }
 

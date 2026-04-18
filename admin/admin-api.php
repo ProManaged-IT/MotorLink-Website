@@ -8,6 +8,7 @@ ini_set('error_log', __DIR__ . '/admin_errors.log');
 
 // MotorLink Admin API
 require_once 'admin-config.php';
+require_once __DIR__ . '/../includes/runtime-site-config.php';
 
 // Headers - set these BEFORE any output
 header('Content-Type: application/json; charset=utf-8');
@@ -361,6 +362,14 @@ try {
 
         case 'get_settings':
             handleGetSettings($db);
+            break;
+
+        case 'get_fuel_price_settings':
+            handleGetFuelPriceSettings($db);
+            break;
+
+        case 'save_fuel_price_settings':
+            handleSaveFuelPriceSettings($db);
             break;
 
         case 'get_admin_db_credentials':
@@ -4599,6 +4608,144 @@ function ensureSettingsTable($db) {
     }
 }
 
+function getGeneralRuntimeSettingsForAdmin($db) {
+    $config = motorlink_get_site_runtime_config($db, [
+        'include_private' => true,
+        'runtime_base_url' => motorlink_get_runtime_origin_fallback()
+    ]);
+
+    return [
+        'general_siteName' => $config['site_name'] ?? '',
+        'general_siteShortName' => $config['site_short_name'] ?? '',
+        'general_siteTagline' => $config['site_tagline'] ?? '',
+        'general_siteDescription' => $config['site_description'] ?? '',
+        'general_siteUrl' => $config['site_url'] ?? '',
+        'general_countryName' => $config['country_name'] ?? '',
+        'general_countryCode' => $config['country_code'] ?? '',
+        'general_countryDemonym' => $config['country_demonym'] ?? '',
+        'general_locale' => $config['locale'] ?? '',
+        'general_currencyCode' => $config['currency_code'] ?? '',
+        'general_currencySymbol' => $config['currency_symbol'] ?? '',
+        'general_marketScopeLabel' => $config['market_scope_label'] ?? '',
+        'general_adminEmail' => $config['admin_contact_email'] ?? '',
+        'general_supportEmail' => $config['contact_support_email'] ?? ''
+    ];
+}
+
+function buildGeneralRuntimeSiteSettingsPayload(array $settings) {
+    $defaults = motorlink_get_default_site_runtime_config(motorlink_get_runtime_origin_fallback());
+    $siteName = trim((string)($settings['siteName'] ?? $defaults['site_name']));
+    $supportEmail = trim((string)($settings['supportEmail'] ?? $defaults['contact_support_email']));
+
+    return [
+        'site_name' => [
+            'value' => $siteName !== '' ? $siteName : $defaults['site_name'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Public site name',
+            'is_public' => 1
+        ],
+        'site_short_name' => [
+            'value' => trim((string)($settings['siteShortName'] ?? $defaults['site_short_name'])) ?: $defaults['site_short_name'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Short brand name used in compact UI',
+            'is_public' => 1
+        ],
+        'site_tagline' => [
+            'value' => trim((string)($settings['siteTagline'] ?? $defaults['site_tagline'])) ?: $defaults['site_tagline'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Public site tagline',
+            'is_public' => 1
+        ],
+        'site_description' => [
+            'value' => trim((string)($settings['siteDescription'] ?? $defaults['site_description'])) ?: $defaults['site_description'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Public site description',
+            'is_public' => 1
+        ],
+        'site_url' => [
+            'value' => trim((string)($settings['siteUrl'] ?? $defaults['site_url'])) ?: $defaults['site_url'],
+            'group' => 'general',
+            'type' => 'url',
+            'description' => 'Primary public site URL',
+            'is_public' => 1
+        ],
+        'country_name' => [
+            'value' => trim((string)($settings['countryName'] ?? $defaults['country_name'])) ?: $defaults['country_name'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Country or market name',
+            'is_public' => 1
+        ],
+        'country_code' => [
+            'value' => strtoupper(trim((string)($settings['countryCode'] ?? $defaults['country_code']))) ?: $defaults['country_code'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'ISO country code',
+            'is_public' => 1
+        ],
+        'country_demonym' => [
+            'value' => trim((string)($settings['countryDemonym'] ?? $defaults['country_demonym'])) ?: $defaults['country_demonym'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Country demonym for marketing copy',
+            'is_public' => 1
+        ],
+        'locale' => [
+            'value' => trim((string)($settings['locale'] ?? $defaults['locale'])) ?: $defaults['locale'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Primary locale',
+            'is_public' => 1
+        ],
+        'currency_code' => [
+            'value' => strtoupper(trim((string)($settings['currencyCode'] ?? $defaults['currency_code']))) ?: $defaults['currency_code'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Primary currency code',
+            'is_public' => 1
+        ],
+        'currency_symbol' => [
+            'value' => trim((string)($settings['currencySymbol'] ?? $defaults['currency_symbol'])) ?: $defaults['currency_symbol'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Primary currency label or symbol',
+            'is_public' => 1
+        ],
+        'market_scope_label' => [
+            'value' => trim((string)($settings['marketScopeLabel'] ?? $defaults['market_scope_label'])) ?: $defaults['market_scope_label'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Coverage label used in marketing copy',
+            'is_public' => 1
+        ],
+        'contact_support_email' => [
+            'value' => $supportEmail !== '' ? $supportEmail : $defaults['contact_support_email'],
+            'group' => 'contact',
+            'type' => 'string',
+            'description' => 'Public support email',
+            'is_public' => 1
+        ],
+        'contact_email' => [
+            'value' => $supportEmail !== '' ? $supportEmail : $defaults['contact_email'],
+            'group' => 'contact',
+            'type' => 'string',
+            'description' => 'Primary public contact email',
+            'is_public' => 1
+        ],
+        'admin_contact_email' => [
+            'value' => trim((string)($settings['adminEmail'] ?? $defaults['admin_contact_email'])) ?: $defaults['admin_contact_email'],
+            'group' => 'general',
+            'type' => 'string',
+            'description' => 'Private admin contact email',
+            'is_public' => 0
+        ]
+    ];
+}
+
 /**
  * Save settings to database
  */
@@ -4635,6 +4782,10 @@ function handleSaveSettings($db) {
 
             $stmt = $db->prepare($sql);
             $stmt->execute([$settingKey, $settingValue, $settingType, $adminId]);
+        }
+
+        if ($category === 'general') {
+            motorlink_upsert_site_settings($db, buildGeneralRuntimeSiteSettingsPayload($settings));
         }
 
         $db->commit();
@@ -4679,12 +4830,301 @@ function handleGetSettings($db) {
             $settings[$key] = $value;
         }
 
+        foreach (getGeneralRuntimeSettingsForAdmin($db) as $key => $value) {
+            if ($value !== null && $value !== '') {
+                $settings[$key] = $value;
+            }
+        }
+
         echo json_encode(['success' => true, 'settings' => $settings]);
         exit();
     } catch (Exception $e) {
         error_log("handleGetSettings error: " . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to load settings: ' . $e->getMessage()]);
         exit();
+    }
+}
+
+function ensureFuelPricesTable($db) {
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS fuel_prices (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            fuel_type VARCHAR(50) NOT NULL,
+            price_per_liter_mwk DECIMAL(10,2) NOT NULL,
+            price_per_liter_usd DECIMAL(10,4) DEFAULT NULL,
+            currency VARCHAR(10) DEFAULT 'MWK',
+            date DATE NOT NULL,
+            is_active TINYINT(1) DEFAULT 1,
+            source VARCHAR(255) DEFAULT NULL,
+            source_url VARCHAR(500) DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            updated_by INT DEFAULT NULL,
+            UNIQUE KEY uniq_fuel_type_date (fuel_type, date),
+            INDEX idx_fuel_prices_active_date (is_active, date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Exception $e) {
+        error_log('ensureFuelPricesTable create error: ' . $e->getMessage());
+    }
+
+    $alterStatements = [
+        "ALTER TABLE fuel_prices ADD COLUMN price_per_liter_usd DECIMAL(10,4) DEFAULT NULL",
+        "ALTER TABLE fuel_prices ADD COLUMN currency VARCHAR(10) DEFAULT 'MWK'",
+        "ALTER TABLE fuel_prices ADD COLUMN is_active TINYINT(1) DEFAULT 1",
+        "ALTER TABLE fuel_prices ADD COLUMN source VARCHAR(255) DEFAULT NULL",
+        "ALTER TABLE fuel_prices ADD COLUMN source_url VARCHAR(500) DEFAULT NULL",
+        "ALTER TABLE fuel_prices ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE fuel_prices ADD COLUMN last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+        "ALTER TABLE fuel_prices ADD COLUMN updated_by INT DEFAULT NULL",
+        "ALTER TABLE fuel_prices ADD UNIQUE KEY uniq_fuel_type_date (fuel_type, date)",
+        "ALTER TABLE fuel_prices ADD INDEX idx_fuel_prices_active_date (is_active, date)"
+    ];
+
+    foreach ($alterStatements as $sql) {
+        try {
+            $db->exec($sql);
+        } catch (Exception $e) {
+            // Ignore existing columns/indexes or duplicate-key migration issues.
+        }
+    }
+}
+
+function isValidFuelPriceDate($value) {
+    if (!is_string($value) || $value === '') {
+        return false;
+    }
+
+    $date = DateTime::createFromFormat('Y-m-d', $value);
+    return $date && $date->format('Y-m-d') === $value;
+}
+
+function fetchAdminFuelPriceSnapshot($db, $requestedDate) {
+    $stmt = $db->prepare("SELECT fuel_type, price_per_liter_mwk, price_per_liter_usd, currency, source, source_url, last_updated, date
+        FROM fuel_prices
+        WHERE is_active = 1 AND date = ?
+        ORDER BY fuel_type");
+    $stmt->execute([$requestedDate]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $resolvedDate = $requestedDate;
+    $hasExactDate = !empty($rows);
+
+    if (empty($rows)) {
+        $latestDateStmt = $db->query("SELECT date FROM fuel_prices WHERE is_active = 1 ORDER BY date DESC LIMIT 1");
+        $latestDate = $latestDateStmt ? $latestDateStmt->fetchColumn() : false;
+
+        if ($latestDate) {
+            $resolvedDate = $latestDate;
+            $fallbackStmt = $db->prepare("SELECT fuel_type, price_per_liter_mwk, price_per_liter_usd, currency, source, source_url, last_updated, date
+                FROM fuel_prices
+                WHERE is_active = 1 AND date = ?
+                ORDER BY fuel_type");
+            $fallbackStmt->execute([$resolvedDate]);
+            $rows = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+    }
+
+    $priceMap = [
+        'petrol' => [
+            'fuel_type' => 'petrol',
+            'price_per_liter_mwk' => '',
+            'price_per_liter_usd' => '',
+            'currency' => 'MWK',
+            'source' => ''
+        ],
+        'diesel' => [
+            'fuel_type' => 'diesel',
+            'price_per_liter_mwk' => '',
+            'price_per_liter_usd' => '',
+            'currency' => 'MWK',
+            'source' => ''
+        ]
+    ];
+
+    $sources = [];
+    $mostRecentUpdated = null;
+
+    foreach ($rows as $row) {
+        $fuelType = strtolower((string)($row['fuel_type'] ?? ''));
+        if (!isset($priceMap[$fuelType])) {
+            $priceMap[$fuelType] = [
+                'fuel_type' => $fuelType,
+                'price_per_liter_mwk' => '',
+                'price_per_liter_usd' => '',
+                'currency' => 'MWK',
+                'source' => ''
+            ];
+        }
+
+        $priceMap[$fuelType]['price_per_liter_mwk'] = $row['price_per_liter_mwk'] !== null ? (float)$row['price_per_liter_mwk'] : '';
+        $priceMap[$fuelType]['price_per_liter_usd'] = $row['price_per_liter_usd'] !== null ? (float)$row['price_per_liter_usd'] : '';
+        $priceMap[$fuelType]['currency'] = (string)($row['currency'] ?? 'MWK');
+        $priceMap[$fuelType]['source'] = (string)($row['source'] ?? '');
+
+        if (!empty($row['source'])) {
+            $sources[] = (string)$row['source'];
+        }
+
+        if (!empty($row['last_updated'])) {
+            $updatedAt = strtotime((string)$row['last_updated']);
+            if ($updatedAt && ($mostRecentUpdated === null || $updatedAt > $mostRecentUpdated)) {
+                $mostRecentUpdated = $updatedAt;
+            }
+        }
+    }
+
+    return [
+        'requested_date' => $requestedDate,
+        'resolved_date' => $resolvedDate,
+        'has_exact_date' => $hasExactDate,
+        'prices' => $priceMap,
+        'source' => !empty($sources) ? implode(', ', array_values(array_unique($sources))) : '',
+        'last_updated' => $mostRecentUpdated ? date('Y-m-d H:i:s', $mostRecentUpdated) : null
+    ];
+}
+
+function handleGetFuelPriceSettings($db) {
+    requireAdmin();
+    ensureFuelPricesTable($db);
+
+    $requestedDate = trim((string)($_GET['date'] ?? date('Y-m-d')));
+    if (!isValidFuelPriceDate($requestedDate)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid effective date']);
+        return;
+    }
+
+    try {
+        $snapshot = fetchAdminFuelPriceSnapshot($db, $requestedDate);
+        echo json_encode(['success' => true] + $snapshot);
+    } catch (Exception $e) {
+        error_log('handleGetFuelPriceSettings error: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to load fuel prices']);
+    }
+}
+
+function handleSaveFuelPriceSettings($db) {
+    requireAdmin();
+    ensureFuelPricesTable($db);
+
+    try {
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data)) {
+            throw new Exception('Invalid request payload');
+        }
+
+        $effectiveDate = trim((string)($data['effective_date'] ?? date('Y-m-d')));
+        $source = trim((string)($data['source'] ?? 'admin_portal'));
+        if ($source === '') {
+            $source = 'admin_portal';
+        }
+
+        if (!isValidFuelPriceDate($effectiveDate)) {
+            throw new Exception('Effective date must be in YYYY-MM-DD format');
+        }
+
+        if (strlen($source) > 255) {
+            throw new Exception('Source label must be 255 characters or fewer');
+        }
+
+        $fuelInputs = [
+            'petrol' => [
+                'mwk' => $data['petrol_mwk'] ?? null,
+                'usd' => $data['petrol_usd'] ?? null
+            ],
+            'diesel' => [
+                'mwk' => $data['diesel_mwk'] ?? null,
+                'usd' => $data['diesel_usd'] ?? null
+            ]
+        ];
+
+        $normalizedPrices = [];
+        foreach ($fuelInputs as $fuelType => $values) {
+            if ($values['mwk'] === null || $values['mwk'] === '' || !is_numeric((string)$values['mwk'])) {
+                throw new Exception(ucfirst($fuelType) . ' price (MWK) is required');
+            }
+
+            $mwkValue = round((float)$values['mwk'], 2);
+            if ($mwkValue <= 0 || $mwkValue > 100000) {
+                throw new Exception(ucfirst($fuelType) . ' price (MWK) must be greater than 0 and less than 100000');
+            }
+
+            $usdValue = null;
+            if ($values['usd'] !== null && $values['usd'] !== '') {
+                if (!is_numeric((string)$values['usd'])) {
+                    throw new Exception(ucfirst($fuelType) . ' price (USD) must be a valid number');
+                }
+
+                $usdValue = round((float)$values['usd'], 4);
+                if ($usdValue < 0 || $usdValue > 1000) {
+                    throw new Exception(ucfirst($fuelType) . ' price (USD) must be between 0 and 1000');
+                }
+            }
+
+            $normalizedPrices[$fuelType] = [
+                'mwk' => $mwkValue,
+                'usd' => $usdValue
+            ];
+        }
+
+        $adminId = $_SESSION['admin_id'] ?? null;
+
+        $selectStmt = $db->prepare("SELECT id FROM fuel_prices WHERE fuel_type = ? AND date = ? ORDER BY is_active DESC, last_updated DESC, id DESC LIMIT 1");
+        $deactivateStmt = $db->prepare("UPDATE fuel_prices SET is_active = 0 WHERE fuel_type = ? AND date = ? AND id <> ?");
+        $updateStmt = $db->prepare("UPDATE fuel_prices
+            SET price_per_liter_mwk = ?,
+                price_per_liter_usd = ?,
+                currency = 'MWK',
+                is_active = 1,
+                source = ?,
+                source_url = NULL,
+                last_updated = NOW()
+            WHERE id = ?");
+        $insertStmt = $db->prepare("INSERT INTO fuel_prices
+            (fuel_type, price_per_liter_mwk, price_per_liter_usd, currency, date, is_active, source, source_url, last_updated)
+            VALUES (?, ?, ?, 'MWK', ?, 1, ?, NULL, NOW())");
+
+        $db->beginTransaction();
+
+        foreach ($normalizedPrices as $fuelType => $values) {
+            $selectStmt->execute([$fuelType, $effectiveDate]);
+            $existingId = $selectStmt->fetchColumn();
+
+            if ($existingId) {
+                $updateStmt->execute([$values['mwk'], $values['usd'], $source, $existingId]);
+                $deactivateStmt->execute([$fuelType, $effectiveDate, $existingId]);
+            } else {
+                $insertStmt->execute([$fuelType, $values['mwk'], $values['usd'], $effectiveDate, $source]);
+            }
+        }
+
+        $db->commit();
+
+        logActivity(
+            $db,
+            'fuel_prices_updated',
+            'Fuel prices updated',
+            sprintf(
+                'Date: %s | Petrol: MWK %.2f | Diesel: MWK %.2f | Source: %s',
+                $effectiveDate,
+                $normalizedPrices['petrol']['mwk'],
+                $normalizedPrices['diesel']['mwk'],
+                $source
+            ),
+            $adminId
+        );
+
+        $snapshot = fetchAdminFuelPriceSnapshot($db, $effectiveDate);
+        echo json_encode([
+            'success' => true,
+            'message' => 'Fuel prices saved successfully'
+        ] + $snapshot);
+    } catch (Exception $e) {
+        if ($db instanceof PDO && $db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        error_log('handleSaveFuelPriceSettings error: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to save fuel prices: ' . $e->getMessage()]);
     }
 }
 

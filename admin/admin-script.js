@@ -735,7 +735,8 @@ class AdminDashboard {
                 return Promise.all([
                     loadSettings(),
                     loadSystemInfo(),
-                    loadAIChatSettings() // This will also load AI Learning settings
+                    loadAIChatSettings(), // This will also load AI Learning settings
+                    loadFuelPriceSettings()
                 ]);
             default:
                 return Promise.resolve();
@@ -5987,8 +5988,17 @@ function exportPayments() {
 async function saveGeneralSettings() {
     const settings = {
         siteName: document.getElementById('site-name').value,
+        siteShortName: document.getElementById('site-short-name').value,
         siteTagline: document.getElementById('site-tagline').value,
         siteDescription: document.getElementById('site-description').value,
+        siteUrl: document.getElementById('site-url').value,
+        countryName: document.getElementById('country-name').value,
+        countryCode: document.getElementById('country-code').value,
+        countryDemonym: document.getElementById('country-demonym').value,
+        locale: document.getElementById('locale').value,
+        currencyCode: document.getElementById('currency-code').value,
+        currencySymbol: document.getElementById('currency-symbol').value,
+        marketScopeLabel: document.getElementById('market-scope-label').value,
         adminEmail: document.getElementById('admin-email').value,
         supportEmail: document.getElementById('support-email').value
     };
@@ -6431,12 +6441,18 @@ function updateFeaturedLaunchModeBadge() {
     if (!priceInput || !badge) return;
 
     const featuredPrice = Number(priceInput.value || 0);
+    const currencyLabel = (
+        document.getElementById('currency-symbol')?.value ||
+        document.getElementById('currency-code')?.value ||
+        'LOCAL'
+    ).trim();
+
     if (featuredPrice <= 0) {
         badge.innerHTML = '<i class="fas fa-bolt"></i> Featured is currently free';
         badge.style.background = '#ecfdf3';
         badge.style.color = '#166534';
     } else {
-        badge.innerHTML = `<i class="fas fa-tag"></i> Featured is paid: MWK ${Math.round(featuredPrice).toLocaleString()}`;
+        badge.innerHTML = `<i class="fas fa-tag"></i> Featured is paid: ${currencyLabel} ${Math.round(featuredPrice).toLocaleString()}`;
         badge.style.background = '#eff6ff';
         badge.style.color = '#1d4ed8';
     }
@@ -6454,10 +6470,20 @@ async function loadSettings() {
 
             // General Settings
             if (settings['general_siteName']) document.getElementById('site-name').value = settings['general_siteName'];
+            if (settings['general_siteShortName']) document.getElementById('site-short-name').value = settings['general_siteShortName'];
             if (settings['general_siteTagline']) document.getElementById('site-tagline').value = settings['general_siteTagline'];
             if (settings['general_siteDescription']) document.getElementById('site-description').value = settings['general_siteDescription'];
+            if (settings['general_siteUrl']) document.getElementById('site-url').value = settings['general_siteUrl'];
+            if (settings['general_countryName']) document.getElementById('country-name').value = settings['general_countryName'];
+            if (settings['general_countryCode']) document.getElementById('country-code').value = settings['general_countryCode'];
+            if (settings['general_countryDemonym']) document.getElementById('country-demonym').value = settings['general_countryDemonym'];
+            if (settings['general_locale']) document.getElementById('locale').value = settings['general_locale'];
+            if (settings['general_currencyCode']) document.getElementById('currency-code').value = settings['general_currencyCode'];
+            if (settings['general_currencySymbol']) document.getElementById('currency-symbol').value = settings['general_currencySymbol'];
+            if (settings['general_marketScopeLabel']) document.getElementById('market-scope-label').value = settings['general_marketScopeLabel'];
             if (settings['general_adminEmail']) document.getElementById('admin-email').value = settings['general_adminEmail'];
             if (settings['general_supportEmail']) document.getElementById('support-email').value = settings['general_supportEmail'];
+            updateFeaturedLaunchModeBadge();
 
             // Listing Settings
             if (settings['listing_autoApprove'] !== undefined) document.getElementById('auto-approve-listings').checked = settings['listing_autoApprove'];
@@ -6509,6 +6535,127 @@ async function loadSettings() {
         debugLog('Error loading settings:', error);
         await loadAdminDbCredentials();
         await loadFooterSupportSettings();
+    }
+}
+
+function getFuelPriceDefaultDate() {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+}
+
+function updateFuelPriceStatusCard(data) {
+    const summaryEl = document.getElementById('fuel-price-current-summary');
+    if (!summaryEl) return;
+
+    if (!data || !data.prices) {
+        summaryEl.textContent = 'Fuel prices are not available yet.';
+        return;
+    }
+
+    const petrol = data.prices.petrol || {};
+    const diesel = data.prices.diesel || {};
+    const petrolText = petrol.price_per_liter_mwk !== '' && petrol.price_per_liter_mwk !== undefined
+        ? `Petrol MWK ${Number(petrol.price_per_liter_mwk).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/L`
+        : 'Petrol not set';
+    const dieselText = diesel.price_per_liter_mwk !== '' && diesel.price_per_liter_mwk !== undefined
+        ? `Diesel MWK ${Number(diesel.price_per_liter_mwk).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/L`
+        : 'Diesel not set';
+    const resolvedDate = data.resolved_date || data.requested_date || getFuelPriceDefaultDate();
+    const modeText = data.has_exact_date
+        ? `Active prices for ${resolvedDate}`
+        : `Showing latest saved prices from ${resolvedDate} while editing ${data.requested_date || getFuelPriceDefaultDate()}`;
+    const sourceText = data.source ? ` Source: ${data.source}.` : '';
+    const updatedText = data.last_updated ? ` Last updated: ${new Date(data.last_updated).toLocaleString()}.` : '';
+
+    summaryEl.textContent = `${modeText}. ${petrolText}. ${dieselText}.${sourceText}${updatedText}`.replace(/\s+/g, ' ').trim();
+}
+
+async function loadFuelPriceSettings(requestedDate = null) {
+    const dateInput = document.getElementById('fuel-price-effective-date');
+    const dateToLoad = requestedDate || dateInput?.value || getFuelPriceDefaultDate();
+
+    try {
+        const response = await admin.apiCall('get_fuel_price_settings', 'GET', { date: dateToLoad });
+        if (!response.success) {
+            throw new Error(response.message || 'Failed to load fuel prices');
+        }
+
+        if (dateInput) {
+            dateInput.value = response.requested_date || dateToLoad;
+        }
+
+        const sourceInput = document.getElementById('fuel-price-source');
+        if (sourceInput) {
+            sourceInput.value = response.source || 'admin_portal';
+        }
+
+        const petrol = response.prices?.petrol || {};
+        const diesel = response.prices?.diesel || {};
+
+        const petrolMwkInput = document.getElementById('fuel-price-petrol-mwk');
+        if (petrolMwkInput) petrolMwkInput.value = petrol.price_per_liter_mwk !== '' ? petrol.price_per_liter_mwk : '';
+
+        const dieselMwkInput = document.getElementById('fuel-price-diesel-mwk');
+        if (dieselMwkInput) dieselMwkInput.value = diesel.price_per_liter_mwk !== '' ? diesel.price_per_liter_mwk : '';
+
+        const petrolUsdInput = document.getElementById('fuel-price-petrol-usd');
+        if (petrolUsdInput) petrolUsdInput.value = petrol.price_per_liter_usd !== '' ? petrol.price_per_liter_usd : '';
+
+        const dieselUsdInput = document.getElementById('fuel-price-diesel-usd');
+        if (dieselUsdInput) dieselUsdInput.value = diesel.price_per_liter_usd !== '' ? diesel.price_per_liter_usd : '';
+
+        updateFuelPriceStatusCard(response);
+    } catch (error) {
+        console.error('Error loading fuel price settings:', error);
+        updateFuelPriceStatusCard(null);
+    }
+}
+
+async function saveFuelPriceSettings() {
+    try {
+        const effectiveDate = document.getElementById('fuel-price-effective-date')?.value || getFuelPriceDefaultDate();
+        const source = (document.getElementById('fuel-price-source')?.value || 'admin_portal').trim();
+        const petrolMwk = document.getElementById('fuel-price-petrol-mwk')?.value;
+        const dieselMwk = document.getElementById('fuel-price-diesel-mwk')?.value;
+        const petrolUsd = document.getElementById('fuel-price-petrol-usd')?.value;
+        const dieselUsd = document.getElementById('fuel-price-diesel-usd')?.value;
+
+        if (!effectiveDate) {
+            admin.showAlert('error', 'Please choose an effective date for the fuel prices');
+            return;
+        }
+
+        if (petrolMwk === '' || Number(petrolMwk) <= 0) {
+            admin.showAlert('error', 'Please enter a valid petrol price in MWK');
+            return;
+        }
+
+        if (dieselMwk === '' || Number(dieselMwk) <= 0) {
+            admin.showAlert('error', 'Please enter a valid diesel price in MWK');
+            return;
+        }
+
+        const payload = {
+            effective_date: effectiveDate,
+            source: source || 'admin_portal',
+            petrol_mwk: petrolMwk,
+            diesel_mwk: dieselMwk,
+            petrol_usd: petrolUsd === '' ? null : petrolUsd,
+            diesel_usd: dieselUsd === '' ? null : dieselUsd
+        };
+
+        const response = await admin.apiCall('save_fuel_price_settings', 'POST', payload);
+        if (!response.success) {
+            throw new Error(response.message || 'Failed to save fuel prices');
+        }
+
+        updateFuelPriceStatusCard(response);
+        await loadFuelPriceSettings(effectiveDate);
+        admin.showAlert('success', `Fuel prices saved for ${effectiveDate}`);
+    } catch (error) {
+        console.error('Error saving fuel prices:', error);
+        admin.showAlert('error', error.message || 'Failed to save fuel prices');
     }
 }
 
@@ -7240,7 +7387,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const settingsNav = document.querySelector('[data-section="settings"]');
     if (settingsNav) {
         settingsNav.addEventListener('click', function() {
-            setTimeout(loadAIChatSettings, 500);
+            setTimeout(() => {
+                loadAIChatSettings();
+                loadFuelPriceSettings();
+            }, 500);
         });
     }
     

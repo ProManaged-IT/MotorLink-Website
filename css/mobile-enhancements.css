@@ -3948,8 +3948,8 @@
         height: 64px !important;
         padding: 0 !important;
         background: #ffffff !important;
-        border-bottom: 1px solid rgba(0, 200, 83, 0.07) !important;
-        box-shadow: 0 1px 10px rgba(0, 0, 0, 0.05) !important;
+        border-bottom: none !important;
+        box-shadow: none !important;
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
         overflow: visible !important;
@@ -3964,6 +3964,11 @@
         flex-wrap: nowrap !important;
         gap: 8px !important;
         overflow: visible !important;
+    }
+
+    /* ── Hide Home nav link on mobile (logo = home) ── */
+    .nav a[href="index.html"] {
+        display: none !important;
     }
 
     /* ── Logo — always in front, never clipped ── */

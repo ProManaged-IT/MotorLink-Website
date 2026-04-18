@@ -1,4 +1,4 @@
-// MotorLink Malawi Business Onboarding
+// MotorLink Business Onboarding
 
 // Derives the admin API URL from the same environment logic used by admin-script.js
 const getAdminAPIUrl = () => {
@@ -2127,7 +2127,9 @@ class OnboardingForm {
                 baseData.weekly_rate_from = data.weekly_rate_from ? parseFloat(data.weekly_rate_from) : null;
                 baseData.monthly_rate_from = data.monthly_rate_from ? parseFloat(data.monthly_rate_from) : null;
                 baseData.business_hours = data.business_hours || null;
-                baseData.currency = 'MWK';
+                baseData.currency = (typeof CONFIG !== 'undefined' && CONFIG.CURRENCY_CODE)
+                    ? CONFIG.CURRENCY_CODE
+                    : 'LOCAL';
                 baseData.operates_24_7 = 0;
                 break;
 

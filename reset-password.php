@@ -8,29 +8,21 @@
 $token = $_GET['token'] ?? '';
 $userId = $_GET['id'] ?? '';
 
-// Database configuration (same as api.php)
-$serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-$isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-define('DB_HOST', $isProduction ? 'localhost' : 'promanaged-it.com');
-define('DB_USER', 'p601229');
-define('DB_PASS', '2:p2WpmX[0YTs7');
-define('DB_NAME', 'p601229_motorlinkmalawi_db');
+require_once __DIR__ . '/admin/admin-config.php';
+require_once __DIR__ . '/includes/runtime-site-config.php';
 
 $error = null;
 $validToken = false;
 $userEmail = '';
+$siteName = 'MotorLink';
 
 try {
-    $db = new PDO(
-        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-        DB_USER,
-        DB_PASS,
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false
-        ]
-    );
+    $db = getDatabase();
+    $siteConfig = motorlink_get_site_runtime_config($db, [
+        'include_private' => true,
+        'runtime_base_url' => motorlink_get_runtime_origin_fallback()
+    ]);
+    $siteName = trim((string)($siteConfig['site_name'] ?? $siteName)) ?: $siteName;
     
     if (!empty($token) && !empty($userId)) {
         // Verify token and get user
@@ -72,7 +64,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $validToken ? 'Reset Password' : 'Invalid Link'; ?> - MotorLink Malawi</title>
+    <title><?php echo htmlspecialchars(($validToken ? 'Reset Password' : 'Invalid Link') . ' - ' . $siteName, ENT_QUOTES, 'UTF-8'); ?></title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/login.css">
     <link rel="stylesheet" href="css/common.css">

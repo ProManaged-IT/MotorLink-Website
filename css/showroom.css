@@ -1547,10 +1547,10 @@
     }
 }
 
-.stat-item {
-    background: rgba(255, 255, 255, 0.15);
+.showroom-stats .showroom-feature-box {
+    background: rgba(0, 195, 75, 0.28);
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    border: 1px solid rgba(0, 255, 110, 0.35);
     border-radius: 10px;
     padding: 14px;
     display: flex;
@@ -1560,39 +1560,34 @@
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     flex: 0 1 200px;
     min-width: 150px;
+    color: var(--text-white);
 }
 
-/* Hero stat cards — distinctly green to match car-hire feature-box */
-.showroom-stats .stat-item {
-    background: rgba(0, 195, 75, 0.28);
-    border: 1px solid rgba(0, 255, 110, 0.35);
-}
-
-.stat-item:hover {
-    background: rgba(255, 255, 255, 0.25);
+.showroom-stats .showroom-feature-box:hover {
+    background: rgba(0, 210, 80, 0.42);
     transform: translateY(-3px);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
 }
 
-.showroom-stats .stat-item:hover {
-    background: rgba(0, 210, 80, 0.42);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+.showroom-stats .showroom-feature-copy {
+    min-width: 0;
 }
 
-.stat-item i {
+.showroom-stats .showroom-feature-box i {
     font-size: 1.5rem;
     opacity: 0.95;
     flex-shrink: 0;
     margin: 0;
+    color: var(--text-white);
 }
 
 @media (min-width: 768px) {
-    .stat-item i {
+    .showroom-stats .showroom-feature-box i {
         font-size: 1.6rem;
     }
 }
 
-.stat-value {
+.showroom-stats .showroom-feature-value {
     font-size: 0.85rem;
     font-weight: 600;
     margin-bottom: 2px;
@@ -1601,7 +1596,7 @@
     line-height: 1.2;
 }
 
-.stat-label {
+.showroom-stats .showroom-feature-label {
     font-size: 0.75rem;
     opacity: 0.85;
     font-weight: 500;
@@ -2383,7 +2378,7 @@
         margin-top: 12px !important;
     }
 
-    .showroom-stats .stat-item {
+    .showroom-stats .showroom-feature-box {
         font-size: 11px !important;
     }
 
@@ -2585,33 +2580,35 @@
         box-sizing: border-box;
     }
 
-    .showroom-stats .stat-item {
+    .showroom-stats .showroom-feature-box {
         background: rgba(0, 195, 75, 0.28) !important;
+        backdrop-filter: blur(12px) !important;
         border: 1.5px solid rgba(0, 255, 110, 0.35) !important;
         border-radius: 12px !important;
         padding: 12px 8px !important;
         box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12) !important;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        flex: 0 1 calc(50% - 5px);
+        width: 100%;
+        flex: 1 1 100%;
         min-width: 0;
         max-width: 100%;
         box-sizing: border-box;
         overflow: hidden;
     }
 
-    .showroom-stats .stat-item:hover {
+    .showroom-stats .showroom-feature-box:hover {
         background: rgba(0, 210, 80, 0.42) !important;
         transform: translateY(-2px) !important;
         box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15) !important;
     }
 
-    .showroom-stats .stat-item i {
+    .showroom-stats .showroom-feature-box i {
         font-size: 1.4rem !important;
-        margin: 0 !important;
+        margin-bottom: 4px !important;
         flex-shrink: 0 !important;
     }
 
-    .showroom-stats .stat-value {
+    .showroom-stats .showroom-feature-value {
         font-size: 0.8rem !important;
         font-weight: 700 !important;
         color: white !important;
@@ -2620,7 +2617,7 @@
         text-align: left !important;
     }
 
-    .showroom-stats .stat-label {
+    .showroom-stats .showroom-feature-label {
         font-size: 0.68rem !important;
         opacity: 0.9 !important;
         text-align: left !important;
@@ -2674,8 +2671,32 @@
         justify-content: center !important;
     }
 
-    .showroom-stats .stat-item {
-        flex: 0 1 calc(50% - 4px);
+    .showroom-stats .showroom-feature-box {
+        padding: 10px 8px !important;
+        gap: 8px !important;
+        background: rgba(0, 195, 75, 0.28) !important;
+        border-radius: 10px !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+        transition: all 0.3s ease !important;
+    }
+
+    .showroom-stats .showroom-feature-box i {
+        font-size: 1.3rem !important;
+        margin-bottom: 2px !important;
+    }
+
+    .showroom-stats .showroom-feature-value {
+        font-size: 0.8rem !important;
+        margin-bottom: 2px !important;
+        text-align: center !important;
+    }
+
+    .showroom-stats .showroom-feature-label {
+        font-size: 0.65rem !important;
+        opacity: 0.9 !important;
+        text-align: center !important;
     }
 }
 
@@ -2700,15 +2721,15 @@
    ============================================================================ */
 .dealer-contact-card .dealer-quick-actions.contact-actions {
     width: 100%;
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    display: flex !important;
+    flex-direction: column !important;
     gap: 8px !important;
-    margin-bottom: 4px !important;
+    margin-bottom: 16px !important;
 }
 
 .dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn {
     width: 100% !important;
-    min-height: 42px;
+    min-height: 0;
     padding: 8px 12px !important;
     border-radius: 6px !important;
     text-align: center;
@@ -2718,7 +2739,7 @@
     justify-content: center !important;
     gap: 8px !important;
     font-size: 0.9rem !important;
-    font-weight: 700;
+    font-weight: 600;
     transition: all 0.3s ease;
     background: #f8f9fa !important;
     color: #333 !important;
@@ -2735,18 +2756,6 @@
 .dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn.whatsapp:hover {
     background: #128c7e !important;
     border-color: #128c7e !important;
-    transform: translateY(-2px);
-}
-
-.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn.phone {
-    background: #00a651 !important;
-    color: white !important;
-    border-color: #00a651 !important;
-}
-
-.dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn.phone:hover {
-    background: #008f45 !important;
-    border-color: #008f45 !important;
     transform: translateY(-2px);
 }
 
@@ -2771,19 +2780,19 @@
 
 @media (max-width: 768px) {
     .dealer-contact-card .dealer-quick-actions.contact-actions {
-        grid-template-columns: 1fr !important;
-        gap: 7px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
     }
 
     .dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn {
-        min-height: 38px;
         padding: 8px 12px !important;
-        font-size: 0.82rem !important;
+        font-size: 0.9rem !important;
         flex-direction: row !important;
     }
 
     .dealer-contact-card .dealer-quick-actions.contact-actions .quick-action-btn i {
-        font-size: 0.9rem !important;
+        font-size: 0.875rem !important;
         margin-bottom: 0 !important;
     }
 }
@@ -2806,6 +2815,28 @@
         object-fit: contain !important;
         object-position: center !important;
         padding: 6px;
+    }
+
+    /* Gallery in horizontal row — constrain and hide strip */
+    .car-gallery {
+        flex-shrink: 0;
+    }
+
+    .car-gallery-main {
+        aspect-ratio: unset !important;
+        width: 100% !important;
+        height: 100% !important;
+    }
+
+    .car-gallery-main img {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+    }
+
+    /* Hide thumbnail strip — no room in horizontal layout */
+    .car-gallery-strip {
+        display: none !important;
     }
 
     /* Car reference: keep as tiny monospace chip */
@@ -2886,7 +2917,8 @@
         gap: 14px;
     }
 
-    .car-image {
+    .car-image,
+    .car-gallery {
         width: 38% !important;
         min-width: 130px !important;
         height: auto !important;
@@ -2895,7 +2927,8 @@
         background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%) !important;
     }
 
-    .car-content {
+    .car-content,
+    .car-info {
         flex: 1 !important;
         padding: 10px !important;
         overflow: hidden;
@@ -2923,7 +2956,8 @@
         gap: 10px;
     }
 
-    .car-image {
+    .car-image,
+    .car-gallery {
         width: 40% !important;
         min-width: 112px !important;
         height: auto !important;
@@ -2932,7 +2966,8 @@
         background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%) !important;
     }
 
-    .car-content {
+    .car-content,
+    .car-info {
         flex: 1 !important;
         padding: 9px !important;
         overflow: hidden;

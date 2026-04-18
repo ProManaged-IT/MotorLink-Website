@@ -281,7 +281,7 @@
                         <div class="stat-card info">
                             <div class="stat-icon"><i class="fas fa-dollar-sign"></i></div>
                             <div class="stat-content">
-                                <h3 id="todayRevenue">MWK 0</h3>
+                                <h3 id="todayRevenue">0</h3>
                                 <p>Today's Revenue</p>
                             </div>
                         </div>
@@ -1303,24 +1303,71 @@
                             <h3><i class="fas fa-info-circle"></i> General Settings</h3>
                             <div class="form-group">
                                 <label for="site-name">Site Name</label>
-                                <input type="text" id="site-name" value="MotorLink Malawi" class="form-control">
+                                <input type="text" id="site-name" value="MotorLink" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="site-short-name">Short Name</label>
+                                <input type="text" id="site-short-name" value="MotorLink" class="form-control">
                             </div>
                             <div class="form-group">
                                 <label for="site-tagline">Site Tagline</label>
-                                <input type="text" id="site-tagline" value="Your Trusted Car Marketplace in Malawi" class="form-control">
+                                <input type="text" id="site-tagline" value="Your trusted vehicle marketplace" class="form-control">
                             </div>
                             <div class="form-group">
                                 <label for="site-description">Site Description</label>
-                                <textarea id="site-description" rows="3" class="form-control">MotorLink Malawi is the premier platform for buying, selling, and renting vehicles in Malawi.</textarea>
+                                <textarea id="site-description" rows="3" class="form-control">MotorLink helps people buy, sell, hire, and manage vehicles in one place.</textarea>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="site-url">Public Site URL</label>
+                                    <input type="url" id="site-url" value="" class="form-control" placeholder="https://example.com">
+                                </div>
+                                <div class="form-group">
+                                    <label for="locale">Locale</label>
+                                    <input type="text" id="locale" value="en" class="form-control" placeholder="en-US">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="country-name">Country or Market</label>
+                                    <input type="text" id="country-name" value="" class="form-control" placeholder="Kenya">
+                                </div>
+                                <div class="form-group">
+                                    <label for="country-code">Country Code</label>
+                                    <input type="text" id="country-code" value="" class="form-control" maxlength="3" placeholder="KE">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="country-demonym">Country Demonym</label>
+                                    <input type="text" id="country-demonym" value="" class="form-control" placeholder="Kenyan">
+                                </div>
+                                <div class="form-group">
+                                    <label for="market-scope-label">Market Scope Label</label>
+                                    <input type="text" id="market-scope-label" value="nationwide" class="form-control" placeholder="nationwide">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="currency-code">Currency Code</label>
+                                    <input type="text" id="currency-code" value="LOCAL" class="form-control" maxlength="6" placeholder="USD">
+                                </div>
+                                <div class="form-group">
+                                    <label for="currency-symbol">Currency Label</label>
+                                    <input type="text" id="currency-symbol" value="LOCAL" class="form-control" placeholder="$">
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label for="admin-email">Admin Email</label>
-                                <input type="email" id="admin-email" value="admin@motorlink.mw" class="form-control">
+                                <input type="email" id="admin-email" value="admin@example.com" class="form-control">
                             </div>
                             <div class="form-group">
                                 <label for="support-email">Support Email</label>
-                                <input type="email" id="support-email" value="support@motorlink.mw" class="form-control">
+                                <input type="email" id="support-email" value="support@example.com" class="form-control">
                             </div>
+                            <p class="form-text" style="margin-bottom: 12px;">
+                                These values drive public branding, country copy, currency labels, and generated links across the live site.
+                            </p>
                             <button class="btn btn-primary" onclick="saveGeneralSettings()">
                                 <i class="fas fa-save"></i> Save General Settings
                             </button>
@@ -1448,7 +1495,7 @@
                                 <input type="number" id="max-images-per-listing" value="10" min="1" max="20" class="form-control">
                             </div>
                             <div class="form-group">
-                                <label for="featured-listing-price">Featured Listing Price (MWK)</label>
+                                <label for="featured-listing-price">Featured Listing Price (Configured Currency)</label>
                                 <input type="number" id="featured-listing-price" value="0" min="0" class="form-control">
                                 <small class="form-text">Set 0 to keep Featured free for now.</small>
                                 <div id="featuredLaunchModeBadge" style="display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 12px; border-radius: 999px; background: #ecfdf3; color: #166534; font-size: 13px; font-weight: 600;">
@@ -1469,7 +1516,7 @@
                                 <small class="form-text">When off, listing posting remains free. When on, users must submit POP and admins verify payments manually before approval.</small>
                             </div>
                             <div class="form-group">
-                                <label for="free-listing-price">Standard Listing Price (MWK)</label>
+                                <label for="free-listing-price">Standard Listing Price (Configured Currency)</label>
                                 <input type="number" id="free-listing-price" value="0" min="0" class="form-control">
                                 <small class="form-text">Set 0 if Standard listing should stay free.</small>
                             </div>
@@ -1553,7 +1600,7 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="email-from-name">From Name</label>
-                                    <input type="text" id="email-from-name" value="MotorLink Malawi" class="form-control">
+                                    <input type="text" id="email-from-name" value="MotorLink" class="form-control">
                                 </div>
                                 <div class="form-group">
                                     <label for="enable-email-notifications">
@@ -1704,6 +1751,60 @@
                             </button>
                             <button class="btn btn-info" onclick="exportAllData()">
                                 <i class="fas fa-file-export"></i> Export All Data (JSON)
+                            </button>
+                        </div>
+
+                        <!-- Fuel Price Settings -->
+                        <div class="settings-card">
+                            <h3><i class="fas fa-gas-pump"></i> Fuel Prices</h3>
+                            <p class="text-muted">Update the prices used by the Journey Planner and AI fuel price answers.</p>
+
+                            <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px;">
+                                <div class="form-group">
+                                    <label for="fuel-price-effective-date">Effective Date</label>
+                                    <input type="date" id="fuel-price-effective-date" class="form-control">
+                                    <small class="form-text">Save prices for this date. Today is used by the public journey planner.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="fuel-price-source">Source Label</label>
+                                    <input type="text" id="fuel-price-source" class="form-control" maxlength="255" placeholder="e.g. admin_portal or MERA update">
+                                    <small class="form-text">Optional label shown internally for where the price came from.</small>
+                                </div>
+                            </div>
+
+                            <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px;">
+                                <div class="form-group">
+                                    <label for="fuel-price-petrol-mwk">Petrol Price (Primary Currency/L)</label>
+                                    <input type="number" id="fuel-price-petrol-mwk" class="form-control" min="0" step="0.01" placeholder="e.g. 2.50">
+                                </div>
+                                <div class="form-group">
+                                    <label for="fuel-price-diesel-mwk">Diesel Price (Primary Currency/L)</label>
+                                    <input type="number" id="fuel-price-diesel-mwk" class="form-control" min="0" step="0.01" placeholder="e.g. 2.70">
+                                </div>
+                            </div>
+
+                            <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px;">
+                                <div class="form-group">
+                                    <label for="fuel-price-petrol-usd">Petrol Price (USD/L)</label>
+                                    <input type="number" id="fuel-price-petrol-usd" class="form-control" min="0" step="0.0001" placeholder="Optional">
+                                    <small class="form-text">Optional. Leave blank if you only want primary-currency pricing.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="fuel-price-diesel-usd">Diesel Price (USD/L)</label>
+                                    <input type="number" id="fuel-price-diesel-usd" class="form-control" min="0" step="0.0001" placeholder="Optional">
+                                    <small class="form-text">Optional. Leave blank if you only want primary-currency pricing.</small>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-info" id="fuel-price-status" style="margin-top: 10px;">
+                                <strong>Fuel price status:</strong> <span id="fuel-price-current-summary">Loading fuel prices...</span>
+                            </div>
+
+                            <button class="btn btn-primary" onclick="saveFuelPriceSettings()">
+                                <i class="fas fa-save"></i> Save Fuel Prices
+                            </button>
+                            <button class="btn btn-secondary" onclick="loadFuelPriceSettings()" style="margin-left: 8px;">
+                                <i class="fas fa-sync"></i> Reload Fuel Prices
                             </button>
                         </div>
 

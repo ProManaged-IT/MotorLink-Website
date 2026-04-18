@@ -1513,7 +1513,7 @@ class EditOperations {
                                 </div>
                                 <div class="form-group">
                                     <label for="locationCountry">Country</label>
-                                    <input type="text" id="locationCountry" name="country" value="${location.country || 'Malawi'}" class="form-control">
+                                    <input type="text" id="locationCountry" name="country" value="${this.escapeHtml(location.country || ((window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : ''))}" class="form-control">
                                 </div>
                                 <div class="form-group">
                                     <label for="locationLatitude">Latitude</label>

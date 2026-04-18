@@ -203,7 +203,7 @@
                     <i class="fas fa-lock" style="font-size: 48px; color: var(--primary-green); margin-bottom: 20px;"></i>
                     <h3>Login Required</h3>
                     <p>Please log in to use the journey planner and calculate fuel costs.</p>
-                    <a href="login.html?redirect=car-database.html" class="btn btn-primary">
+                    <a href="login.html?redirect=car-database.html%3Ftab%3Djourney-planner" class="btn btn-primary" id="journeyLoginLink">
                         <i class="fas fa-sign-in-alt"></i> Login
                     </a>
                 </div>
@@ -229,7 +229,7 @@
                                         <select id="journeyVehicle" class="form-control" style="flex: 1;">
                                             <option value="">-- Select Saved Vehicle --</option>
                                         </select>
-                                        <button type="button" class="btn btn-outline-primary" onclick="showAddVehicleModal()" style="white-space: nowrap;">
+                                        <button type="button" class="btn btn-outline-primary" id="journeyAddVehicleBtn" onclick="showAddVehicleModal()" style="white-space: nowrap;">
                                             <i class="fas fa-plus"></i> Add Vehicle
                                         </button>
                                     </div>
@@ -238,7 +238,13 @@
                             <div class="form-group">
                                 <label><i class="fas fa-tachometer-alt"></i> Fuel Consumption (L/100km)</label>
                                 <input type="number" id="journeyFuelConsumption" class="form-control" placeholder="e.g., 8.5" step="0.1" min="0">
-                                <small class="form-text">Auto-filled from vehicle selection</small>
+                                <div class="fuel-estimate-actions">
+                                    <button type="button" class="btn btn-outline-primary btn-sm" id="journeyOnlineFuelEstimateBtn">
+                                        <i class="fas fa-globe-africa"></i> Get Online Estimate
+                                    </button>
+                                    <small class="form-text">Auto-filled from vehicle selection or fetched from FuelEconomy.gov</small>
+                                </div>
+                                <div class="fuel-estimate-status" id="journeyFuelEstimateStatus">Select a saved vehicle or enter your own fuel consumption.</div>
                             </div>
                         </div>
                         
@@ -276,7 +282,7 @@
             <div class="my-vehicles-section">
                 <div class="section-header">
                     <h2><i class="fas fa-car-side"></i> My Vehicles</h2>
-                    <button class="btn btn-primary" onclick="showAddVehicleModal()">
+                    <button class="btn btn-primary" id="myVehiclesAddVehicleBtn" onclick="showAddVehicleModal()" style="display: none;">
                         <i class="fas fa-plus"></i> Add Vehicle
                     </button>
                 </div>
@@ -285,7 +291,7 @@
                     <i class="fas fa-lock" style="font-size: 48px; color: var(--primary-green); margin-bottom: 20px;"></i>
                     <h3>Login Required</h3>
                     <p>Please log in to manage your vehicles.</p>
-                    <a href="login.html?redirect=car-database.html" class="btn btn-primary">
+                    <a href="login.html?redirect=car-database.html%3Ftab%3Dmy-vehicles" class="btn btn-primary" id="myVehiclesLoginLink">
                         <i class="fas fa-sign-in-alt"></i> Login
                     </a>
                 </div>
@@ -415,7 +421,13 @@
                         <div class="form-group">
                             <label><i class="fas fa-tachometer-alt"></i> Fuel Consumption (L/100km) *</label>
                             <input type="number" id="vehicleFuelConsumption" class="form-control" placeholder="e.g., 8.5" step="0.1" min="0" required>
-                            <small class="form-text">Will be auto-filled from database, but you can adjust if needed</small>
+                            <div class="fuel-estimate-actions">
+                                <button type="button" class="btn btn-outline-primary btn-sm" id="vehicleOnlineFuelEstimateBtn">
+                                    <i class="fas fa-globe-africa"></i> Get Online Estimate
+                                </button>
+                                <small class="form-text">Will be auto-filled from database, but you can adjust it or fetch an official online estimate</small>
+                            </div>
+                            <div class="fuel-estimate-status" id="vehicleFuelEstimateStatus">Select make, model, and year to fetch an official online estimate.</div>
                         </div>
                         <div class="form-group">
                             <label><i class="fas fa-tint"></i> Fuel Tank Capacity (Liters) *</label>
@@ -453,12 +465,6 @@
     <script src="js/car-database.js"></script>
     <script src="js/user-vehicles.js"></script>
     <script src="js/journey-planner.js"></script>
-    <script>
-        function showAddVehicleModal() {
-            const modal = new bootstrap.Modal(document.getElementById('addVehicleModal'));
-            modal.show();
-        }
-    </script>
 
     <script src="js/page-transitions.js"></script>
 </body>

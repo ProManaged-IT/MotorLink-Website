@@ -13,25 +13,18 @@ if (empty($token) || empty($userId)) {
     exit;
 }
 
-// Database configuration (same as api.php)
-$serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-$isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-define('DB_HOST', $isProduction ? 'localhost' : 'promanaged-it.com');
-define('DB_USER', 'p601229');
-define('DB_PASS', '2:p2WpmX[0YTs7');
-define('DB_NAME', 'p601229_motorlinkmalawi_db');
+require_once __DIR__ . '/admin/admin-config.php';
+require_once __DIR__ . '/includes/runtime-site-config.php';
+
+$siteName = 'MotorLink';
 
 try {
-    $db = new PDO(
-        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-        DB_USER,
-        DB_PASS,
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false
-        ]
-    );
+    $db = getDatabase();
+    $siteConfig = motorlink_get_site_runtime_config($db, [
+        'include_private' => true,
+        'runtime_base_url' => motorlink_get_runtime_origin_fallback()
+    ]);
+    $siteName = trim((string)($siteConfig['site_name'] ?? $siteName)) ?: $siteName;
     
     // Verify token and get user
     $stmt = $db->prepare("
@@ -103,7 +96,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Email Verified - MotorLink Malawi</title>
+    <title><?php echo htmlspecialchars('Email Verified - ' . $siteName, ENT_QUOTES, 'UTF-8'); ?></title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -198,7 +191,7 @@ try {
         <div class="info-box">
             <p><strong>Account Activated!</strong></p>
             <p>Your email has been verified and your account is now active. You have been automatically logged in.</p>
-            <p>You can now start using all MotorLink features!</p>
+            <p>You can now start using all <?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?> features!</p>
         </div>
         
         <div>

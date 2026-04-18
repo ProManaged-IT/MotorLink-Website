@@ -70,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 // Include your existing config
 require_once 'admin-config.php';
+require_once __DIR__ . '/../includes/runtime-site-config.php';
 
 try {
     $pdo = getDatabase(); // Use your existing database function
@@ -1060,11 +1061,17 @@ function updateLocation($pdo) {
     $locationId = $_POST['location_id'] ?? 0;
     
     try {
+        $siteConfig = motorlink_get_site_runtime_config($pdo, [
+            'include_private' => true,
+            'runtime_base_url' => motorlink_get_runtime_origin_fallback()
+        ]);
+        $defaultCountry = trim((string)($siteConfig['country_name'] ?? ''));
+
         $updateData = [
             'name' => $_POST['name'] ?? '',
             'region' => $_POST['region'] ?? '',
             'district' => $_POST['district'] ?: null,
-            'country' => $_POST['country'] ?: 'Malawi',
+            'country' => $_POST['country'] ?: ($defaultCountry !== '' ? $defaultCountry : null),
             'latitude' => $_POST['latitude'] ?: null,
             'longitude' => $_POST['longitude'] ?: null,
             'is_active' => isset($_POST['is_active']) ? intval($_POST['is_active']) : 0,

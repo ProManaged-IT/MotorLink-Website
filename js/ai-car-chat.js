@@ -84,6 +84,52 @@ class AICarChat {
         } catch (e) { /* ignore parse errors */ }
     }
 
+    getSavedWidgetPosition(preferFabPosition = false) {
+        const keys = preferFabPosition
+            ? ['ai_fab_pos', 'ai_chat_pos']
+            : ['ai_chat_pos', 'ai_fab_pos'];
+
+        for (const key of keys) {
+            const raw = sessionStorage.getItem(key);
+            if (!raw) continue;
+
+            try {
+                const parsed = JSON.parse(raw);
+                const left = Number(parsed.left);
+                const top = Number(parsed.top);
+
+                if (Number.isFinite(left) && Number.isFinite(top)) {
+                    return { left, top };
+                }
+            } catch (e) {
+                /* ignore malformed saved position */
+            }
+        }
+
+        return null;
+    }
+
+    restoreWidgetPosition(widget, preferFabPosition = false) {
+        if (!widget) return;
+
+        const savedPos = this.getSavedWidgetPosition(preferFabPosition);
+        if (!savedPos) return;
+
+        const fallbackWidth = preferFabPosition ? 72 : 320;
+        const fallbackHeight = preferFabPosition ? 56 : 120;
+        const widgetWidth = Math.max(widget.offsetWidth || 0, fallbackWidth);
+        const widgetHeight = Math.max(widget.offsetHeight || 0, fallbackHeight);
+        const maxLeft = Math.max(0, window.innerWidth - widgetWidth);
+        const maxTop = Math.max(0, window.innerHeight - widgetHeight);
+        const safeLeft = Math.max(0, Math.min(savedPos.left, maxLeft));
+        const safeTop = Math.max(0, Math.min(savedPos.top, maxTop));
+
+        widget.style.bottom = 'auto';
+        widget.style.right = 'auto';
+        widget.style.left = `${safeLeft}px`;
+        widget.style.top = `${safeTop}px`;
+    }
+
     setupWidgetVisibility() {
         const widget = document.getElementById('aiCarChatWidget');
         if (!widget) return;
@@ -118,22 +164,7 @@ class AICarChat {
             this.isOpen = false;
             // Reveal only after minimized state is confirmed
             widget.classList.add('loaded');
-
-            // Restore last drag position (within viewport)
-            const savedPos = sessionStorage.getItem('ai_chat_pos');
-            if (savedPos) {
-                try {
-                    const { left, top } = JSON.parse(savedPos);
-                    const vw = window.innerWidth;
-                    const vh = window.innerHeight;
-                    const safeLeft = Math.max(0, Math.min(left, vw - 80));
-                    const safeTop  = Math.max(0, Math.min(top,  vh - 60));
-                    widget.style.bottom = 'auto';
-                    widget.style.right  = 'auto';
-                    widget.style.left   = safeLeft + 'px';
-                    widget.style.top    = safeTop  + 'px';
-                } catch (e) { /* ignore bad stored value */ }
-            }
+            this.restoreWidgetPosition(widget, true);
         }
     }
 
@@ -283,17 +314,6 @@ class AICarChat {
             fabBtn.addEventListener('pointercancel', end);
         }
 
-        // Restore saved header-drag position on reload
-        const savedPos = sessionStorage.getItem('ai_chat_pos');
-        if (savedPos) {
-            try {
-                const pos = JSON.parse(savedPos);
-                widget.style.left   = pos.left + 'px';
-                widget.style.top    = pos.top  + 'px';
-                widget.style.bottom = 'auto';
-                widget.style.right  = 'auto';
-            } catch (_) {}
-        }
     }
 
     toggleChat() {

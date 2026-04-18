@@ -14,6 +14,8 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/api_errors.log');
 
+require_once __DIR__ . '/includes/runtime-site-config.php';
+
 // Headers for CORS and JSON responses
 header('Content-Type: application/json; charset=utf-8');
 
@@ -117,8 +119,8 @@ define('DB_HOST', $isProduction ? 'localhost' : 'promanaged-it.com');
 define('DB_USER', 'p601229');
 define('DB_PASS', '2:p2WpmX[0YTs7');
 define('DB_NAME', 'p601229_motorlinkmalawi_db');
-define('SITE_NAME', 'MotorLink Malawi');
-define('SITE_URL', 'https://promanaged-it.com/motorlink');
+define('SITE_NAME', 'MotorLink');
+define('SITE_URL', motorlink_get_runtime_origin_fallback());
 define('UPLOAD_PATH', 'uploads/');
 define('MAX_VEHICLE_IMAGES', 5); // Maximum number of images per vehicle
 $runtimeSchemaEnv = getenv('MOTORLINK_ENABLE_RUNTIME_SCHEMA_UPDATES');
@@ -552,6 +554,46 @@ function getPlatformSetting($db, $settingKey, $default = null) {
         $cache[$settingKey] = $default;
         return $default;
     }
+}
+
+function getSiteRuntimeConfig($db, $includePrivate = false) {
+    return motorlink_get_site_runtime_config($db, [
+        'include_private' => $includePrivate,
+        'runtime_base_url' => getRuntimeBaseUrl()
+    ]);
+}
+
+function getSiteDisplayName($db) {
+    $config = getSiteRuntimeConfig($db);
+    return $config['site_name'] ?? SITE_NAME;
+}
+
+function getSitePublicUrl($db) {
+    $config = getSiteRuntimeConfig($db);
+    if (!empty($config['site_url'])) {
+        return rtrim((string)$config['site_url'], '/');
+    }
+
+    return rtrim(SITE_URL, '/');
+}
+
+function getSiteSupportEmail($db) {
+    $config = getSiteRuntimeConfig($db, true);
+    return $config['contact_support_email']
+        ?? $config['contact_email']
+        ?? 'support@example.com';
+}
+
+function getSiteNotificationFromName($db) {
+    $config = getSiteRuntimeConfig($db, true);
+    return $config['smtp_from_name'] ?? ($config['site_name'] ?? SITE_NAME);
+}
+
+function getSiteNotificationFromEmail($db) {
+    $config = getSiteRuntimeConfig($db, true);
+    return $config['contact_email']
+        ?? $config['contact_support_email']
+        ?? 'noreply@example.com';
 }
 
 /**
@@ -1554,6 +1596,7 @@ try {
         // JOURNEY PLANNER ENDPOINTS
         // ====================================================================
         case 'get_fuel_prices': getFuelPrices($db); break;
+        case 'lookup_online_fuel_consumption': requireAuth(); lookupOnlineFuelConsumption(); break;
         case 'calculate_journey': requireAuth(); calculateJourney($db); break;
         case 'get_journey_history': requireAuth(); getJourneyHistory($db); break;
         case 'scrape_fuel_prices': scrapeFuelPrices($db); break; // Can be called by cron
@@ -3058,17 +3101,7 @@ function handleRegister($db) {
         }
         
         // Generate verification link for potential fallback
-        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-        $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-        if ($isProduction) {
-            $baseUrl = 'https://promanaged-it.com/motorlink/';
-        } else {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            
-            // HTTP_HOST already includes port if present (e.g., "127.0.0.1:8000")
-            // So we don't need to add port again
-            $baseUrl = $protocol . '://' . $serverHost . '/';
-        }
+        $baseUrl = getSitePublicUrl($db) . '/';
         $verificationLink = $baseUrl . "verify-email.php?token=" . urlencode($verificationToken) . "&id=" . urlencode($userId);
         
         // Send verification email (outside transaction - email failure shouldn't rollback user creation)
@@ -3685,20 +3718,14 @@ function submitListing($db) {
         if ($requireListingEmailValidation && !empty($listingValidationEmail) && !empty($listingEmailToken)) {
             $listingEmailSent = sendListingVerificationEmail($db, $listingValidationEmail, $input['seller_name'] ?? ($user['name'] ?? $user['full_name'] ?? 'Seller'), $listingEmailToken, $listingId, $referenceNumber);
 
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
-            $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-            $baseUrl = $isProduction ? 'https://promanaged-it.com/motorlink/' : ($protocol . '://' . $serverHost . '/');
+            $baseUrl = getSitePublicUrl($db) . '/';
             $listingVerificationLink = $baseUrl . 'verify-listing-email.html?token=' . urlencode($listingEmailToken);
         }
 
         $guestManageLink = null;
         $guestManageCodeSent = false;
         if ($isGuest && !empty($listingValidationEmail) && !empty($guestManageCode)) {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
-            $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-            $baseUrl = $isProduction ? 'https://promanaged-it.com/motorlink/' : ($protocol . '://' . $serverHost . '/');
+            $baseUrl = getSitePublicUrl($db) . '/';
             $guestManageLink = $baseUrl . 'guest-manage.html?email=' . urlencode($listingValidationEmail);
 
             $guestManageCodeSent = sendGuestListingManageCodeEmail(
@@ -5165,17 +5192,14 @@ function reportListing($db) {
  */
 function sendReportNotificationEmail($db, $listingId, $listingTitle, $reason, $details, $reporterEmail, $reportCount) {
     try {
-        // Get support email from site settings
-        $stmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'contact_support_email'");
-        $stmt->execute();
-        $supportEmail = $stmt->fetchColumn();
-        
-        if (!$supportEmail) {
-            $supportEmail = 'support@motorlink.mw'; // Fallback
-        }
+        $siteName = getSiteDisplayName($db);
+        $supportEmail = getSiteSupportEmail($db);
+        $fromName = getSiteNotificationFromName($db);
+        $fromEmail = getSiteNotificationFromEmail($db);
+        $listingUrl = getSitePublicUrl($db) . "/car.html?id=$listingId";
 
         // Prepare email
-        $subject = "MotorLink: Listing Reported - #$listingId";
+        $subject = $siteName . ": Listing Reported - #$listingId";
         $reasonLabels = [
             'spam' => 'Spam or Duplicate Listing',
             'fraud' => 'Suspected Fraud or Scam',
@@ -5187,12 +5211,12 @@ function sendReportNotificationEmail($db, $listingId, $listingTitle, $reason, $d
         ];
         $reasonText = $reasonLabels[$reason] ?? $reason;
         
-        $message = "A car listing has been reported on MotorLink Malawi.\n\n";
+        $message = "A car listing has been reported on {$siteName}.\n\n";
         $message .= "Listing Details:\n";
         $message .= "- ID: $listingId\n";
         $message .= "- Title: $listingTitle\n";
         $message .= "- Total Reports: $reportCount\n";
-        $message .= "- View Listing: " . SITE_URL . "/car.html?id=$listingId\n\n";
+        $message .= "- View Listing: {$listingUrl}\n\n";
         $message .= "Report Details:\n";
         $message .= "- Reason: $reasonText\n";
         $message .= "- Details: $details\n";
@@ -5201,11 +5225,11 @@ function sendReportNotificationEmail($db, $listingId, $listingTitle, $reason, $d
         }
         $message .= "\nPlease review this report and take appropriate action.\n\n";
         $message .= "---\n";
-        $message .= "MotorLink Malawi - Automated System";
+        $message .= $siteName . " - Automated System";
 
         // Email headers
-        $headers = "From: MotorLink <noreply@motorlink.mw>\r\n";
-        $headers .= "Reply-To: noreply@motorlink.mw\r\n";
+        $headers = "From: {$fromName} <{$fromEmail}>\r\n";
+        $headers .= "Reply-To: {$fromEmail}\r\n";
         $headers .= "X-Mailer: PHP/" . phpversion();
 
         // Send email
@@ -5232,24 +5256,12 @@ function sendVerificationEmail($db, $email, $fullName, $verificationToken, $user
         $smtpPassword = $smtp['password'];
         $fromEmail = $smtp['from_email'];
         $fromName = $smtp['from_name'];
-        // Determine base URL based on environment (same logic as api.php)
-        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-        $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-        
-        if ($isProduction) {
-            $baseUrl = 'https://promanaged-it.com/motorlink/';
-        } else {
-            // UAT/Local - use current protocol and host
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            
-            // HTTP_HOST already includes port if present (e.g., "127.0.0.1:8000")
-            // So we don't need to add port again
-            $baseUrl = $protocol . '://' . $serverHost . '/';
-        }
+        $siteName = getSiteDisplayName($db);
+        $baseUrl = getSitePublicUrl($db) . '/';
         
         $verificationLink = $baseUrl . "verify-email.php?token=" . urlencode($verificationToken) . "&id=" . urlencode($userId);
         
-        $subject = "MotorLink Malawi - Verify Your Email Address";
+        $subject = $siteName . " - Verify Your Email Address";
         
         // Create HTML email for better formatting
         $htmlMessage = "
@@ -5276,12 +5288,12 @@ function sendVerificationEmail($db, $email, $fullName, $verificationToken, $user
         <body>
             <div class='container'>
                 <div class='header'>
-                    <h1><i class='fas fa-car'></i> Welcome to MotorLink Malawi!</h1>
+                    <h1><i class='fas fa-car'></i> Welcome to {$siteName}!</h1>
                 </div>
                 <div class='content'>
                     <h2>Verify Your Email Address</h2>
                     <p>Hello <strong>$fullName</strong>,</p>
-                    <p>Thank you for registering with MotorLink Malawi!</p>
+                    <p>Thank you for registering with {$siteName}!</p>
                     <p>To complete your registration, please verify your email address by clicking the button below:</p>
                     <p style='text-align: center;'>
                         <a href='$verificationLink' class='button'>Verify Email Address</a>
@@ -5296,10 +5308,10 @@ function sendVerificationEmail($db, $email, $fullName, $verificationToken, $user
                             <li>You'll be automatically logged in after verification</li>
                         </ul>
                     </div>
-                    <p>If you didn't create an account with MotorLink, please ignore this email.</p>
-                    <p>Best regards,<br><strong>The MotorLink Team</strong></p>
+                    <p>If you didn't create an account with {$siteName}, please ignore this email.</p>
+                    <p>Best regards,<br><strong>The {$siteName} Team</strong></p>
                     <div class='footer'>
-                        <p>&copy; " . date('Y') . " MotorLink Malawi. All rights reserved.</p>
+                        <p>&copy; " . date('Y') . " {$siteName}. All rights reserved.</p>
                         <p>This is an automated email, please do not reply.</p>
                     </div>
                 </div>
@@ -5309,15 +5321,15 @@ function sendVerificationEmail($db, $email, $fullName, $verificationToken, $user
         
         // Plain text version
         $textMessage = "Hello $fullName,\n\n";
-        $textMessage .= "Thank you for registering with MotorLink Malawi!\n\n";
+        $textMessage .= "Thank you for registering with {$siteName}!\n\n";
         $textMessage .= "To complete your registration, please verify your email address by clicking the link below:\n\n";
         $textMessage .= "$verificationLink\n\n";
         $textMessage .= "This link will expire in 7 days.\n\n";
         $textMessage .= "After email verification, your account will be reviewed by our admin team. ";
         $textMessage .= "You'll receive another email once your account is approved and activated.\n\n";
-        $textMessage .= "If you didn't create an account with MotorLink, please ignore this email.\n\n";
+        $textMessage .= "If you didn't create an account with {$siteName}, please ignore this email.\n\n";
         $textMessage .= "Best regards,\n";
-        $textMessage .= "MotorLink Malawi Team";
+        $textMessage .= $siteName . " Team";
         
         // Create SMTP mailer instance
         $mailer = new SMTPMailer($smtpHost, $smtpPort, $smtpUsername, $smtpPassword, $fromEmail, $fromName);
@@ -5376,22 +5388,12 @@ function sendPasswordResetEmail($db, $email, $fullName, $resetToken, $userId) {
         $smtpPassword = $smtp['password'];
         $fromEmail = $smtp['from_email'];
         $fromName = $smtp['from_name'];
-        
-        // Determine base URL based on environment
-        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-        $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-        
-        if ($isProduction) {
-            $baseUrl = 'https://promanaged-it.com/motorlink/';
-        } else {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            // HTTP_HOST already includes port if present (e.g., "127.0.0.1:8000")
-            $baseUrl = $protocol . '://' . $serverHost . '/';
-        }
+        $siteName = getSiteDisplayName($db);
+        $baseUrl = getSitePublicUrl($db) . '/';
         
         $resetLink = $baseUrl . "reset-password.php?token=" . urlencode($resetToken) . "&id=" . urlencode($userId);
         
-        $subject = "MotorLink Malawi - Reset Your Password";
+        $subject = $siteName . " - Reset Your Password";
         
         // HTML email
         $htmlMessage = "
@@ -5419,12 +5421,12 @@ function sendPasswordResetEmail($db, $email, $fullName, $resetToken, $userId) {
         <body>
             <div class='container'>
                 <div class='header'>
-                    <h1><i class='fas fa-car'></i> MotorLink Malawi</h1>
+                    <h1><i class='fas fa-car'></i> {$siteName}</h1>
                 </div>
                 <div class='content'>
                     <h2>Password Reset Request</h2>
                     <p>Hello $fullName,</p>
-                    <p>We received a request to reset your password for your MotorLink account.</p>
+                    <p>We received a request to reset your password for your {$siteName} account.</p>
                     <p>Click the button below to reset your password:</p>
                     <p style='text-align: center;'>
                         <a href='$resetLink' class='button'>Reset Password</a>
@@ -5440,10 +5442,10 @@ function sendPasswordResetEmail($db, $email, $fullName, $resetToken, $userId) {
                         </ul>
                     </div>
                     <p>If you have any questions, please contact our support team.</p>
-                    <p>Best regards,<br><strong>The MotorLink Team</strong></p>
+                    <p>Best regards,<br><strong>The {$siteName} Team</strong></p>
                 </div>
                 <div class='footer'>
-                    <p>&copy; " . date('Y') . " MotorLink Malawi. All rights reserved.</p>
+                    <p>&copy; " . date('Y') . " {$siteName}. All rights reserved.</p>
                     <p>This is an automated email, please do not reply.</p>
                 </div>
             </div>
@@ -5451,14 +5453,14 @@ function sendPasswordResetEmail($db, $email, $fullName, $resetToken, $userId) {
         </html>";
         
         // Plain text version
-        $textMessage = "MotorLink Malawi - Password Reset Request\n\n";
+        $textMessage = $siteName . " - Password Reset Request\n\n";
         $textMessage .= "Hello $fullName,\n\n";
-        $textMessage .= "We received a request to reset your password for your MotorLink account.\n\n";
+        $textMessage .= "We received a request to reset your password for your {$siteName} account.\n\n";
         $textMessage .= "Click the following link to reset your password:\n";
         $textMessage .= "$resetLink\n\n";
         $textMessage .= "This link will expire in 1 hour.\n";
         $textMessage .= "If you didn't request this, please ignore this email.\n\n";
-        $textMessage .= "Best regards,\nThe MotorLink Team";
+        $textMessage .= "Best regards,\nThe {$siteName} Team";
         
         // Create SMTP mailer instance
         $mailer = new SMTPMailer($smtpHost, $smtpPort, $smtpUsername, $smtpPassword, $fromEmail, $fromName);
@@ -5510,18 +5512,11 @@ function sendListingVerificationEmail($db, $email, $fullName, $verificationToken
         $smtpPassword = $smtp['password'];
         $fromEmail = $smtp['from_email'];
         $fromName = $smtp['from_name'];
-
-        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-        $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-        if ($isProduction) {
-            $baseUrl = 'https://promanaged-it.com/motorlink/';
-        } else {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $baseUrl = $protocol . '://' . $serverHost . '/';
-        }
+        $siteName = getSiteDisplayName($db);
+        $baseUrl = getSitePublicUrl($db) . '/';
 
         $verificationLink = $baseUrl . 'verify-listing-email.html?token=' . urlencode($verificationToken);
-        $subject = 'MotorLink Malawi - Verify Your Listing Email';
+        $subject = $siteName . ' - Verify Your Listing Email';
 
         $safeName = htmlspecialchars($fullName ?: 'Seller', ENT_QUOTES, 'UTF-8');
         $safeRef = htmlspecialchars($referenceNumber, ENT_QUOTES, 'UTF-8');
@@ -5540,7 +5535,7 @@ function sendListingVerificationEmail($db, $email, $fullName, $verificationToken
         </body>
         </html>";
 
-        $textMessage = "MotorLink Malawi - Verify Your Listing Email\n\n";
+        $textMessage = $siteName . " - Verify Your Listing Email\n\n";
         $textMessage .= "Hello {$fullName},\n\n";
         $textMessage .= "We received your listing submission (Reference: {$referenceNumber}).\n";
         $textMessage .= "Please verify your email to continue with admin review:\n\n";
@@ -5575,15 +5570,8 @@ function sendGuestListingManageCodeEmail($db, $email, $fullName, $referenceNumbe
         $smtpPassword = $smtp['password'];
         $fromEmail = $smtp['from_email'];
         $fromName = $smtp['from_name'];
-
-        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-        $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-        if ($isProduction) {
-            $baseUrl = 'https://promanaged-it.com/motorlink/';
-        } else {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $baseUrl = $protocol . '://' . $serverHost . '/';
-        }
+        $siteName = getSiteDisplayName($db);
+        $baseUrl = getSitePublicUrl($db) . '/';
 
         $manageLink = $baseUrl . 'guest-manage.html?email=' . urlencode($email);
         $safeName = htmlspecialchars($fullName ?: 'Guest Seller', ENT_QUOTES, 'UTF-8');
@@ -5591,7 +5579,7 @@ function sendGuestListingManageCodeEmail($db, $email, $fullName, $referenceNumbe
         $safeCode = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
         $safeExpires = htmlspecialchars((string)$expiresAt, ENT_QUOTES, 'UTF-8');
 
-        $subject = 'MotorLink Malawi - Guest Listing Login Code';
+        $subject = $siteName . ' - Guest Listing Login Code';
 
         $htmlMessage = "
         <html>
@@ -5607,7 +5595,7 @@ function sendGuestListingManageCodeEmail($db, $email, $fullName, $referenceNumbe
         </body>
         </html>";
 
-        $textMessage = "MotorLink Malawi - Guest Listing Login Code\n\n";
+        $textMessage = $siteName . " - Guest Listing Login Code\n\n";
         $textMessage .= "Hello {$fullName},\n\n";
         $textMessage .= "Use this temporary code to manage your guest listing ({$referenceNumber}): {$code}\n";
         $textMessage .= "Code expires on: {$expiresAt}\n\n";
@@ -5642,23 +5630,11 @@ function sendApprovalEmail($db, $email, $fullName) {
         $smtpPassword = $smtp['password'];
         $fromEmail = $smtp['from_email'];
         $fromName = $smtp['from_name'];
-        
-        // Determine base URL based on environment
-        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-        $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-        
-        if ($isProduction) {
-            $baseUrl = 'https://promanaged-it.com/motorlink/';
-        } else {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            
-            // HTTP_HOST already includes port if present (e.g., "127.0.0.1:8000")
-            // So we don't need to add port again
-            $baseUrl = $protocol . '://' . $serverHost . '/';
-        }
+        $siteName = getSiteDisplayName($db);
+        $baseUrl = getSitePublicUrl($db) . '/';
         
         $loginLink = $baseUrl . "login.html";
-        $subject = "MotorLink Malawi - Your Account Has Been Approved!";
+        $subject = $siteName . " - Your Account Has Been Approved!";
         
         // HTML email
         $htmlMessage = "
@@ -5687,7 +5663,7 @@ function sendApprovalEmail($db, $email, $fullName) {
                 <div class='content'>
                     <h2>Your Account is Now Active!</h2>
                     <p>Hello <strong>$fullName</strong>,</p>
-                    <p>Great news! Your MotorLink account has been reviewed and approved by our admin team.</p>
+                    <p>Great news! Your {$siteName} account has been reviewed and approved by our admin team.</p>
                     <div class='success-box'>
                         <strong><i class='fas fa-check-circle'></i> Your account is now active!</strong>
                         <p style='margin: 10px 0 0 0;'>You can now start using all our services:</p>
@@ -5701,10 +5677,10 @@ function sendApprovalEmail($db, $email, $fullName) {
                     <p style='text-align: center;'>
                         <a href='$loginLink' class='button'>Log In to Your Account</a>
                     </p>
-                    <p>Welcome to MotorLink Malawi!</p>
-                    <p>Best regards,<br><strong>The MotorLink Team</strong></p>
+                    <p>Welcome to {$siteName}!</p>
+                    <p>Best regards,<br><strong>The {$siteName} Team</strong></p>
                     <div class='footer'>
-                        <p>&copy; " . date('Y') . " MotorLink Malawi. All rights reserved.</p>
+                        <p>&copy; " . date('Y') . " {$siteName}. All rights reserved.</p>
                         <p>This is an automated email, please do not reply.</p>
                     </div>
                 </div>
@@ -5714,7 +5690,7 @@ function sendApprovalEmail($db, $email, $fullName) {
         
         // Plain text version
         $textMessage = "Hello $fullName,\n\n";
-        $textMessage .= "Great news! Your MotorLink account has been reviewed and approved by our admin team.\n\n";
+        $textMessage .= "Great news! Your {$siteName} account has been reviewed and approved by our admin team.\n\n";
         $textMessage .= "Your account is now active and you can start using all our services:\n";
         $textMessage .= "- List your vehicles for sale\n";
         $textMessage .= "- Browse car listings\n";
@@ -5722,9 +5698,9 @@ function sendApprovalEmail($db, $email, $fullName) {
         $textMessage .= "- Access exclusive features\n\n";
         $textMessage .= "You can now log in to your account:\n";
         $textMessage .= "$loginLink\n\n";
-        $textMessage .= "Welcome to MotorLink Malawi!\n\n";
+        $textMessage .= "Welcome to {$siteName}!\n\n";
         $textMessage .= "Best regards,\n";
-        $textMessage .= "MotorLink Malawi Team";
+        $textMessage .= $siteName . " Team";
         
         // Create SMTP mailer instance
         $mailer = new SMTPMailer($smtpHost, $smtpPort, $smtpUsername, $smtpPassword, $fromEmail, $fromName);
@@ -5760,18 +5736,11 @@ function sendMessageNotificationEmail($db, $recipientEmail, $recipientName, $sen
         $smtpPassword = $smtp['password'];
         $fromEmail = $smtp['from_email'];
         $fromName = $smtp['from_name'];
-
-        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-        $isProduction = (strpos($serverHost, 'promanaged-it.com') !== false);
-        if ($isProduction) {
-            $baseUrl = 'https://promanaged-it.com/motorlink/';
-        } else {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $baseUrl = $protocol . '://' . $serverHost . '/';
-        }
+        $siteName = getSiteDisplayName($db);
+        $baseUrl = getSitePublicUrl($db) . '/';
 
         $messagesLink = $baseUrl . 'chat_system.html';
-        $subject = 'MotorLink Malawi - New Message Alert';
+        $subject = $siteName . ' - New Message Alert';
         $safeRecipient = htmlspecialchars((string)$recipientName, ENT_QUOTES, 'UTF-8');
         $safeSender = htmlspecialchars((string)$senderName, ENT_QUOTES, 'UTF-8');
         $safeListing = htmlspecialchars((string)($listingTitle ?: 'Direct Conversation'), ENT_QUOTES, 'UTF-8');
@@ -5807,7 +5776,7 @@ function sendMessageNotificationEmail($db, $recipientEmail, $recipientName, $sen
                 </div>
                 <div class='content'>
                     <p>Hello <strong>{$safeRecipient}</strong>,</p>
-                    <p><strong>{$safeSender}</strong> sent you a new message on MotorLink Malawi.</p>
+                    <p><strong>{$safeSender}</strong> sent you a new message on {$siteName}.</p>
                     <p><strong>Conversation:</strong> {$safeListing}</p>
                     <div class='icon-row'>
                         <span>&#128100; Sender: {$safeSender}</span>
@@ -5816,19 +5785,19 @@ function sendMessageNotificationEmail($db, $recipientEmail, $recipientName, $sen
                     <div class='message-box'>{$safePreview}</div>
                     <p><a href='{$messagesLink}' class='button'>&#128233; Open Message Inbox</a></p>
                     <p class='meta'>Conversation ID: {$conversationId}</p>
-                    <div class='footer'>This is an automated notification email from MotorLink Malawi.</div>
+                    <div class='footer'>This is an automated notification email from {$siteName}.</div>
                 </div>
             </div>
         </body>
         </html>";
 
         $textMessage = "Hello {$recipientName},\n\n";
-        $textMessage .= "{$senderName} sent you a new message on MotorLink Malawi.\n";
+        $textMessage .= "{$senderName} sent you a new message on {$siteName}.\n";
         $textMessage .= "Conversation: " . ($listingTitle ?: 'Direct Conversation') . "\n\n";
         $textMessage .= "Message preview:\n{$messagePreview}\n\n";
         $textMessage .= "Open messages: {$messagesLink}\n";
         $textMessage .= "Conversation ID: {$conversationId}\n\n";
-        $textMessage .= "This is an automated notification email from MotorLink Malawi.";
+        $textMessage .= "This is an automated notification email from {$siteName}.";
 
         $mailer = new SMTPMailer($smtpHost, $smtpPort, $smtpUsername, $smtpPassword, $fromEmail, $fromName);
         $sent = $mailer->send($recipientEmail, $subject, $htmlMessage, $textMessage);
@@ -8534,10 +8503,70 @@ function getSiteSettings($db) {
             }
             $grouped[$group][$setting['setting_key']] = $setting['setting_value'];
         }
+
+        $runtimeConfig = motorlink_get_public_site_runtime_config($db, [
+            'runtime_base_url' => getRuntimeBaseUrl()
+        ]);
+
+        $runtimeGroups = [
+            'general' => [
+                'site_name',
+                'site_short_name',
+                'site_tagline',
+                'site_description',
+                'site_url',
+                'country_name',
+                'country_code',
+                'country_demonym',
+                'locale',
+                'currency_code',
+                'currency_symbol',
+                'market_scope_label',
+                'fuel_price_country_slug',
+                'geo_region',
+                'geo_placename',
+                'geo_position',
+                'icbm'
+            ],
+            'contact' => [
+                'contact_email',
+                'contact_support_email'
+            ]
+        ];
+
+        foreach ($runtimeGroups as $runtimeGroup => $keys) {
+            if (!empty($group) && $group !== $runtimeGroup) {
+                continue;
+            }
+
+            if (!isset($grouped[$runtimeGroup])) {
+                $grouped[$runtimeGroup] = [];
+            }
+
+            foreach ($keys as $key) {
+                if (!array_key_exists($key, $runtimeConfig)) {
+                    continue;
+                }
+
+                $value = $runtimeConfig[$key];
+                if ($value === null || $value === '') {
+                    continue;
+                }
+
+                $grouped[$runtimeGroup][$key] = $value;
+            }
+        }
+
+        $flat = [];
+        foreach ($grouped as $groupName => $values) {
+            foreach ($values as $key => $value) {
+                $flat[$key] = $value;
+            }
+        }
         
         sendSuccess([
             'settings' => $grouped,
-            'flat' => array_column($settings, 'setting_value', 'setting_key')
+            'flat' => $flat
         ]);
     } catch (Exception $e) {
         error_log("getSiteSettings error: " . $e->getMessage());
@@ -8699,6 +8728,10 @@ function checkGuestIdentity($db) {
  */
 function getPublicClientConfig($db) {
     try {
+        $runtimeConfig = motorlink_get_public_site_runtime_config($db, [
+            'runtime_base_url' => getRuntimeBaseUrl()
+        ]);
+
         $allowedKeys = [
             'google_maps_api_key',
             'google_maps_map_id'
@@ -8723,6 +8756,13 @@ function getPublicClientConfig($db) {
         $maintenance = getMaintenanceModeState($db);
         $config['maintenance_enabled'] = (bool)$maintenance['enabled'];
         $config['maintenance_message'] = (string)$maintenance['message'];
+
+        foreach ($runtimeConfig as $key => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+            $config[$key] = $value;
+        }
 
         sendSuccess(['config' => $config]);
     } catch (Exception $e) {
@@ -8775,6 +8815,324 @@ function getFuelPrices($db) {
     }
 }
 
+function fuelEconomyXmlField($node, $field, $default = '') {
+    if (!is_object($node) || !isset($node->{$field})) {
+        return $default;
+    }
+
+    $value = trim((string)$node->{$field});
+    return $value === '' ? $default : $value;
+}
+
+function fetchFuelEconomyXml($url) {
+    $response = false;
+    $httpCode = 0;
+    $error = '';
+    $isLocalRuntime = function_exists('isLocalRuntimeHost') && isLocalRuntimeHost();
+
+    if (function_exists('curl_init')) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'MotorLink-FuelLookup/1.0');
+
+        $response = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+
+        $shouldRetryWithoutSslVerification = $isLocalRuntime
+            && $response === false
+            && $error !== ''
+            && preg_match('/SSL certificate|certificate verify|local issuer certificate/i', $error);
+
+        if ($shouldRetryWithoutSslVerification) {
+            error_log('Fuel economy lookup SSL verification failed on local runtime. Retrying without peer verification for localhost debugging.');
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+            $response = curl_exec($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+        }
+
+        curl_close($ch);
+    } else {
+        if (function_exists('error_clear_last')) {
+            error_clear_last();
+        }
+
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'timeout' => 20,
+                'header' => "User-Agent: MotorLink-FuelLookup/1.0\r\n"
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true
+            ]
+        ]);
+        $response = @file_get_contents($url, false, $context);
+        $httpCode = $response !== false ? 200 : 0;
+
+        $lastError = error_get_last();
+        $sslWarning = (string)($lastError['message'] ?? '');
+        $shouldRetryWithoutSslVerification = $isLocalRuntime
+            && $response === false
+            && $sslWarning !== ''
+            && preg_match('/SSL|certificate|crypto/i', $sslWarning);
+
+        if ($shouldRetryWithoutSslVerification) {
+            error_log('Fuel economy lookup stream SSL verification failed on local runtime. Retrying without peer verification for localhost debugging.');
+            if (function_exists('error_clear_last')) {
+                error_clear_last();
+            }
+
+            $context = stream_context_create([
+                'http' => [
+                    'method' => 'GET',
+                    'timeout' => 20,
+                    'header' => "User-Agent: MotorLink-FuelLookup/1.0\r\n"
+                ],
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'allow_self_signed' => true
+                ]
+            ]);
+            $response = @file_get_contents($url, false, $context);
+            $httpCode = $response !== false ? 200 : 0;
+            $lastError = error_get_last();
+            $sslWarning = (string)($lastError['message'] ?? '');
+        }
+
+        if ($response === false && $sslWarning !== '') {
+            $error = $sslWarning;
+        }
+    }
+
+    if (!empty($error)) {
+        throw new Exception('Fuel economy provider request failed: ' . $error);
+    }
+
+    if ($httpCode !== 200 || $response === false || trim((string)$response) === '') {
+        throw new Exception('Fuel economy provider returned HTTP ' . $httpCode);
+    }
+
+    libxml_use_internal_errors(true);
+    $xml = simplexml_load_string($response);
+    if ($xml === false) {
+        $messages = array_map(function ($entry) {
+            return trim((string)$entry->message);
+        }, libxml_get_errors());
+        libxml_clear_errors();
+        throw new Exception('Fuel economy provider returned malformed XML' . (!empty($messages) ? ': ' . implode('; ', $messages) : ''));
+    }
+    libxml_clear_errors();
+
+    return $xml;
+}
+
+function fuelEconomyNormalizeText($value) {
+    $value = strtolower(trim((string)$value));
+    $value = preg_replace('/[^a-z0-9\.]+/', ' ', $value);
+    return trim(preg_replace('/\s+/', ' ', $value));
+}
+
+function fuelEconomyTransmissionKeywords($transmission) {
+    $normalized = fuelEconomyNormalizeText($transmission);
+    switch ($normalized) {
+        case 'manual':
+            return ['man', 'manual'];
+        case 'automatic':
+            return ['auto', 'automatic'];
+        case 'cvt':
+            return ['cvt', 'variable gear'];
+        case 'semi automatic':
+        case 'semiautomatic':
+            return ['semi', 'automated manual'];
+        case 'dct':
+            return ['dct', 'dual clutch'];
+        default:
+            return $normalized !== '' ? [$normalized] : [];
+    }
+}
+
+function fuelEconomyFuelKeywords($fuelType) {
+    $normalized = fuelEconomyNormalizeText($fuelType);
+    switch ($normalized) {
+        case 'petrol':
+        case 'gasoline':
+            return ['gasoline', 'gas'];
+        case 'diesel':
+            return ['diesel'];
+        case 'hybrid':
+            return ['hybrid'];
+        case 'electric':
+            return ['electric'];
+        case 'lpg':
+            return ['lpg', 'propane'];
+        case 'cng':
+            return ['cng'];
+        default:
+            return $normalized !== '' ? [$normalized] : [];
+    }
+}
+
+function scoreFuelEconomyOption($label, $criteria) {
+    $score = 0;
+    $normalizedLabel = fuelEconomyNormalizeText($label);
+
+    if (!empty($criteria['engine_size_liters']) && is_numeric($criteria['engine_size_liters'])) {
+        $targetSize = (float)$criteria['engine_size_liters'];
+        if (preg_match('/(\d+(?:\.\d+)?)\s*l\b/i', (string)$label, $matches)) {
+            $optionSize = (float)$matches[1];
+            $difference = abs($optionSize - $targetSize);
+            if ($difference <= 0.05) {
+                $score += 50;
+            } elseif ($difference <= 0.15) {
+                $score += 30;
+            }
+        }
+    }
+
+    foreach (fuelEconomyTransmissionKeywords($criteria['transmission'] ?? '') as $keyword) {
+        if ($keyword !== '' && strpos($normalizedLabel, fuelEconomyNormalizeText($keyword)) !== false) {
+            $score += 20;
+            break;
+        }
+    }
+
+    foreach (fuelEconomyFuelKeywords($criteria['fuel_type'] ?? '') as $keyword) {
+        if ($keyword !== '' && strpos($normalizedLabel, fuelEconomyNormalizeText($keyword)) !== false) {
+            $score += 10;
+            break;
+        }
+    }
+
+    return $score;
+}
+
+function fetchFuelEconomyOptions($year, $make, $model) {
+    $url = 'https://www.fueleconomy.gov/ws/rest/vehicle/menu/options?year=' . rawurlencode((string)$year)
+        . '&make=' . rawurlencode((string)$make)
+        . '&model=' . rawurlencode((string)$model);
+
+    $xml = fetchFuelEconomyXml($url);
+    $options = [];
+
+    foreach ($xml->menuItem as $item) {
+        $label = trim((string)$item->text);
+        $value = (int)$item->value;
+        if ($label === '' || $value <= 0) {
+            continue;
+        }
+
+        $options[] = [
+            'id' => $value,
+            'label' => $label
+        ];
+    }
+
+    return $options;
+}
+
+function lookupOnlineFuelConsumption() {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            $input = [];
+        }
+
+        $year = (int)($input['year'] ?? 0);
+        $make = trim((string)($input['make'] ?? ''));
+        $model = trim((string)($input['model'] ?? ''));
+        $transmission = trim((string)($input['transmission'] ?? ''));
+        $fuelType = trim((string)($input['fuel_type'] ?? ''));
+        $engineSizeLiters = is_numeric($input['engine_size_liters'] ?? null)
+            ? (float)$input['engine_size_liters']
+            : null;
+
+        if ($year < 1984 || $year > ((int)date('Y') + 1)) {
+            sendError('A valid model year is required for online lookup', 400);
+        }
+
+        if ($make === '' || $model === '') {
+            sendError('Make and model are required for online lookup', 400);
+        }
+
+        $criteria = [
+            'year' => $year,
+            'make' => $make,
+            'model' => $model,
+            'transmission' => $transmission,
+            'fuel_type' => $fuelType,
+            'engine_size_liters' => $engineSizeLiters
+        ];
+
+        $options = fetchFuelEconomyOptions($year, $make, $model);
+        if (empty($options)) {
+            sendError('No online fuel economy matches found for this vehicle', 404);
+        }
+
+        foreach ($options as &$option) {
+            $option['match_score'] = scoreFuelEconomyOption($option['label'], $criteria);
+        }
+        unset($option);
+
+        usort($options, function ($left, $right) {
+            if (($right['match_score'] ?? 0) === ($left['match_score'] ?? 0)) {
+                return ($left['id'] ?? 0) <=> ($right['id'] ?? 0);
+            }
+            return ($right['match_score'] ?? 0) <=> ($left['match_score'] ?? 0);
+        });
+
+        $bestOption = $options[0];
+        $vehicleXml = fetchFuelEconomyXml('https://www.fueleconomy.gov/ws/rest/vehicle/' . rawurlencode((string)$bestOption['id']));
+
+        $combinedMpg = (float)fuelEconomyXmlField($vehicleXml, 'comb08', '0');
+        if ($combinedMpg <= 0) {
+            $combinedMpg = (float)fuelEconomyXmlField($vehicleXml, 'combA08', '0');
+        }
+
+        if ($combinedMpg <= 0) {
+            sendError('The matched online vehicle does not expose a usable combined MPG estimate', 404);
+        }
+
+        $fuelConsumptionL100km = 235.214583 / $combinedMpg;
+
+        sendSuccess([
+            'estimate' => [
+                'fuel_consumption_l100km' => round($fuelConsumptionL100km, 2),
+                'combined_mpg' => round($combinedMpg, 1),
+                'city_mpg' => (float)fuelEconomyXmlField($vehicleXml, 'city08', '0'),
+                'highway_mpg' => (float)fuelEconomyXmlField($vehicleXml, 'highway08', '0'),
+                'fuel_type' => fuelEconomyXmlField($vehicleXml, 'fuelType1', fuelEconomyXmlField($vehicleXml, 'fuelType', 'N/A')),
+                'transmission' => fuelEconomyXmlField($vehicleXml, 'trany', 'N/A'),
+                'engine_size_liters' => (float)fuelEconomyXmlField($vehicleXml, 'displ', $engineSizeLiters ?: '0'),
+                'vehicle_id' => (int)$bestOption['id'],
+                'matched_option' => $bestOption['label'],
+                'match_score' => (int)($bestOption['match_score'] ?? 0),
+                'source' => 'FuelEconomy.gov',
+                'source_url' => 'https://www.fueleconomy.gov/ws/rest/vehicle/' . rawurlencode((string)$bestOption['id']),
+                'year' => (int)fuelEconomyXmlField($vehicleXml, 'year', (string)$year),
+                'make' => fuelEconomyXmlField($vehicleXml, 'make', $make),
+                'model' => fuelEconomyXmlField($vehicleXml, 'model', $model)
+            ],
+            'meta' => [
+                'provider' => 'FuelEconomy.gov',
+                'matched_options_count' => count($options),
+                'matched_option_preview' => array_slice($options, 0, 3)
+            ]
+        ]);
+    } catch (Exception $e) {
+        error_log('lookupOnlineFuelConsumption error: ' . $e->getMessage());
+        sendError('Failed to fetch online fuel consumption estimate', 500);
+    }
+}
+
 /**
  * Calculate journey fuel cost
  */
@@ -8793,7 +9151,7 @@ function calculateJourney($db) {
         $fuelType = $input['fuel_type'] ?? 'petrol';
         $fuelConsumption = !empty($input['fuel_consumption']) ? (float)$input['fuel_consumption'] : null;
         
-        // Default fuel consumption if not provided (average for Malawi)
+        // Default fuel consumption if not provided (market-average fallback)
         if (empty($fuelConsumption)) {
             $fuelConsumption = $fuelType === 'diesel' ? 8.5 : 9.5; // L/100km
         }
@@ -8897,6 +9255,17 @@ function getJourneyHistory($db) {
  */
 function scrapeFuelPrices($db) {
     try {
+        $siteConfig = getSiteRuntimeConfig($db);
+        $countrySource = trim((string)($siteConfig['fuel_price_country_slug'] ?? ($siteConfig['country_name'] ?? '')));
+        $currencyCode = strtoupper(trim((string)($siteConfig['currency_code'] ?? 'LOCAL')));
+
+        if ($countrySource === '') {
+            sendError('Fuel price country is not configured', 400);
+            return;
+        }
+
+        $countrySlug = rawurlencode($countrySource);
+
         // Optional: Add API key check for security
         $apiKey = $_GET['api_key'] ?? '';
         $expectedKey = 'MOTORLINK_FUEL_SCRAPER_KEY_2025'; // Change this!
@@ -8907,7 +9276,7 @@ function scrapeFuelPrices($db) {
         }
         
         // Scrape from globalpetrolprices.com
-        $url = 'https://www.globalpetrolprices.com/Malawi/gasoline_prices/';
+        $url = "https://www.globalpetrolprices.com/{$countrySlug}/gasoline_prices/";
         
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -8932,12 +9301,12 @@ function scrapeFuelPrices($db) {
         $prices = [];
         
         // Try to extract petrol price
-        if (preg_match('/gasoline.*?(\d+\.?\d*)\s*MWK/i', $html, $matches)) {
+        if (preg_match('/gasoline.*?(\d+\.?\d*)\s*' . preg_quote($currencyCode, '/') . '/i', $html, $matches)) {
             $prices['petrol'] = (float)$matches[1];
         }
         
         // Try to extract diesel price
-        $dieselUrl = 'https://www.globalpetrolprices.com/Malawi/diesel_prices/';
+        $dieselUrl = "https://www.globalpetrolprices.com/{$countrySlug}/diesel_prices/";
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $dieselUrl);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -8948,7 +9317,7 @@ function scrapeFuelPrices($db) {
         $dieselHtml = curl_exec($ch);
         curl_close($ch);
         
-        if (preg_match('/diesel.*?(\d+\.?\d*)\s*MWK/i', $dieselHtml, $matches)) {
+        if (preg_match('/diesel.*?(\d+\.?\d*)\s*' . preg_quote($currencyCode, '/') . '/i', $dieselHtml, $matches)) {
             $prices['diesel'] = (float)$matches[1];
         }
         
@@ -8979,7 +9348,7 @@ function scrapeFuelPrices($db) {
                 $fuelType,
                 $price,
                 $today,
-                "https://www.globalpetrolprices.com/Malawi/{$fuelType}_prices/"
+                "https://www.globalpetrolprices.com/{$countrySlug}/{$fuelType}_prices/"
             ]);
         }
         

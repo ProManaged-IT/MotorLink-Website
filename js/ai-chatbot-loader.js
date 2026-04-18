@@ -118,7 +118,11 @@
                 </div>
             </div>
             <button class="ai-chat-minimized" id="aiChatMinimized" aria-label="Open AI chat">
-                <i class="fas fa-comments"></i>
+                <span class="ai-min-icon" aria-hidden="true">
+                    <i class="fas fa-comments"></i>
+                </span>
+                <span class="ai-min-label">AI Chat</span>
+                <span class="ai-min-live" aria-hidden="true"></span>
             </button>
         </div>
     `;

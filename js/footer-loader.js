@@ -35,13 +35,19 @@ class FooterLoader {
 
     useDefaults() {
         // Fallback defaults if API fails
+        const siteName = (window.CONFIG && CONFIG.SITE_NAME) ? CONFIG.SITE_NAME : 'MotorLink';
+        const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : '';
+        const supportEmail = (window.CONFIG && CONFIG.SUPPORT_EMAIL) ? CONFIG.SUPPORT_EMAIL : 'support@example.com';
+        const currentYear = new Date().getFullYear();
+
         this.settings = {
             general: {
-                site_name: 'MotorLink Malawi'
+                site_name: siteName,
+                country_name: countryName
             },
             footer: {
-                footer_about_text: 'Your trusted partner for buying and selling cars in Malawi.',
-                footer_copyright: '© 2025 MotorLink Malawi. All rights reserved.',
+                footer_about_text: `${siteName} helps people buy, sell, hire, and manage vehicles with confidence.`,
+                footer_copyright: `© ${currentYear} ${siteName}. All rights reserved.`,
                 footer_support_help_label: 'Help Center',
                 footer_support_help_href: 'help.html#top',
                 footer_support_help_type: 'page',
@@ -60,7 +66,7 @@ class FooterLoader {
             },
             contact: {
                 contact_phone: '+265 991 234 567',
-                contact_email: 'info@motorlink.mw'
+                contact_email: supportEmail
             },
             social: {}
         };
@@ -143,10 +149,12 @@ class FooterLoader {
         const contact = this.settings.contact || {};
         const business = this.settings.business || {};
         const social = this.settings.social || {};
+        const currentYear = new Date().getFullYear();
 
-        const siteName = general.site_name || 'MotorLink Malawi';
-        const aboutText = footer_info.footer_about_text || 'Your trusted partner for buying and selling cars in Malawi.';
-        const copyright = footer_info.footer_copyright || '© 2025 MotorLink Malawi. All rights reserved.';
+        const siteName = general.site_name || (window.CONFIG && CONFIG.SITE_NAME) || 'MotorLink';
+        const countryName = general.country_name || (window.CONFIG && CONFIG.COUNTRY_NAME) || '';
+        const aboutText = footer_info.footer_about_text || `${siteName} helps people buy, sell, hire, and manage vehicles with confidence.`;
+        const copyright = footer_info.footer_copyright || `© ${currentYear} ${siteName}. All rights reserved.`;
         const supportLinks = this.buildSupportLinks(footer_info);
         
         const phone = contact.contact_phone || '';
@@ -237,7 +245,7 @@ class FooterLoader {
                     <div style="margin-top: 15px;">
                         <h5><i class="fas fa-map-marker-alt"></i> Location</h5>
                         ${address ? `<p>${this.escapeHtml(address)}</p>` : ''}
-                        ${city ? `<p>${this.escapeHtml(city)}${district && district !== city ? `, ${this.escapeHtml(district)}` : ''}, Malawi</p>` : ''}
+                        ${city ? `<p>${this.escapeHtml(city)}${district && district !== city ? `, ${this.escapeHtml(district)}` : ''}${countryName ? `, ${this.escapeHtml(countryName)}` : ''}</p>` : ''}
                     </div>
                     ` : ''}
                     

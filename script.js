@@ -1,4 +1,4 @@
-// MotorLink Malawi v4.1 - Complete DoneDeal-Style JavaScript
+// MotorLink v4.1 - Complete DoneDeal-Style JavaScript
 //
 // Configuration is loaded from config.js (must be included before this file)
 // To switch between UAT and PRODUCTION modes, edit config.js
@@ -23,11 +23,57 @@
         BASE_URL: normalizedBase,
         API_URL: `${origin}${normalizedBase}api.php`,
         RECOMMENDATION_API_URL: `${origin}${normalizedBase}recommendation_engine.php`,
-        USE_CREDENTIALS: true
+        USE_CREDENTIALS: true,
+        SITE_NAME: 'MotorLink',
+        SITE_SHORT_NAME: 'MotorLink',
+        COUNTRY_NAME: '',
+        COUNTRY_CODE: '',
+        COUNTRY_DEMONYM: '',
+        LOCALE: 'en',
+        CURRENCY_CODE: 'LOCAL',
+        CURRENCY_SYMBOL: 'LOCAL',
+        GEO_POSITION: ''
     };
 
     // Intentionally silent in production to avoid console noise.
 })();
+
+function getRuntimeSiteName() {
+    if (typeof window.CONFIG !== 'undefined' && window.CONFIG) {
+        return CONFIG.SITE_NAME || CONFIG.SITE_SHORT_NAME || 'MotorLink';
+    }
+
+    return 'MotorLink';
+}
+
+function getRuntimeCountryName() {
+    if (typeof window.CONFIG !== 'undefined' && window.CONFIG) {
+        return (CONFIG.COUNTRY_NAME || '').trim();
+    }
+
+    return '';
+}
+
+function buildRuntimeAddress(parts) {
+    return parts
+        .map((part) => String(part || '').trim())
+        .filter(Boolean)
+        .join(', ');
+}
+
+function getRuntimeMapCenter() {
+    const raw = typeof window.CONFIG !== 'undefined' && window.CONFIG ? String(CONFIG.GEO_POSITION || '').trim() : '';
+    const match = raw.match(/^(-?\d+(?:\.\d+)?)\s*[;,]\s*(-?\d+(?:\.\d+)?)$/);
+
+    if (match) {
+        return {
+            lat: parseFloat(match[1]),
+            lng: parseFloat(match[2])
+        };
+    }
+
+    return { lat: 0, lng: 0 };
+}
 
 // ============================================================================
 // MAIN MOTORLINK APPLICATION
@@ -74,6 +120,15 @@ class MotorLink {
         };
         window.addEventListener('scroll', onScroll, { passive: true });
         onScroll(); // run immediately in case page loads mid-scroll
+    }
+
+    syncHomepageHeaderMode(isLoggedIn) {
+        const body = document.body;
+        if (!body || !body.classList.contains('index-page')) {
+            return;
+        }
+
+        body.classList.toggle('has-hero', !isLoggedIn);
     }
 
     syncActiveNavLink() {
@@ -762,6 +817,8 @@ class MotorLink {
         const userDashboard = document.getElementById('userDashboard');
         const profileModal = document.getElementById('profileModal');
 
+        this.syncHomepageHeaderMode(isLoggedIn && !!this.currentUser);
+
         if (isLoggedIn && this.currentUser) {
             // Get user's display name (first name or full name)
             const displayName = this.currentUser.full_name || this.currentUser.name || this.currentUser.email?.split('@')[0] || 'User';
@@ -1311,6 +1368,9 @@ class MotorLink {
          * Fetch recommendation IDs from server and cache briefly to reduce network usage.
          */
         async getServerRecommendationIds(forceRefresh = false) {
+            // Recommendations are only meaningful for logged-in users
+            if (!this.currentUser) return [];
+
             const now = Date.now();
             if (!forceRefresh && this.serverRecommendationCache.expiresAt > now && this.serverRecommendationCache.ids.length > 0) {
                 return this.serverRecommendationCache.ids;
@@ -1320,7 +1380,7 @@ class MotorLink {
             const sessionId = this.getOrCreateSessionId();
 
             try {
-                const endpoint = `${recommendationUrl}?action=get_recommendations&type=personalized&limit=20&session_id=${encodeURIComponent(sessionId)}`;
+                const endpoint = `${recommendationUrl}?action=get_recommendations&type=personalized&limit=30&session_id=${encodeURIComponent(sessionId)}`;
                 const response = await fetch(endpoint, {
                     method: 'GET',
                     credentials: 'include'
@@ -1333,7 +1393,7 @@ class MotorLink {
 
                 this.serverRecommendationCache = {
                     ids,
-                    expiresAt: now + 2 * 60 * 1000
+                    expiresAt: now + 3 * 60 * 1000
                 };
 
                 return ids;
@@ -1396,6 +1456,8 @@ class MotorLink {
          */
         trackCarView(listing) {
             if (!listing) return;
+            // Only track for authenticated users
+            if (!this.currentUser) return;
             
             try {
                 let preferences = this.getUserPreferences() || {
@@ -1494,6 +1556,9 @@ class MotorLink {
          * Send view tracking data to server for both guest and logged-in users
          */
         sendViewTrackingToServer(listingId, preferences) {
+            // Only send tracking for authenticated users
+            if (!this.currentUser) return;
+
             const recommendationUrl = this.getRecommendationApiUrl();
 
             // Don't block the main thread - use beacon API or async fetch
@@ -1873,10 +1938,11 @@ class MotorLink {
         // ============================================================================
         
         startTour() {
+            const siteName = getRuntimeSiteName();
             const tourSteps = [
                 {
                     element: '.hero-search',
-                    title: '🚗 Welcome to MotorLink Malawi!',
+                    title: `🚗 Welcome to ${siteName}!`,
                     content: 'Search for your dream car using our powerful search feature.',
                     position: 'bottom'
                 },
@@ -1907,7 +1973,7 @@ class MotorLink {
             // Tour implementation would go here
             // For now, just mark as completed
             localStorage.setItem('tour_completed', 'true');
-            this.showToast('Welcome to MotorLink Malawi! 🎉', 'success');
+            this.showToast(`Welcome to ${getRuntimeSiteName()}! 🎉`, 'success');
         }
 
         // ============================================================================
@@ -2423,7 +2489,7 @@ class DealersManager {
         // Validate parameters
         if (!address || !address.trim()) return null;
         
-        const fullAddress = `${address}, ${locationName || 'Malawi'}, Malawi`;
+        const fullAddress = buildRuntimeAddress([address, locationName, getRuntimeCountryName()]);
         
         // Check cache first
         if (this.geocodedDealers.has(fullAddress)) {
@@ -3294,6 +3360,23 @@ class ShowroomManager {
             dealerWhatsappLink.style.display = 'inline-flex';
         }
 
+            const dealerEmailLink = document.getElementById('dealerEmailLink');
+            if (dealerEmailLink && dealer.email) {
+                dealerEmailLink.href = `mailto:${dealer.email}`;
+                dealerEmailLink.style.display = 'inline-flex';
+            }
+
+            let normalizedWebsiteUrl = '';
+            if (dealer.website) {
+                normalizedWebsiteUrl = dealer.website.startsWith('http') ? dealer.website : `https://${dealer.website}`;
+            }
+
+            const dealerWebsiteLink = document.getElementById('dealerWebsiteLink');
+            if (dealerWebsiteLink && normalizedWebsiteUrl) {
+                dealerWebsiteLink.href = normalizedWebsiteUrl;
+                dealerWebsiteLink.style.display = 'inline-flex';
+            }
+
         const dealerQuickContact = document.getElementById('dealerQuickContact');
         const dealerHeaderPhoneLink = document.getElementById('dealerHeaderPhoneLink');
         const dealerHeaderWhatsappLink = document.getElementById('dealerHeaderWhatsappLink');
@@ -3311,8 +3394,8 @@ class ShowroomManager {
             dealerHeaderWhatsappLink.style.display = 'inline-flex';
         }
 
-        if (dealerHeaderWebsiteLink && dealer.website) {
-            dealerHeaderWebsiteLink.href = dealer.website;
+        if (dealerHeaderWebsiteLink && normalizedWebsiteUrl) {
+            dealerHeaderWebsiteLink.href = normalizedWebsiteUrl;
             dealerHeaderWebsiteLink.style.display = 'inline-flex';
         }
 
@@ -3321,7 +3404,7 @@ class ShowroomManager {
             dealerHeaderDirectionsLink.style.display = 'inline-flex';
         }
 
-        if (dealerQuickContact && (dealer.phone || dealer.whatsapp || dealer.website || dealer.address)) {
+        if (dealerQuickContact && (dealer.phone || dealer.whatsapp || dealer.email || normalizedWebsiteUrl || dealer.address)) {
             dealerQuickContact.style.display = 'block';
         }
 
@@ -3344,8 +3427,8 @@ class ShowroomManager {
         // Contact section near footer - website
         const websiteItem = document.getElementById('websiteItem');
         const dealerWebsite = document.getElementById('dealerWebsite');
-        if (websiteItem && dealerWebsite && dealer.website) {
-            dealerWebsite.href = dealer.website;
+        if (websiteItem && dealerWebsite && normalizedWebsiteUrl) {
+            dealerWebsite.href = normalizedWebsiteUrl;
             dealerWebsite.textContent = dealer.website;
             websiteItem.style.display = 'flex';
         }
@@ -3441,11 +3524,11 @@ class ShowroomManager {
         // Get full address for geocoding
         let address = '';
         if (dealer.address && dealer.location_name) {
-            address = `${dealer.address}, ${dealer.location_name}, Malawi`;
+            address = buildRuntimeAddress([dealer.address, dealer.location_name, getRuntimeCountryName()]);
         } else if (dealer.address) {
-            address = `${dealer.address}, Malawi`;
+            address = buildRuntimeAddress([dealer.address, getRuntimeCountryName()]);
         } else if (dealer.location_name) {
-            address = `${dealer.location_name}, Malawi`;
+            address = buildRuntimeAddress([dealer.location_name, getRuntimeCountryName()]);
         }
 
         if (!address) {
@@ -3464,8 +3547,8 @@ class ShowroomManager {
                 return;
             }
 
-            // Default center (Malawi)
-            const defaultCenter = { lat: -13.9626, lng: 33.7741 };
+            // Default center from runtime market config when available
+            const defaultCenter = getRuntimeMapCenter();
 
             // Initialize map
             const map = new google.maps.Map(mapDiv, {
@@ -3511,7 +3594,7 @@ class ShowroomManager {
                     // Open info window by default
                     infoWindow.open(map);
                 } else {
-                    // Still show map but centered on Malawi
+                    // Still show a fallback message when geocoding fails
                     mapDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Unable to load map for this location</div>';
                 }
             });
@@ -4016,7 +4099,7 @@ class ShowroomManager {
         if (navigator.share) {
             navigator.share({
                 title: this.dealerData.business_name,
-                text: `Check out ${this.dealerData.business_name} on MotorLink Malawi`,
+                text: `Check out ${this.dealerData.business_name} on ${getRuntimeSiteName()}`,
                 url: window.location.href,
             });
         } else {
@@ -4041,11 +4124,12 @@ class ShowroomManager {
 
     // Update page title
     updatePageTitle(dealerName) {
+        const siteName = getRuntimeSiteName();
         const pageTitle = document.getElementById('pageTitle');
         if (pageTitle) {
-            pageTitle.textContent = `${dealerName} - Showroom | MotorLink Malawi`;
+            pageTitle.textContent = `${dealerName} - Showroom | ${siteName}`;
         }
-        document.title = `${dealerName} - Showroom | MotorLink Malawi`;
+        document.title = `${dealerName} - Showroom | ${siteName}`;
     }
 
     // Update showroom stats in hero section
@@ -4780,7 +4864,15 @@ async function loadAIChatbot() {
     // Create widget HTML
     const widgetHTML = `
         <div class="ai-car-chat-widget minimized" id="aiCarChatWidget">
-                        <div class="ai-usage-indicator" id="aiUsageIndicator">
+            <div class="ai-chat-header" id="aiChatHeader">
+                <div class="ai-chat-header-info">
+                    <div class="ai-chat-avatar">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="ai-chat-title">
+                        <h3>MotorLink AI Assistant</h3>
+                        <p>Your personal assistant</p>
+                        <div class="ai-usage-indicator" id="aiUsageIndicator" style="font-size: 11px; margin-top: 6px; padding: 4px 8px; background: #f5f5f5; border-radius: 12px; display: inline-block;">
                             <span id="aiUsageText">Loading usage...</span>
                         </div>
                     </div>
@@ -4827,7 +4919,11 @@ async function loadAIChatbot() {
                 </div>
             </div>
             <button class="ai-chat-minimized" id="aiChatMinimized" aria-label="Open AI chat">
-                <i class="fas fa-comments"></i>
+                <span class="ai-min-icon" aria-hidden="true">
+                    <i class="fas fa-comments"></i>
+                </span>
+                <span class="ai-min-label">AI Chat</span>
+                <span class="ai-min-live" aria-hidden="true"></span>
             </button>
         </div>
     `;
