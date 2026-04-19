@@ -6314,8 +6314,8 @@ function handleGetAIChatSettings($db) {
         // Ensure settings table exists with proper structure
         $db->exec("CREATE TABLE IF NOT EXISTS ai_chat_settings (
             id INT PRIMARY KEY DEFAULT 1,
-            ai_provider VARCHAR(20) DEFAULT 'openai',
-            model_name VARCHAR(120) DEFAULT 'gpt-4o',
+            ai_provider VARCHAR(20) DEFAULT 'glm',
+            model_name VARCHAR(120) DEFAULT 'glm-4.7-flash',
             openai_enabled TINYINT(1) DEFAULT 1,
             openai_reasoning_enabled TINYINT(1) DEFAULT 1,
             openai_reasoning_effort VARCHAR(20) DEFAULT 'medium',
@@ -6339,14 +6339,14 @@ function handleGetAIChatSettings($db) {
         
         if (!$settings) {
             // Insert defaults with all values
-            $db->exec("INSERT INTO ai_chat_settings (id, ai_provider, model_name, openai_enabled, openai_reasoning_enabled, openai_reasoning_effort, deepseek_enabled, deepseek_auto_profile_enabled, qwen_enabled, glm_enabled, glm_auto_profile_enabled, max_tokens_per_request, temperature, requests_per_day, requests_per_hour, enabled) VALUES (1, 'openai', 'gpt-4o', 1, 1, 'medium', 1, 1, 1, 1, 1, 600, 0.8, 50, 10, 1)");
+            $db->exec("INSERT INTO ai_chat_settings (id, ai_provider, model_name, openai_enabled, openai_reasoning_enabled, openai_reasoning_effort, deepseek_enabled, deepseek_auto_profile_enabled, qwen_enabled, glm_enabled, glm_auto_profile_enabled, max_tokens_per_request, temperature, requests_per_day, requests_per_hour, enabled) VALUES (1, 'glm', 'glm-4.7-flash', 1, 1, 'medium', 1, 1, 1, 1, 1, 600, 0.8, 50, 10, 1)");
             $stmt->execute();
             $settings = $stmt->fetch(PDO::FETCH_ASSOC);
         }
 
         // Backfill newer columns for older schemas
         try {
-            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN ai_provider VARCHAR(20) DEFAULT 'openai'");
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN ai_provider VARCHAR(20) DEFAULT 'glm'");
         } catch (Exception $e) {
             // ignore
         }
@@ -6391,7 +6391,7 @@ function handleGetAIChatSettings($db) {
             // ignore
         }
         try {
-            $db->exec("ALTER TABLE ai_chat_settings MODIFY COLUMN model_name VARCHAR(120) DEFAULT 'gpt-4o'");
+            $db->exec("ALTER TABLE ai_chat_settings MODIFY COLUMN model_name VARCHAR(120) DEFAULT 'glm-4.7-flash'");
         } catch (Exception $e) {
             // ignore
         }
@@ -6401,8 +6401,8 @@ function handleGetAIChatSettings($db) {
         $settings = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
         
         // Ensure all fields are properly typed and present
-        $settings['ai_provider'] = $settings['ai_provider'] ?? 'openai';
-        $settings['model_name'] = $settings['model_name'] ?? 'gpt-4o';
+        $settings['ai_provider'] = $settings['ai_provider'] ?? 'glm';
+        $settings['model_name'] = $settings['model_name'] ?? 'glm-4.7-flash';
         $settings['openai_enabled'] = (int)($settings['openai_enabled'] ?? 1);
         $settings['openai_reasoning_enabled'] = (int)($settings['openai_reasoning_enabled'] ?? 1);
         $settings['openai_reasoning_effort'] = $settings['openai_reasoning_effort'] ?? 'medium';
@@ -6495,7 +6495,7 @@ function handleSaveAIChatSettings($db) {
         }
         
         try {
-            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN ai_provider VARCHAR(20) DEFAULT 'openai'");
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN ai_provider VARCHAR(20) DEFAULT 'glm'");
         } catch (Exception $e) {
             // ignore
         }
@@ -6540,7 +6540,7 @@ function handleSaveAIChatSettings($db) {
             // ignore
         }
         try {
-            $db->exec("ALTER TABLE ai_chat_settings MODIFY COLUMN model_name VARCHAR(120) DEFAULT 'gpt-4o'");
+            $db->exec("ALTER TABLE ai_chat_settings MODIFY COLUMN model_name VARCHAR(120) DEFAULT 'glm-4.7-flash'");
         } catch (Exception $e) {
             // ignore
         }
@@ -7087,7 +7087,7 @@ function handleSaveAILearningSettings($db) {
         $deepseekEnabled = isset($input['deepseek_enabled']) ? (int)$input['deepseek_enabled'] : 1;
         $qwenEnabled = isset($input['qwen_enabled']) ? (int)$input['qwen_enabled'] : 1;
         $glmEnabled = isset($input['glm_enabled']) ? (int)$input['glm_enabled'] : 1;
-        $aiProvider = isset($input['ai_provider']) ? trim($input['ai_provider']) : 'openai';
+        $aiProvider = isset($input['ai_provider']) ? trim($input['ai_provider']) : 'glm';
         $webCacheLimit = isset($input['web_cache_limit']) ? (int)$input['web_cache_limit'] : 20;
         $partsCacheLimit = isset($input['parts_cache_limit']) ? (int)$input['parts_cache_limit'] : 500;
         
@@ -7114,7 +7114,7 @@ function handleSaveAILearningSettings($db) {
             // Column exists, ignore
         }
         try {
-            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN ai_provider VARCHAR(20) DEFAULT 'openai'");
+            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN ai_provider VARCHAR(20) DEFAULT 'glm'");
         } catch (Exception $e) {
             // Column exists, ignore
         }
@@ -7266,8 +7266,8 @@ function handleSetAIChatEnabled($db) {
         // Ensure settings table exists (same schema as other AI settings handlers).
         $db->exec("CREATE TABLE IF NOT EXISTS ai_chat_settings (
             id INT PRIMARY KEY DEFAULT 1,
-            ai_provider VARCHAR(20) DEFAULT 'openai',
-            model_name VARCHAR(120) DEFAULT 'gpt-4o',
+            ai_provider VARCHAR(20) DEFAULT 'glm',
+            model_name VARCHAR(120) DEFAULT 'glm-4.7-flash',
             openai_enabled TINYINT(1) DEFAULT 1,
             openai_reasoning_enabled TINYINT(1) DEFAULT 1,
             openai_reasoning_effort VARCHAR(20) DEFAULT 'medium',

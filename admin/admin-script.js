@@ -7308,7 +7308,7 @@ function getProviderDefaultChatModel(provider) {
         openai: 'gpt-4o-mini',
         deepseek: 'deepseek-chat',
         qwen: 'qwen-plus',
-        glm: 'glm-4.7'
+        glm: 'glm-4.7-flash'
     };
 
     return providerDefaultModels[provider] || 'gpt-4o-mini';
@@ -7326,6 +7326,10 @@ function isDeepSeekReasonerModel(modelName) {
 
 function isGLMThinkingCapableModel(modelName) {
     const normalized = String(modelName || '').trim().toLowerCase();
+    if (/^glm-(?:4(?:\.7)?-)?flash(?:x)?(?:$|[-._:])/.test(normalized)) {
+        return false;
+    }
+
     return /^glm-(4\.5|4\.6|4\.7|5\.1)(?:$|[-._:])/.test(normalized);
 }
 

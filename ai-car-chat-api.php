@@ -131,7 +131,7 @@ function getAIChatProviderConfig($provider) {
         ],
         'glm' => [
             'url' => 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-            'default_model' => 'glm-4.7'
+            'default_model' => 'glm-4.7-flash'
         ]
     ];
     return $configs[$provider];
@@ -147,9 +147,12 @@ function normalizeAIChatModelName($provider, $modelName, $fallbackModel = '') {
 
     $aliases = [
         'glm' => [
-            'glm-4-flash' => 'glm-4.7',
-            'glm4flash' => 'glm-4.7',
-            'glm-flash' => 'glm-4.7',
+            'glm-4-flash' => 'glm-4.7-flash',
+            'glm4flash' => 'glm-4.7-flash',
+            'glm-flash' => 'glm-4.7-flash',
+            'glm-4-7-flash' => 'glm-4.7-flash',
+            'glm4.7flash' => 'glm-4.7-flash',
+            'glm 4.7 flash' => 'glm-4.7-flash',
             'glm5.5-turbo' => 'glm-5.5-turbo',
             'glm-5-5-turbo' => 'glm-5.5-turbo',
             'glm 5.5 turbo' => 'glm-5.5-turbo',
@@ -202,9 +205,22 @@ function isDeepSeekReasonerModel($modelName) {
     return $model !== '' && preg_match('/^deepseek-reasoner(?:$|[-._:])/', $model) === 1;
 }
 
+function isGLMFlashFamilyModel($modelName) {
+    $model = strtolower(trim((string)$modelName));
+    if ($model === '') {
+        return false;
+    }
+
+    return preg_match('/^glm-(?:4(?:\.7)?-)?flash(?:x)?(?:$|[-._:])/', $model) === 1;
+}
+
 function isGLMThinkingCapableModel($modelName) {
     $model = strtolower(trim((string)$modelName));
     if ($model === '') {
+        return false;
+    }
+
+    if (isGLMFlashFamilyModel($model)) {
         return false;
     }
 
@@ -1598,16 +1614,20 @@ function buildAIChatListingsRetrievalSnippet($db, $message, $runtimeSiteUrl) {
         $searchQuery['max_price'] = (int)$searchParams['max_price'];
     }
     if (!empty($searchParams['location'])) {
-        $searchQuery['location'] = $searchParams['location'];
-        try {
-            $locStmt = $db->prepare("SELECT id FROM locations WHERE LOWER(name) = LOWER(?) LIMIT 1");
-            $locStmt->execute([$searchParams['location']]);
-            $loc = $locStmt->fetch(PDO::FETCH_ASSOC);
-            if (!empty($loc['id'])) {
-                $searchQuery['location_id'] = (int)$loc['id'];
-            }
-        } catch (Exception $e) {
-            error_log('buildAIChatListingsRetrievalSnippet location error: ' . $e->getMessage());
+        $searchQuery['location_display'] = $searchParams['location'];
+
+        if (!empty($searchParams['location_id']) && ($searchParams['location_match_type'] ?? '') === 'location') {
+            $searchQuery['location'] = $searchParams['location'];
+            $searchQuery['location_id'] = (int)$searchParams['location_id'];
+        } elseif (!empty($searchParams['district']) && ($searchParams['location_match_type'] ?? '') === 'district') {
+            $searchQuery['district'] = $searchParams['district'];
+        } elseif (!empty($searchParams['region']) && ($searchParams['location_match_type'] ?? '') === 'region') {
+            $searchQuery['region'] = $searchParams['region'];
+        } elseif (!empty($searchParams['location_id'])) {
+            $searchQuery['location'] = $searchParams['location'];
+            $searchQuery['location_id'] = (int)$searchParams['location_id'];
+        } else {
+            $searchQuery['location'] = $searchParams['location'];
         }
     }
     if (!empty($searchParams['body_type'])) {
@@ -2193,7 +2213,7 @@ function handleAICarChat($db) {
             return; // Exit early after handling car spec query
         }
 
-        $isPartsQuery = detectPartsQuery($message);
+        $isPartsQuery = shouldRouteToPartsQuery($message);
 
         if ($isPartsQuery) {
             $logDeterministicUsage();
@@ -2922,6 +2942,45 @@ function detectPartsQuery($message) {
         return true;
     }
     
+    return false;
+}
+
+function shouldRouteToPartsQuery($message) {
+    if (!detectPartsQuery($message)) {
+        return false;
+    }
+
+    $messageLower = strtolower(trim((string)$message));
+    $partInfo = extractPartDetailsFromMessage($message);
+
+    if (!empty($partInfo['part_number']) || !empty($partInfo['oem_number'])) {
+        return true;
+    }
+
+    if (preg_match('/\b(part|spare part|replacement part|oem|fitment|compatible|compatibility|cross[- ]?reference|aftermarket)\b/i', $messageLower)) {
+        return true;
+    }
+
+    $strongPartKeywords = [
+        'brake pad', 'brake pads', 'brake disc', 'brake rotor', 'brake shoe', 'brake shoes',
+        'water pump', 'fuel pump', 'oil pump', 'timing belt', 'timing chain', 'serpentine belt',
+        'air filter', 'oil filter', 'fuel filter', 'cabin filter', 'cabin air filter',
+        'spark plug', 'spark plugs', 'ignition coil', 'alternator', 'starter motor', 'starter',
+        'shock absorber', 'control arm', 'ball joint', 'tie rod', 'cv joint', 'cv axle',
+        'radiator', 'thermostat', 'radiator hose', 'clutch kit', 'flywheel', 'wheel bearing'
+    ];
+
+    foreach ($strongPartKeywords as $keyword) {
+        if (strpos($messageLower, $keyword) !== false) {
+            return true;
+        }
+    }
+
+    if (strpos($messageLower, 'transmission') !== false || strpos($messageLower, 'gearbox') !== false) {
+        return preg_match('/\b(transmission|gearbox)\b.*\b(part|replacement|rebuild|solenoid|filter|mount|oem|fitment)\b/i', $messageLower) === 1
+            || preg_match('/\b(part|replacement|rebuild|solenoid|filter|mount|oem|fitment)\b.*\b(transmission|gearbox)\b/i', $messageLower) === 1;
+    }
+
     return false;
 }
 
@@ -3967,17 +4026,20 @@ function handleSearchQuery($db, $message, $conversationHistory) {
         }
         
         if (!empty($searchParams['location'])) {
-            // Normalize location name (capitalize first letter)
-            $location = ucfirst(strtolower(trim($searchParams['location'])));
-            $searchQuery['location'] = $location;
-            
-            // Also try to get location ID for more precise matching
-            $locStmt = $db->prepare("SELECT id FROM locations WHERE LOWER(name) = ? OR LOWER(name) LIKE ? LIMIT 1");
-            $locLower = strtolower($location);
-            $locStmt->execute([$locLower, '%' . $locLower . '%']);
-            $locationData = $locStmt->fetch(PDO::FETCH_ASSOC);
-            if ($locationData) {
-                $searchQuery['location_id'] = $locationData['id'];
+            $searchQuery['location_display'] = $searchParams['location'];
+
+            if (!empty($searchParams['location_id']) && ($searchParams['location_match_type'] ?? '') === 'location') {
+                $searchQuery['location'] = $searchParams['location'];
+                $searchQuery['location_id'] = (int)$searchParams['location_id'];
+            } elseif (!empty($searchParams['district']) && ($searchParams['location_match_type'] ?? '') === 'district') {
+                $searchQuery['district'] = $searchParams['district'];
+            } elseif (!empty($searchParams['region']) && ($searchParams['location_match_type'] ?? '') === 'region') {
+                $searchQuery['region'] = $searchParams['region'];
+            } elseif (!empty($searchParams['location_id'])) {
+                $searchQuery['location'] = $searchParams['location'];
+                $searchQuery['location_id'] = (int)$searchParams['location_id'];
+            } else {
+                $searchQuery['location'] = $searchParams['location'];
             }
         }
         
@@ -4037,11 +4099,19 @@ function handleSearchQuery($db, $message, $conversationHistory) {
             $alternatives = [];
             $hasMake = !empty($searchQuery['make_id']);
             $hasModel = !empty($searchQuery['model_id']);
-            $hasLocation = !empty($searchQuery['location']);
+            $hasLocation = !empty($searchQuery['location']) || !empty($searchQuery['location_id']) || !empty($searchQuery['district']) || !empty($searchQuery['region']);
 
             // Strict location behavior: if the user asked for a location, never broaden to other locations.
             if ($hasLocation) {
-                $locationName = !empty($searchQuery['location']) ? $searchQuery['location'] : (!empty($searchParams['location']) ? $searchParams['location'] : 'that location');
+                $locationName = !empty($searchQuery['location_display'])
+                    ? $searchQuery['location_display']
+                    : (!empty($searchQuery['location'])
+                        ? $searchQuery['location']
+                        : (!empty($searchQuery['district'])
+                            ? $searchQuery['district']
+                            : (!empty($searchQuery['region'])
+                                ? $searchQuery['region']
+                                : (!empty($searchParams['location']) ? $searchParams['location'] : 'that location'))));
                 $response = "I couldn't find any vehicles matching your criteria in {$locationName}. ";
                 $response .= "I won't show vehicles from other locations unless you ask me to broaden the search. ";
                 $response .= "You can try a nearby location, adjust make/model, or remove one filter.";
@@ -4058,7 +4128,7 @@ function handleSearchQuery($db, $message, $conversationHistory) {
             if ($hasLocation) {
                 // Try without location
                 $altQuery = $searchQuery;
-                unset($altQuery['location'], $altQuery['location_id']);
+                unset($altQuery['location'], $altQuery['location_id'], $altQuery['district'], $altQuery['region'], $altQuery['location_display']);
                 $altListings = searchListings($db, $altQuery);
                 if (!empty($altListings)) {
                     $makeName = !empty($searchParams['make']) ? $searchParams['make'] : '';
@@ -6095,23 +6165,30 @@ function extractCarRequirements($db, $message) {
     if (empty($requirements['location'])) {
         $inferredLocation = inferLocationFromMessage($message);
         if (!empty($inferredLocation)) {
-            $resolvedLocation = resolveClosestLocationName($db, $inferredLocation);
-            if (!empty($resolvedLocation)) {
-                $requirements['location'] = $resolvedLocation;
-            }
+            $requirements['location'] = $inferredLocation;
         }
     }
 
-    if (!empty($requirements['location']) && empty($requirements['location_id'])) {
-        try {
-            $locIdStmt = $db->prepare("SELECT id FROM locations WHERE LOWER(name) = ? LIMIT 1");
-            $locIdStmt->execute([strtolower(trim((string)$requirements['location']))]);
-            $locId = $locIdStmt->fetch(PDO::FETCH_ASSOC);
-            if (!empty($locId['id'])) {
-                $requirements['location_id'] = (int)$locId['id'];
+    $rawLocationHint = inferLocationFromMessage($message);
+    if (!empty($rawLocationHint) && preg_match('/\b(district|region)\b/i', $rawLocationHint)) {
+        $requirements['location'] = $rawLocationHint;
+        unset($requirements['location_id']);
+    }
+
+    if (!empty($requirements['location'])) {
+        $resolvedLocation = resolveLocationSearchConstraint($db, $requirements['location']);
+        if (!empty($resolvedLocation['matched_value'])) {
+            $requirements['location'] = $resolvedLocation['matched_value'];
+            $requirements['location_match_type'] = $resolvedLocation['match_type'];
+            if (!empty($resolvedLocation['location_id'])) {
+                $requirements['location_id'] = (int)$resolvedLocation['location_id'];
             }
-        } catch (Exception $e) {
-            error_log("Error resolving recommendation location_id: " . $e->getMessage());
+            if (!empty($resolvedLocation['district'])) {
+                $requirements['district'] = $resolvedLocation['district'];
+            }
+            if (!empty($resolvedLocation['region'])) {
+                $requirements['region'] = $resolvedLocation['region'];
+            }
         }
     }
     
@@ -6266,10 +6343,21 @@ function searchCarsByRequirements($db, $requirements) {
             }
         }
         
-        // Body type - EXACT match (not LIKE)
+        // Body type - use shared aliases so truck requests can match pickup stock.
         if (!empty($requirements['body_type'])) {
-            $conditions[] = "LOWER(mo.body_type) = ?";
-            $params[] = strtolower($requirements['body_type']);
+            $bodyTypeAliases = getBodyTypeSearchAliases($requirements['body_type']);
+            if (!empty($bodyTypeAliases)) {
+                if (count($bodyTypeAliases) === 1) {
+                    $conditions[] = "LOWER(mo.body_type) = ?";
+                    $params[] = strtolower($bodyTypeAliases[0]);
+                } else {
+                    $placeholders = implode(', ', array_fill(0, count($bodyTypeAliases), '?'));
+                    $conditions[] = "LOWER(mo.body_type) IN ({$placeholders})";
+                    foreach ($bodyTypeAliases as $alias) {
+                        $params[] = strtolower($alias);
+                    }
+                }
+            }
         }
         
         // Make - EXACT match (not LIKE)
@@ -6302,10 +6390,23 @@ function searchCarsByRequirements($db, $requirements) {
             $params[] = strtolower($requirements['transmission']);
         }
 
-        // Location - STRICT exact filtering.
-        if (!empty($requirements['location_id'])) {
+        // Location - honor the resolved match type so region requests stay regional.
+        $locationMatchType = strtolower(trim((string)($requirements['location_match_type'] ?? '')));
+        if ($locationMatchType === 'district' && !empty($requirements['district'])) {
+            $conditions[] = "LOWER(COALESCE(loc.district, '')) = ?";
+            $params[] = strtolower(trim((string)$requirements['district']));
+        } elseif ($locationMatchType === 'region' && !empty($requirements['region'])) {
+            $conditions[] = "LOWER(COALESCE(loc.region, '')) = ?";
+            $params[] = strtolower(trim((string)$requirements['region']));
+        } elseif (!empty($requirements['location_id'])) {
             $conditions[] = "l.location_id = ?";
             $params[] = (int)$requirements['location_id'];
+        } elseif (!empty($requirements['district'])) {
+            $conditions[] = "LOWER(COALESCE(loc.district, '')) = ?";
+            $params[] = strtolower(trim((string)$requirements['district']));
+        } elseif (!empty($requirements['region'])) {
+            $conditions[] = "LOWER(COALESCE(loc.region, '')) = ?";
+            $params[] = strtolower(trim((string)$requirements['region']));
         } elseif (!empty($requirements['location'])) {
             $conditions[] = "LOWER(loc.name) = ?";
             $params[] = strtolower(trim((string)$requirements['location']));
@@ -6705,15 +6806,151 @@ function normalizeSearchParams($db, $searchParams, $message) {
         }
     }
 
-    // Resolve fuzzy/typo location to canonical locations table value.
+    unset($searchParams['location_id'], $searchParams['district'], $searchParams['region'], $searchParams['location_match_type']);
+
+    // Resolve fuzzy/typo location to canonical location, district, or region values.
     if (!empty($searchParams['location'])) {
-        $resolvedLocation = resolveClosestLocationName($db, $searchParams['location']);
-        if (!empty($resolvedLocation)) {
-            $searchParams['location'] = $resolvedLocation;
+        $locationCandidate = $searchParams['location'];
+        $rawLocationHint = inferLocationFromMessage($message);
+        if (!empty($rawLocationHint) && preg_match('/\b(district|region)\b/i', $rawLocationHint)) {
+            $locationCandidate = $rawLocationHint;
+        }
+
+        $resolvedLocation = resolveLocationSearchConstraint($db, $locationCandidate);
+        if (!empty($resolvedLocation['matched_value'])) {
+            $searchParams['location'] = $resolvedLocation['matched_value'];
+            $searchParams['location_match_type'] = $resolvedLocation['match_type'];
+
+            if (!empty($resolvedLocation['location_id'])) {
+                $searchParams['location_id'] = (int)$resolvedLocation['location_id'];
+            }
+            if (!empty($resolvedLocation['district'])) {
+                $searchParams['district'] = $resolvedLocation['district'];
+            }
+            if (!empty($resolvedLocation['region'])) {
+                $searchParams['region'] = $resolvedLocation['region'];
+            }
         }
     }
 
     return $searchParams;
+}
+
+function normalizeSearchLocationToken($value) {
+    $value = strtolower(trim((string)$value));
+    if ($value === '') {
+        return '';
+    }
+
+    $value = preg_replace('/\b(city|town|district|region|area)\b/i', ' ', $value);
+    $value = preg_replace('/\s+/', ' ', (string)$value);
+
+    return trim((string)$value);
+}
+
+function resolveLocationSearchConstraint($db, $rawLocation) {
+    $rawLocation = trim((string)$rawLocation);
+    $normalizedRaw = normalizeSearchLocationToken($rawLocation);
+
+    $result = [
+        'match_type' => null,
+        'matched_value' => null,
+        'location_id' => null,
+        'district' => null,
+        'region' => null
+    ];
+
+    if ($normalizedRaw === '') {
+        return $result;
+    }
+
+    $hasDistrictHint = preg_match('/\bdistrict\b/i', $rawLocation) === 1;
+    $hasRegionHint = preg_match('/\bregion\b/i', $rawLocation) === 1;
+
+    try {
+        $stmt = $db->query("SELECT id, name, district, region FROM locations ORDER BY name ASC");
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows)) {
+            return $result;
+        }
+
+        $best = null;
+        $bestScore = -1;
+
+        foreach ($rows as $row) {
+            $candidates = [
+                [
+                    'type' => 'location',
+                    'value' => trim((string)($row['name'] ?? '')),
+                    'normalized' => normalizeSearchLocationToken($row['name'] ?? ''),
+                    'id' => !empty($row['id']) ? (int)$row['id'] : null
+                ],
+                [
+                    'type' => 'district',
+                    'value' => trim((string)($row['district'] ?? '')),
+                    'normalized' => normalizeSearchLocationToken($row['district'] ?? ''),
+                    'id' => null
+                ],
+                [
+                    'type' => 'region',
+                    'value' => trim((string)($row['region'] ?? '')),
+                    'normalized' => normalizeSearchLocationToken($row['region'] ?? ''),
+                    'id' => null
+                ]
+            ];
+
+            foreach ($candidates as $candidate) {
+                if ($candidate['value'] === '' || $candidate['normalized'] === '') {
+                    continue;
+                }
+
+                $score = 0;
+                if ($candidate['normalized'] === $normalizedRaw) {
+                    $score = 220;
+                } elseif (strlen($normalizedRaw) >= 4 && (strpos($candidate['normalized'], $normalizedRaw) !== false || strpos($normalizedRaw, $candidate['normalized']) !== false)) {
+                    $score = 170;
+                } elseif (strlen($normalizedRaw) >= 4) {
+                    $distance = levenshtein($normalizedRaw, $candidate['normalized']);
+                    if ($distance <= 2) {
+                        $score = 140 - ($distance * 20);
+                    }
+                }
+
+                if ($score <= 0) {
+                    continue;
+                }
+
+                if ($hasDistrictHint && $candidate['type'] === 'district') {
+                    $score += 25;
+                }
+                if ($hasRegionHint && $candidate['type'] === 'region') {
+                    $score += 25;
+                }
+                if (!$hasDistrictHint && !$hasRegionHint && $candidate['type'] === 'location') {
+                    $score += 10;
+                }
+
+                if ($score > $bestScore) {
+                    $bestScore = $score;
+                    $best = [
+                        'match_type' => $candidate['type'],
+                        'matched_value' => $candidate['value'],
+                        'location_id' => $candidate['id'],
+                        'district' => trim((string)($row['district'] ?? '')) ?: null,
+                        'region' => trim((string)($row['region'] ?? '')) ?: null
+                    ];
+                }
+            }
+        }
+
+        if ($best !== null && $bestScore >= 120) {
+            return $best;
+        }
+    } catch (Exception $e) {
+        error_log('resolveLocationSearchConstraint error: ' . $e->getMessage());
+    }
+
+    return $result;
 }
 
 function normalizeBodyTypeParam($searchParams, $message) {
@@ -6811,6 +7048,28 @@ function normalizeBodyTypeToken($token) {
     }
 
     return ($bestDistance <= 1) ? $best : null;
+}
+
+function getBodyTypeSearchAliases($bodyType) {
+    $normalized = normalizeBodyTypeToken($bodyType);
+    if ($normalized === null) {
+        $normalized = strtolower(trim((string)$bodyType));
+    }
+
+    if ($normalized === '') {
+        return [];
+    }
+
+    $aliases = [
+        'truck' => ['truck', 'pickup'],
+        'pickup' => ['pickup', 'truck'],
+        'suv' => ['suv', 'crossover'],
+        'crossover' => ['crossover', 'suv'],
+        'van' => ['van', 'minivan'],
+        'minivan' => ['minivan', 'van']
+    ];
+
+    return array_values(array_unique($aliases[$normalized] ?? [$normalized]));
 }
 
 function inferLocationFromMessage($message) {
@@ -7169,8 +7428,19 @@ function searchListings($db, $searchQuery) {
     }
     
     if (!empty($searchQuery['category'])) {
-        $whereConditions[] = "mo.body_type = ?";
-        $params[] = $searchQuery['category'];
+        $bodyTypeAliases = getBodyTypeSearchAliases($searchQuery['category']);
+        if (!empty($bodyTypeAliases)) {
+            if (count($bodyTypeAliases) === 1) {
+                $whereConditions[] = "LOWER(mo.body_type) = ?";
+                $params[] = strtolower($bodyTypeAliases[0]);
+            } else {
+                $placeholders = implode(', ', array_fill(0, count($bodyTypeAliases), '?'));
+                $whereConditions[] = "LOWER(mo.body_type) IN ({$placeholders})";
+                foreach ($bodyTypeAliases as $alias) {
+                    $params[] = strtolower($alias);
+                }
+            }
+        }
     }
     
     // Color filter (exterior_color)
@@ -7208,6 +7478,14 @@ function searchListings($db, $searchQuery) {
         // Use location ID for precise matching
         $whereConditions[] = "l.location_id = ?";
         $params[] = $searchQuery['location_id'];
+        $hasSpecificFilters = true;
+    } elseif (!empty($searchQuery['district'])) {
+        $whereConditions[] = "LOWER(COALESCE(loc.district, '')) = ?";
+        $params[] = strtolower(trim((string)$searchQuery['district']));
+        $hasSpecificFilters = true;
+    } elseif (!empty($searchQuery['region'])) {
+        $whereConditions[] = "LOWER(COALESCE(loc.region, '')) = ?";
+        $params[] = strtolower(trim((string)$searchQuery['region']));
         $hasSpecificFilters = true;
     } elseif (!empty($searchQuery['location'])) {
         // EXACT name matching only - no LIKE for strict filtering
@@ -10867,8 +11145,8 @@ function getAIChatSettings($db) {
         if (!$settings) {
             // Return defaults if no settings exist
             $defaults = [
-                'ai_provider' => 'openai',
-                'model_name' => 'gpt-4o',
+                'ai_provider' => 'glm',
+                'model_name' => 'glm-4.7-flash',
                 'openai_enabled' => 1,
                 'openai_reasoning_enabled' => 1,
                 'openai_reasoning_effort' => 'medium',
@@ -10888,8 +11166,8 @@ function getAIChatSettings($db) {
         }
         
         // Ensure all fields are properly typed
-        $settings['ai_provider'] = normalizeAIChatProvider($settings['ai_provider'] ?? 'openai');
-        $settings['model_name'] = $settings['model_name'] ?? 'gpt-4o-mini';
+        $settings['ai_provider'] = normalizeAIChatProvider($settings['ai_provider'] ?? 'glm');
+        $settings['model_name'] = $settings['model_name'] ?? 'glm-4.7-flash';
         $settings['openai_enabled'] = (int)($settings['openai_enabled'] ?? 1);
         $settings['openai_reasoning_enabled'] = (int)($settings['openai_reasoning_enabled'] ?? 1);
         $settings['openai_reasoning_effort'] = normalizeOpenAIReasoningEffort($settings['openai_reasoning_effort'] ?? 'medium', $settings['model_name']);
@@ -10913,8 +11191,8 @@ function getAIChatSettings($db) {
         error_log("Stack trace: " . $e->getTraceAsString());
         // Return safe defaults on error
         return [
-            'ai_provider' => 'openai',
-            'model_name' => 'gpt-4o',
+            'ai_provider' => 'glm',
+            'model_name' => 'glm-4.7-flash',
             'openai_enabled' => 1,
             'openai_reasoning_enabled' => 1,
             'openai_reasoning_effort' => 'medium',

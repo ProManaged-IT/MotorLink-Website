@@ -47,7 +47,7 @@ function getAIProviderEndpointAndDefaultModel($provider) {
         ],
         'glm' => [
             'url' => 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-            'default_model' => 'glm-4.7'
+            'default_model' => 'glm-4.7-flash'
         ]
     ];
 
@@ -64,9 +64,12 @@ function normalizeAILearningModelName($provider, $modelName, $fallbackModel = ''
 
     $aliases = [
         'glm' => [
-            'glm-4-flash' => 'glm-4.7',
-            'glm4flash' => 'glm-4.7',
-            'glm-flash' => 'glm-4.7',
+            'glm-4-flash' => 'glm-4.7-flash',
+            'glm4flash' => 'glm-4.7-flash',
+            'glm-flash' => 'glm-4.7-flash',
+            'glm-4-7-flash' => 'glm-4.7-flash',
+            'glm4.7flash' => 'glm-4.7-flash',
+            'glm 4.7 flash' => 'glm-4.7-flash',
             'glm5.5-turbo' => 'glm-5.5-turbo',
             'glm-5-5-turbo' => 'glm-5.5-turbo',
             'glm 5.5 turbo' => 'glm-5.5-turbo',
@@ -107,7 +110,7 @@ function getAILearningProviderFallbackModels($provider, $currentModel = '') {
         'openai' => ['gpt-4o-mini'],
         'deepseek' => ['deepseek-chat'],
         'qwen' => ['qwen-plus', 'qwen-turbo'],
-        'glm' => ['glm-4.7', 'glm-5.1']
+        'glm' => ['glm-4.7-flash', 'glm-4.7', 'glm-5.1']
     ];
 
     return array_values(array_filter($fallbacks[$provider] ?? [], function ($candidate) use ($currentModel) {
@@ -199,7 +202,7 @@ function buildAILearningRequestBody($provider, $model, $messages) {
         'max_tokens' => 2000
     ];
 
-    if ($provider === 'glm' && preg_match('/^glm-(4\.5|4\.6|4\.7|5\.1)(?:$|[-._:])/', $model) === 1) {
+    if ($provider === 'glm' && preg_match('/^glm-(?:4(?:\.7)?-)?flash(?:x)?(?:$|[-._:])/', $model) !== 1 && preg_match('/^glm-(4\.5|4\.6|4\.7|5\.1)(?:$|[-._:])/', $model) === 1) {
         $requestBody['thinking'] = ['type' => 'disabled'];
     }
 
@@ -359,8 +362,8 @@ function getAILearningSettings($db) {
                 'deepseek_enabled' => 1,
                 'qwen_enabled' => 1,
                 'glm_enabled' => 1,
-                'ai_provider' => 'auto',
-                'chat_ai_provider' => 'openai',
+                'ai_provider' => 'glm',
+                'chat_ai_provider' => 'glm',
                 'web_cache_limit' => 20,
                 'parts_cache_limit' => 500
             ];
@@ -389,8 +392,8 @@ function getAILearningSettings($db) {
             'deepseek_enabled' => 1,
             'qwen_enabled' => 1,
             'glm_enabled' => 1,
-            'ai_provider' => 'auto',
-            'chat_ai_provider' => 'openai',
+            'ai_provider' => 'glm',
+            'chat_ai_provider' => 'glm',
             'web_cache_limit' => 20,
             'parts_cache_limit' => 500
         ];
