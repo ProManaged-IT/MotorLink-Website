@@ -2888,9 +2888,19 @@ function checkAuth() {
         // Update last activity time
         $_SESSION['last_activity'] = time();
 
-        sendSuccess(['authenticated' => true, 'user' => getCurrentUser()]);
+        $currentUser = getCurrentUser();
+        $sessionFingerprint = hash('sha256', session_id() . '|' . (string)($currentUser['id'] ?? '0'));
+
+        sendSuccess([
+            'authenticated' => true,
+            'user' => $currentUser,
+            'auth_session_key' => $sessionFingerprint
+        ]);
     } else {
-        sendSuccess(['authenticated' => false]);
+        sendSuccess([
+            'authenticated' => false,
+            'auth_session_key' => null
+        ]);
     }
 }
 
@@ -2928,6 +2938,7 @@ function handleLogin($db) {
         
         if ($admin && password_verify($password, $admin['password_hash'])) {
             // Admin user found - set both regular and admin sessions
+            session_regenerate_id(true);
             setAdminSession($admin);
             clearRateLimitState($db, 'login', $loginIdentifierHash);
             
@@ -2975,6 +2986,7 @@ function handleLogin($db) {
                 return;
             }
             
+            session_regenerate_id(true);
             setUserSession($user);
             clearRateLimitState($db, 'login', $loginIdentifierHash);
             

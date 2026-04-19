@@ -20,6 +20,7 @@ class AICarChat {
         this._lastDragWasMove = false;
         this.storagePrefix = 'ai_chat';
         this.storageVersion = 2;
+        this.authSessionKey = 'session';
         this._conversationSaveTimeout = null;
         this._persistEventsBound = false;
         this.init();
@@ -27,6 +28,7 @@ class AICarChat {
 
     async init() {
         await this.checkAuth();
+        this.clearLegacyConversationState();
         this.bindEvents();
         this.setupWidgetVisibility();
         await this.restoreConversation(); // Restore chat across page navigations/reloads
@@ -45,12 +47,17 @@ class AICarChat {
 
             if (data.success && data.authenticated) {
                 this.currentUser = data.user;
+                this.authSessionKey = (typeof data.auth_session_key === 'string' && data.auth_session_key.trim() !== '')
+                    ? data.auth_session_key.trim()
+                    : 'session';
             } else {
                 this.currentUser = null;
+                this.authSessionKey = 'anonymous';
             }
         } catch (error) {
             console.error('Auth check error:', error);
             this.currentUser = null;
+            this.authSessionKey = 'anonymous';
         }
     }
 
@@ -63,7 +70,22 @@ class AICarChat {
         }
 
         const userId = this.currentUser && this.currentUser.id ? String(this.currentUser.id) : 'anonymous';
-        return `${this.storagePrefix}_${userId}_${suffix}`;
+        const authKey = this.authSessionKey ? String(this.authSessionKey) : 'session';
+        return `${this.storagePrefix}_${userId}_${authKey}_${suffix}`;
+    }
+
+    clearLegacyConversationState() {
+        const legacyKeys = [
+            'ai_chat_history',
+            'ai_chat_messages_html',
+            'ai_chat_dismissed',
+            'ai_chat_pos',
+            'ai_fab_pos'
+        ];
+
+        for (const key of legacyKeys) {
+            sessionStorage.removeItem(key);
+        }
     }
 
     getDismissedStorageKeys() {
@@ -139,7 +161,7 @@ class AICarChat {
             console.warn('Could not parse saved AI chat state:', error);
         }
 
-        return this.getLegacyConversationState();
+        return null;
     }
 
     saveConversation() {
@@ -1418,11 +1440,14 @@ class AICarChat {
         } else {
             // For persistent errors (like disabled access), add an icon and make it more prominent
             if (persistent) {
+                const title = /rate limit|quota|hourly limit|daily limit/i.test(message)
+                    ? 'Rate Limit Reached'
+                    : 'Access Restricted';
                 errorDiv.innerHTML = `
                     <div style="display: flex; align-items: flex-start; gap: 10px;">
                         <i class="fas fa-exclamation-triangle" style="color: #ff6b6b; font-size: 18px; margin-top: 2px;"></i>
                         <div style="flex: 1;">
-                            <div style="font-weight: 600; margin-bottom: 4px;">Access Restricted</div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">${title}</div>
                             <div>${this.escapeHtml(message)}</div>
                         </div>
                     </div>

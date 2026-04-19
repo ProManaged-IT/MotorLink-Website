@@ -369,10 +369,40 @@ function isAIChatProviderRateLimitResponse($httpCode, $errorMessage = '', $error
     }
 
     return strpos($haystack, 'rate limit') !== false
-        || strpos($haystack, 'quota') !== false
         || strpos($haystack, 'too many requests') !== false
         || strpos($haystack, 'insufficient_quota') !== false
-        || strpos($haystack, 'exceeded') !== false;
+        || strpos($haystack, 'quota exceeded') !== false
+        || strpos($haystack, 'exceeded your current quota') !== false
+        || strpos($haystack, 'billing_hard_limit') !== false
+        || strpos($haystack, 'requests per minute') !== false
+        || strpos($haystack, 'requests per day') !== false;
+}
+
+function isAIChatTokenLimitErrorResponse($httpCode, $errorMessage = '', $errorType = null, $errorCode = null) {
+    if ((int)$httpCode !== 400) {
+        return false;
+    }
+
+    $haystack = strtolower(trim((string)$errorMessage . ' ' . (string)$errorType . ' ' . (string)$errorCode));
+    if ($haystack === '') {
+        return false;
+    }
+
+    $hasTokenHint = strpos($haystack, 'token') !== false
+        || strpos($haystack, 'max_tokens') !== false
+        || strpos($haystack, 'context length') !== false
+        || strpos($haystack, 'context window') !== false;
+
+    if (!$hasTokenHint) {
+        return false;
+    }
+
+    return strpos($haystack, 'exceed') !== false
+        || strpos($haystack, 'too large') !== false
+        || strpos($haystack, 'too long') !== false
+        || strpos($haystack, 'must be less') !== false
+        || strpos($haystack, 'must be <=') !== false
+        || strpos($haystack, 'maximum') !== false;
 }
 
 function getAIChatProviderRetryOrder($db, $settings, $preferredProvider) {
@@ -448,6 +478,7 @@ function callAIChatProviderForMainChat($db, $user, $messages, $settings, $prefer
 
         $requestedModel = $provider === $preferredProvider ? trim((string)$configuredModelName) : '';
         $modelName = normalizeAIChatModelName($provider, $requestedModel, $providerConfig['default_model']);
+        $requestMaxTokens = $maxTokens;
 
         $attempt = 0;
         while ($attempt < 2) {
@@ -457,7 +488,7 @@ function callAIChatProviderForMainChat($db, $user, $messages, $settings, $prefer
                 'model' => $modelName,
                 'messages' => $messages,
                 'temperature' => $temperature,
-                'max_tokens' => $maxTokens,
+                'max_tokens' => $requestMaxTokens,
                 'top_p' => 0.95,
                 'frequency_penalty' => 0.1,
                 'presence_penalty' => 0.1
@@ -517,6 +548,16 @@ function callAIChatProviderForMainChat($db, $user, $messages, $settings, $prefer
                     error_log(getAIChatProviderLabel($provider) . " model '" . $modelName . "' failed in main chat. Retrying with default '" . $defaultModel . "'.");
                     $modelName = $defaultModel;
                     continue;
+                }
+
+                $isTokenLimitError = isAIChatTokenLimitErrorResponse($httpCode, $errorMessage, $errorType, $errorCode);
+                if ($isTokenLimitError && $attempt === 1 && $requestMaxTokens > 256) {
+                    $reducedMaxTokens = max(256, min(1024, (int)floor($requestMaxTokens * 0.75)));
+                    if ($reducedMaxTokens < $requestMaxTokens) {
+                        error_log(getAIChatProviderLabel($provider) . ' token limit warning in main chat. Retrying with max_tokens=' . $reducedMaxTokens . '.');
+                        $requestMaxTokens = $reducedMaxTokens;
+                        continue;
+                    }
                 }
 
                 if (isAIChatProviderRateLimitResponse($httpCode, $errorMessage, $errorType, $errorCode)) {
@@ -4842,14 +4883,12 @@ function handleCarSpecQuery($db, $message, $conversationHistory, $userContext) {
         
         if ($response) {
             sendSuccess($response);
-        } else {
-            // Provider fallback: return deterministic database/cache summary instead of hard failure.
-            $fallbackResponse = buildCarSpecFallbackResponse($effectiveMessage, $dbSpecs, $cacheResult, $alternatives);
-            sendSuccess([
-                'response' => $fallbackResponse,
-                'source' => 'database_fallback'
-            ]);
+            return;
         }
+
+        error_log('handleCarSpecQuery provider unavailable for user ' . (int)$user['id']);
+        sendError('AI service is temporarily unavailable. Please try again in a moment.', 503);
+        return;
     } catch (Exception $e) {
         error_log("handleCarSpecQuery error: " . $e->getMessage());
         sendError('I apologize, but I encountered an error while searching for car specifications. Please try again!', 500);
@@ -4878,34 +4917,6 @@ function buildPartsResearchBrief($message, $makeName, $modelName, $year = null, 
     $brief .= ". Prioritize exact fitment, OEM numbers, cross-references, compatibility notes, approximate price ranges, and installation cautions. If exact fitment depends on engine, trim, market, or VIN, say so clearly instead of inventing a single exact answer.";
 
     return $brief;
-}
-
-function buildPartInfoFallbackResponse($message, $cacheResult, $makeName, $modelName, $year, array $partInfo) {
-    $response = "I checked MotorLink parts knowledge for your request: \"{$message}\".\n\n";
-
-    if (!empty($cacheResult['found']) && !empty($cacheResult['summary'])) {
-        $response .= "From learned parts knowledge:\n" . trim((string)$cacheResult['summary']) . "\n";
-    } else {
-        $response .= "I couldn't find an exact cached part match right now.\n";
-    }
-
-    $vehicleLabel = buildVehicleReferenceLabel($makeName, $modelName, $year);
-    if ($vehicleLabel !== '') {
-        $response .= "\nVehicle context: {$vehicleLabel}\n";
-    }
-
-    if (!empty($partInfo['part_name'])) {
-        $response .= "Requested part: {$partInfo['part_name']}\n";
-    }
-    if (!empty($partInfo['part_number'])) {
-        $response .= "Part number: " . strtoupper((string)$partInfo['part_number']) . "\n";
-    }
-    if (!empty($partInfo['oem_number']) && strtoupper((string)$partInfo['oem_number']) !== strtoupper((string)($partInfo['part_number'] ?? ''))) {
-        $response .= "OEM number: " . strtoupper((string)$partInfo['oem_number']) . "\n";
-    }
-
-    $response .= "\nTo narrow it down further, share the year, make, model, engine size, trim, or VIN/chassis number so I can match the correct fitment.";
-    return $response;
 }
 
 function handlePartsQuery($db, $message, $conversationHistory, $userContext) {
@@ -5002,10 +5013,9 @@ Answer clearly, stay factual, and keep fitment guidance safe and practical.";
             return;
         }
 
-        sendSuccess([
-            'response' => buildPartInfoFallbackResponse($effectiveMessage, $cacheResult, $makeName, $modelName, $year, $partInfo),
-            'source' => 'parts_cache_fallback'
-        ]);
+        error_log('handlePartsQuery provider unavailable for user ' . (int)$user['id']);
+        sendError('AI service is temporarily unavailable. Please try again in a moment.', 503);
+        return;
     } catch (Exception $e) {
         error_log('handlePartsQuery error: ' . $e->getMessage());
         sendError('I apologize, but I encountered an error while researching part information. Please try again!', 500);
@@ -6119,16 +6129,12 @@ I'm here to help you find the perfect car! I've analyzed your requirements and s
                 $response['total_results'] = count($matchingCars);
             }
             sendSuccess($response);
-        } else {
-            // Provider fallback: still answer from deterministic DB results.
-            $fallbackResponse = buildCarRecommendationFallbackResponse($requirements, $matchingCars, $clarificationQuestions, $needsClarification, $baseUrl);
-            sendSuccess([
-                'response' => $fallbackResponse,
-                'search_results' => array_slice($matchingCars, 0, 10),
-                'total_results' => count($matchingCars),
-                'source' => 'database_fallback'
-            ]);
+            return;
         }
+
+        error_log('handleCarRecommendationQuery provider unavailable for user ' . (int)$user['id']);
+        sendError('AI service is temporarily unavailable. Please try again in a moment.', 503);
+        return;
     } catch (Exception $e) {
         error_log("handleCarRecommendationQuery error: " . $e->getMessage());
         sendError('I apologize, but I encountered an error while searching for cars. Please try again!', 500);
@@ -7308,73 +7314,6 @@ function hasMeaningfulSearchParams($params) {
     }
 
     return false;
-}
-
-function buildCarSpecFallbackResponse($message, $dbSpecs, $cacheResult, $alternatives) {
-    $response = "I checked MotorLink data for your request: \"{$message}\".\n\n";
-
-    if (!empty($dbSpecs)) {
-        $response .= "From MotorLink database:\n";
-        $count = 0;
-        foreach ($dbSpecs as $spec) {
-            if ($count >= 5) break;
-            $line = "- {$spec['make_name']} {$spec['name']}";
-            if (!empty($spec['year_start']) || !empty($spec['year_end'])) {
-                $line .= " ({$spec['year_start']}-{$spec['year_end']})";
-            }
-            if (!empty($spec['engine_size_liters'])) $line .= ", {$spec['engine_size_liters']}L";
-            if (!empty($spec['fuel_type'])) $line .= ", " . ucfirst($spec['fuel_type']);
-            if (!empty($spec['transmission_type'])) $line .= ", " . ucfirst($spec['transmission_type']);
-            $response .= $line . "\n";
-            $count++;
-        }
-    } elseif (!empty($cacheResult['found']) && !empty($cacheResult['summary'])) {
-        $response .= "From cached knowledge:\n" . trim((string)$cacheResult['summary']) . "\n";
-    } else {
-        $response .= "I couldn't find exact specs in local data right now.\n";
-    }
-
-    if (!empty($alternatives)) {
-        $response .= "\nClosest alternatives in MotorLink:\n";
-        foreach (array_slice($alternatives, 0, 5) as $alt) {
-            $response .= "- {$alt['make_name']} {$alt['model_name']} ({$alt['variant_count']} variant" . ((int)$alt['variant_count'] > 1 ? 's' : '') . ")\n";
-        }
-    }
-
-    $response .= "\nI can refine this further if you share a specific year or trim.";
-    return $response;
-}
-
-function buildCarRecommendationFallbackResponse($requirements, $matchingCars, $clarificationQuestions, $needsClarification, $baseUrl) {
-    if (!empty($matchingCars)) {
-        $count = count($matchingCars);
-        $lines = ["I found {$count} matching vehicle" . ($count > 1 ? 's' : '') . " from MotorLink listings:", ""];
-
-        foreach (array_slice($matchingCars, 0, 5) as $car) {
-            $price = isset($car['price']) ? number_format((float)$car['price']) : 'Price on request';
-            $lines[] = "- {$car['make_name']} {$car['model_name']} ({$car['year']}) - " . getChatCurrencyCode() . " {$price} [View]({$baseUrl}car.html?id={$car['id']})";
-        }
-
-        if ($count > 5) {
-            $lines[] = "";
-            $lines[] = "I can narrow this down by budget, fuel type, or transmission if you want.";
-        }
-
-        return implode("\n", $lines);
-    }
-
-    $lines = ["I couldn't find exact matches in current MotorLink listings."];
-
-    if ($needsClarification && !empty($clarificationQuestions)) {
-        $lines[] = "Please help me narrow it down:";
-        foreach (array_slice($clarificationQuestions, 0, 3) as $q) {
-            $lines[] = "- {$q}";
-        }
-    } else {
-        $lines[] = "Try adding make/model, budget, location, or fuel type.";
-    }
-
-    return implode("\n", $lines);
 }
 
 /**
