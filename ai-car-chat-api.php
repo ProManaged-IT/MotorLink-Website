@@ -354,7 +354,15 @@ function isAIChatModelErrorResponse($httpCode, $errorMessage, $errorType = null,
         return true;
     }
 
+    if (strpos($message, 'not exist') !== false
+        || strpos($message, 'does not exist') !== false
+        || strpos($message, 'unknown model') !== false
+    ) {
+        return true;
+    }
+
     return in_array($code, ['model_not_found', 'invalid_model', 'model_not_exist'], true)
+        || in_array($code, ['1211'], true)
         || in_array($type, ['invalid_model_error', 'model_error'], true);
 }
 
@@ -376,6 +384,23 @@ function isAIChatProviderRateLimitResponse($httpCode, $errorMessage = '', $error
         || strpos($haystack, 'billing_hard_limit') !== false
         || strpos($haystack, 'requests per minute') !== false
         || strpos($haystack, 'requests per day') !== false;
+}
+
+function isAIChatProviderBillingErrorResponse($httpCode, $errorMessage = '', $errorType = null, $errorCode = null) {
+    if ((int)$httpCode === 402) {
+        return true;
+    }
+
+    $haystack = strtolower(trim((string)$errorMessage . ' ' . (string)$errorType . ' ' . (string)$errorCode));
+    if ($haystack === '') {
+        return false;
+    }
+
+    return strpos($haystack, 'insufficient balance') !== false
+        || strpos($haystack, 'insufficient credit') !== false
+        || strpos($haystack, 'insufficient funds') !== false
+        || strpos($haystack, 'payment required') !== false
+        || strpos($haystack, 'no enough balance') !== false;
 }
 
 function isAIChatTokenLimitErrorResponse($httpCode, $errorMessage = '', $errorType = null, $errorCode = null) {
@@ -548,6 +573,21 @@ function callAIChatProviderForMainChat($db, $user, $messages, $settings, $prefer
                     error_log(getAIChatProviderLabel($provider) . " model '" . $modelName . "' failed in main chat. Retrying with default '" . $defaultModel . "'.");
                     $modelName = $defaultModel;
                     continue;
+                }
+
+                $isBillingError = isAIChatProviderBillingErrorResponse($httpCode, $errorMessage, $errorType, $errorCode);
+                if ($isBillingError && $attempt === 1 && $modelName !== $defaultModel) {
+                    error_log(getAIChatProviderLabel($provider) . " billing limit on model '" . $modelName . "'. Retrying with default '" . $defaultModel . "'.");
+                    $modelName = $defaultModel;
+                    continue;
+                }
+
+                if ($isBillingError) {
+                    $lastError = [
+                        'status' => 402,
+                        'message' => 'AI provider credit is insufficient for the selected model. Please top up credits or switch to a lower-cost model.'
+                    ];
+                    break;
                 }
 
                 $isTokenLimitError = isAIChatTokenLimitErrorResponse($httpCode, $errorMessage, $errorType, $errorCode);

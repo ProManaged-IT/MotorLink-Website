@@ -941,8 +941,26 @@ class AICarChat {
                     this.resetInputSendState(input, sendBtn);
                     this.pendingMessage = null;
                     this.retryCount = 0; // Reset retry count
+                } else if (response.status === 402) {
+                    // Provider billing/credit issue - don't retry automatically
+                    const billingMessage = data.message || 'AI provider credit is insufficient for the selected model. Please top up credits or switch to a lower-cost model.';
+                    this.showError(billingMessage, true);
+                    this.resetInputSendState(input, sendBtn);
+                    this.pendingMessage = null;
+                    this.retryCount = 0;
                 } else {
                     // Handle API errors with retry logic
+                    const serverMessage = typeof data.message === 'string' ? data.message : '';
+                    const isBillingLikeError = /insufficient balance|insufficient credit|insufficient funds|payment required|no enough balance/i.test(serverMessage);
+
+                    if (isBillingLikeError) {
+                        this.showError(serverMessage || 'AI provider credit is insufficient for the selected model. Please top up credits or switch to a lower-cost model.', true);
+                        this.resetInputSendState(input, sendBtn);
+                        this.pendingMessage = null;
+                        this.retryCount = 0;
+                        return;
+                    }
+
                     const isRetryableError = response.status === 503 || response.status >= 500;
                     
                     if (isRetryableError) {
