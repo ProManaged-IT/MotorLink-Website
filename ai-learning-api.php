@@ -251,10 +251,6 @@ function getAILearningProviderRetryOrder($db, array $settings, $preferredProvide
 
     $candidates = [];
     foreach (array_values(array_unique($ordered)) as $provider) {
-        if (!isAIProviderEnabledInSettings($settings, $provider)) {
-            continue;
-        }
-
         if (!getAPIKey($db, $provider)) {
             continue;
         }
@@ -291,7 +287,7 @@ function callAILearningAPIWithFallback($db, array $settings, $provider, $message
         }
 
         if (count($providerOrder) > 1) {
-            $fallbackNotes[] = getAIProviderLabel($candidateProvider) . ' is rate-limiting learning requests right now; trying the next enabled provider.';
+            $fallbackNotes[] = getAIProviderLabel($candidateProvider) . ' is rate-limiting learning requests right now; trying the next configured provider.';
         }
     }
 
@@ -342,7 +338,7 @@ function callAILearningAPIBatchWithFallback($db, array $settings, $provider, arr
         }
 
         if (count($providerOrder) > 1) {
-            $fallbackNotes[] = getAIProviderLabel($candidateProvider) . ' is rate-limiting learning requests right now; trying the next enabled provider.';
+            $fallbackNotes[] = getAIProviderLabel($candidateProvider) . ' is rate-limiting learning requests right now; trying the next configured provider.';
         }
     }
 
@@ -651,10 +647,6 @@ function getAILearningSettings($db) {
         
         if (!$settings) {
             return [
-                'openai_enabled' => 1,
-                'deepseek_enabled' => 1,
-                'qwen_enabled' => 1,
-                'glm_enabled' => 1,
                 'ai_provider' => 'glm',
                 'learning_model_name' => 'glm-4.7-flash',
                 'chat_ai_provider' => 'glm',
@@ -676,10 +668,6 @@ function getAILearningSettings($db) {
         );
         
         return [
-            'openai_enabled' => (int)($settings['openai_enabled'] ?? 1),
-            'deepseek_enabled' => (int)($settings['deepseek_enabled'] ?? 1),
-            'qwen_enabled' => (int)($settings['qwen_enabled'] ?? 1),
-            'glm_enabled' => (int)($settings['glm_enabled'] ?? 1),
             'ai_provider' => $learningProvider,
             'learning_model_name' => $learningModel,
             'chat_ai_provider' => $chatProvider,
@@ -689,10 +677,6 @@ function getAILearningSettings($db) {
     } catch (Exception $e) {
         error_log("Error getting AI learning settings: " . $e->getMessage());
         return [
-            'openai_enabled' => 1,
-            'deepseek_enabled' => 1,
-            'qwen_enabled' => 1,
-            'glm_enabled' => 1,
             'ai_provider' => 'glm',
             'learning_model_name' => 'glm-4.7-flash',
             'chat_ai_provider' => 'glm',
@@ -700,11 +684,6 @@ function getAILearningSettings($db) {
             'parts_cache_limit' => 500
         ];
     }
-}
-
-function isAIProviderEnabledInSettings(array $settings, $provider) {
-    $provider = normalizeAIProvider($provider);
-    return !empty($settings[$provider . '_enabled']);
 }
 
 /**
@@ -1221,10 +1200,6 @@ function learnWebCacheTopics($db, $count = 20, $provider = 'openai', $model = nu
         $provider = resolveEffectiveAILearningProvider($settings, $provider);
         $resolvedModel = resolveEffectiveAILearningModel($settings, $provider, $model);
         
-        if (!isAIProviderEnabledInSettings($settings, $provider)) {
-            return ['success' => false, 'message' => getAIProviderLabel($provider) . ' is disabled in settings'];
-        }
-        
         $learnedToday = getTopicsLearnedToday($db, 'ai_web_cache');
         if ($learnedToday >= $settings['web_cache_limit']) {
             return ['success' => false, 'message' => "Daily limit of {$settings['web_cache_limit']} topics already reached"];
@@ -1688,10 +1663,6 @@ function learnPartsCacheTopics($db, $count = 500, $provider = 'openai', $model =
         $provider = resolveEffectiveAILearningProvider($settings, $provider);
         $resolvedModel = resolveEffectiveAILearningModel($settings, $provider, $model);
 
-        if (!isAIProviderEnabledInSettings($settings, $provider)) {
-            return ['success' => false, 'message' => getAIProviderLabel($provider) . ' is disabled in settings'];
-        }
-
         $learnedToday = getTopicsLearnedToday($db, 'ai_parts_cache');
         if ($learnedToday >= $settings['parts_cache_limit']) {
             return ['success' => false, 'message' => "Daily limit of {$settings['parts_cache_limit']} parts already reached"];
@@ -1997,9 +1968,6 @@ function learnFromUserQuery($db, $query, $isPartsQuery = false, $provider = 'aut
 
         $settings = getAILearningSettings($db);
         $provider = resolveEffectiveAILearningProvider($settings, $provider);
-        if (!isAIProviderEnabledInSettings($settings, $provider)) {
-            return ['success' => false, 'message' => getAIProviderLabel($provider) . ' is disabled'];
-        }
         
         if ($isPartsQuery) {
             // Check daily limit

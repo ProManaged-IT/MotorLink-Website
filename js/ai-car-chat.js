@@ -230,13 +230,9 @@ class AICarChat {
                 return;
             }
 
-            const serverHistory = await this.fetchSessionHistoryFromServer();
-            if (messagesContainer && Array.isArray(serverHistory) && serverHistory.length > 0) {
-                this.conversationHistory = serverHistory;
-                this.renderConversationHistory(serverHistory);
-                this.scrollToBottom();
-                this.saveConversation();
-            }
+            // Intentionally do not auto-rehydrate persistent server history here.
+            // Active chat continuity is session-based (sessionStorage), which resets
+            // naturally on logout and should not be replayed on a fresh login.
         } catch (e) { /* ignore parse errors */ }
     }
 

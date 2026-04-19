@@ -358,6 +358,258 @@ function isAIChatModelErrorResponse($httpCode, $errorMessage, $errorType = null,
         || in_array($type, ['invalid_model_error', 'model_error'], true);
 }
 
+function isAIChatProviderRateLimitResponse($httpCode, $errorMessage = '', $errorType = null, $errorCode = null) {
+    if ((int)$httpCode === 429) {
+        return true;
+    }
+
+    $haystack = strtolower(trim((string)$errorMessage . ' ' . (string)$errorType . ' ' . (string)$errorCode));
+    if ($haystack === '') {
+        return false;
+    }
+
+    return strpos($haystack, 'rate limit') !== false
+        || strpos($haystack, 'quota') !== false
+        || strpos($haystack, 'too many requests') !== false
+        || strpos($haystack, 'insufficient_quota') !== false
+        || strpos($haystack, 'exceeded') !== false;
+}
+
+function getAIChatProviderRetryOrder($db, $settings, $preferredProvider) {
+    $preferredProvider = normalizeAIChatProvider($preferredProvider);
+
+    $ordered = [$preferredProvider, 'openai', 'deepseek', 'qwen', 'glm'];
+    $retryOrder = [];
+
+    foreach (array_values(array_unique($ordered)) as $provider) {
+        if (!isAIChatProviderEnabled($settings, $provider)) {
+            continue;
+        }
+
+        $apiKey = getAIProviderApiKeyFromDB($provider, $db);
+        if (!is_string($apiKey) || trim($apiKey) === '') {
+            continue;
+        }
+
+        $retryOrder[] = $provider;
+    }
+
+    return !empty($retryOrder) ? $retryOrder : [$preferredProvider];
+}
+
+function callAIChatProviderForMainChat($db, $user, $messages, $settings, $preferredProvider, $configuredModelName = '') {
+    if (!function_exists('curl_init')) {
+        return [
+            'success' => false,
+            'status' => 503,
+            'message' => 'AI service requires cURL extension. Please contact the administrator.'
+        ];
+    }
+
+    $preferredProvider = normalizeAIChatProvider($preferredProvider);
+    $maxTokens = (int)($settings['max_tokens_per_request'] ?? 1200);
+    $temperature = (float)($settings['temperature'] ?? 0.7);
+    $providerOrder = getAIChatProviderRetryOrder($db, $settings, $preferredProvider);
+
+    $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+    $serverAddr = $_SERVER['SERVER_ADDR'] ?? '';
+    $isLocalDev = (
+        strpos($serverHost, 'localhost') !== false ||
+        strpos($serverHost, '127.0.0.1') !== false ||
+        strpos($serverHost, '192.168.') !== false ||
+        strpos($serverHost, '10.') !== false ||
+        strpos($serverAddr, '127.0.0.1') !== false ||
+        strpos($serverAddr, '::1') !== false ||
+        (isset($_SERVER['REMOTE_ADDR']) && in_array($_SERVER['REMOTE_ADDR'], ['127.0.0.1', '::1'], true))
+    );
+    $isWindows = (PHP_OS_FAMILY === 'Windows');
+    $disableSSL = $isLocalDev || $isWindows;
+
+    $lastError = [
+        'status' => 503,
+        'message' => 'AI service is temporarily unavailable. Please try again later.'
+    ];
+
+    foreach ($providerOrder as $provider) {
+        if (!isAIChatProviderEnabled($settings, $provider)) {
+            continue;
+        }
+
+        $providerConfig = getAIChatProviderConfig($provider);
+        $providerApiKey = getAIProviderApiKeyFromDB($provider, $db);
+
+        if (empty($providerApiKey)) {
+            $lastError = [
+                'status' => 503,
+                'message' => 'AI service is not configured. Please contact support.'
+            ];
+            continue;
+        }
+
+        $requestedModel = $provider === $preferredProvider ? trim((string)$configuredModelName) : '';
+        $modelName = normalizeAIChatModelName($provider, $requestedModel, $providerConfig['default_model']);
+
+        $attempt = 0;
+        while ($attempt < 2) {
+            $attempt++;
+
+            $requestBody = [
+                'model' => $modelName,
+                'messages' => $messages,
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
+                'top_p' => 0.95,
+                'frequency_penalty' => 0.1,
+                'presence_penalty' => 0.1
+            ];
+            $requestBody = applyAIChatProviderRequestTuning($provider, $modelName, $requestBody, $settings, 'main_chat');
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $providerConfig['url']);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $providerApiKey
+            ]);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !$disableSSL);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $disableSSL ? 0 : 2);
+
+            $response = curl_exec($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            $curlErrno = (int)curl_errno($ch);
+            curl_close($ch);
+
+            if ($error || $curlErrno) {
+                $errorMsg = $error ?: curl_strerror($curlErrno);
+                error_log(getAIChatProviderLabel($provider) . ' API cURL error in main chat (Code: ' . $curlErrno . '): ' . $errorMsg);
+                $lastError = [
+                    'status' => 503,
+                    'message' => 'AI service connection error. Please check your internet connection and try again.'
+                ];
+                break;
+            }
+
+            if ($httpCode !== 200) {
+                $errorResponse = json_decode((string)$response, true);
+                $errorMessage = 'Unknown error';
+                $errorType = null;
+                $errorCode = null;
+
+                if (isset($errorResponse['error'])) {
+                    $errorObj = $errorResponse['error'];
+                    $errorMessage = $errorObj['message'] ?? 'Unknown error';
+                    $errorType = $errorObj['type'] ?? null;
+                    $errorCode = $errorObj['code'] ?? null;
+                } else {
+                    $errorMessage = substr((string)$response, 0, 500);
+                }
+
+                error_log(getAIChatProviderLabel($provider) . ' API HTTP ' . $httpCode . ' in main chat (Type: ' . (string)$errorType . ', Code: ' . (string)$errorCode . '): ' . (string)$errorMessage);
+
+                $isModelError = isAIChatModelErrorResponse($httpCode, $errorMessage, $errorType, $errorCode);
+                $defaultModel = (string)$providerConfig['default_model'];
+
+                if ($isModelError && $attempt === 1 && $modelName !== $defaultModel) {
+                    error_log(getAIChatProviderLabel($provider) . " model '" . $modelName . "' failed in main chat. Retrying with default '" . $defaultModel . "'.");
+                    $modelName = $defaultModel;
+                    continue;
+                }
+
+                if (isAIChatProviderRateLimitResponse($httpCode, $errorMessage, $errorType, $errorCode)) {
+                    $lastError = [
+                        'status' => 429,
+                        'message' => 'AI provider rate limit or quota reached. Please try again later, or contact admin to check API credits.'
+                    ];
+                    break;
+                }
+
+                if ($httpCode === 401) {
+                    $lastError = [
+                        'status' => 503,
+                        'message' => 'AI service authentication failed. Please check API key configuration.'
+                    ];
+                } elseif ($httpCode === 400) {
+                    $lastError = [
+                        'status' => 400,
+                        'message' => 'Invalid request: ' . (is_string($errorMessage) ? substr($errorMessage, 0, 200) : 'Bad request')
+                    ];
+                } elseif ($httpCode === 500 || $httpCode === 502 || $httpCode === 503) {
+                    $lastError = [
+                        'status' => 503,
+                        'message' => 'AI service is temporarily unavailable. Please try again later.'
+                    ];
+                } else {
+                    $lastError = [
+                        'status' => 503,
+                        'message' => 'AI service error (HTTP ' . $httpCode . '): ' . (is_string($errorMessage) ? substr($errorMessage, 0, 200) : 'Unknown error')
+                    ];
+                }
+
+                break;
+            }
+
+            $data = json_decode((string)$response, true);
+            if (!is_array($data) || json_last_error() !== JSON_ERROR_NONE) {
+                error_log(getAIChatProviderLabel($provider) . ' API invalid JSON response in main chat: ' . substr((string)$response, 0, 500));
+                $lastError = [
+                    'status' => 500,
+                    'message' => 'Invalid response from AI service. Please try again.'
+                ];
+                break;
+            }
+
+            if (!isset($data['choices']) || !is_array($data['choices']) || empty($data['choices'])) {
+                error_log(getAIChatProviderLabel($provider) . ' API invalid response structure in main chat: ' . json_encode($data));
+                $lastError = [
+                    'status' => 500,
+                    'message' => 'Invalid response structure from AI service. Please try again.'
+                ];
+                break;
+            }
+
+            $firstChoice = $data['choices'][0];
+            if (!isset($firstChoice['message']['content'])) {
+                error_log(getAIChatProviderLabel($provider) . ' API missing content in main chat response: ' . json_encode($firstChoice));
+                $lastError = [
+                    'status' => 500,
+                    'message' => 'No response content from AI service. Please try again.'
+                ];
+                break;
+            }
+
+            $aiResponse = trim((string)$firstChoice['message']['content']);
+            if ($aiResponse === '') {
+                error_log(getAIChatProviderLabel($provider) . ' API returned empty response content in main chat');
+                $lastError = [
+                    'status' => 500,
+                    'message' => 'Empty response from AI service. Please try again.'
+                ];
+                break;
+            }
+
+            return [
+                'success' => true,
+                'response' => $aiResponse,
+                'tokens_used' => (int)($data['usage']['total_tokens'] ?? 0),
+                'prompt_tokens' => (int)($data['usage']['prompt_tokens'] ?? 0),
+                'completion_tokens' => (int)($data['usage']['completion_tokens'] ?? 0),
+                'provider_used' => $provider,
+                'model_used' => $modelName
+            ];
+        }
+    }
+
+    return [
+        'success' => false,
+        'status' => (int)($lastError['status'] ?? 503),
+        'message' => (string)($lastError['message'] ?? 'AI service is temporarily unavailable. Please try again later.')
+    ];
+}
+
 function isAIChatProviderEnabled($settings, $provider) {
     $field = $provider . '_enabled';
     return (int)($settings[$field] ?? 1) === 1;
@@ -693,9 +945,18 @@ function handleGetAIChatSessionHistory($db) {
         sendError('Authentication required', 401);
     }
 
-    $history = loadPersistentAIChatConversationHistory($db, $user['id'], 20);
+    $mode = strtolower(trim((string)($_GET['mode'] ?? 'active')));
+    $history = [];
+
+    // By default, return only active-session history (client-managed in sessionStorage).
+    // Persistent per-user history is available only with explicit mode=persistent.
+    if ($mode === 'persistent') {
+        $history = loadPersistentAIChatConversationHistory($db, $user['id'], 20);
+    }
+
     sendSuccess([
-        'history' => $history
+        'history' => $history,
+        'mode' => $mode
     ]);
 }
 
@@ -1862,8 +2123,6 @@ function handleAICarChat($db) {
         $originalMessage = $message;
 
         ensureAIChatMemoryTables($db);
-        $persistentConversationHistory = loadPersistentAIChatConversationHistory($db, $user['id'], 12);
-        $conversationHistory = mergeAIChatConversationHistory($conversationHistory, $persistentConversationHistory, 24);
         $userMemoryRows = loadAIChatUserMemories($db, $user['id'], 10);
         $userMemorySummary = loadAIChatUserSummary($db, $user['id']);
         if ($userMemorySummary === '' && !empty($userMemoryRows)) {
@@ -1883,14 +2142,6 @@ function handleAICarChat($db) {
         // Validate message length
         if (strlen($message) > 1500) {
             sendError('Message is too long (maximum 1500 characters)', 400);
-            return;
-        }
-
-        // Always handle simple greetings deterministically so users get an immediate reply.
-        if (preg_match('/^(hi|hello|hey|yo|good morning|good afternoon|good evening)[!. ]*$/i', $message)) {
-            sendSuccess([
-                'response' => "Hi! I can help you with car listings, car hire, dealers, garages, fuel prices, and vehicle specs. What would you like to find?"
-            ]);
             return;
         }
 
@@ -1923,13 +2174,6 @@ function handleAICarChat($db) {
 
         if (!$enabled) {
             sendError('AI chat feature is currently disabled. Please contact administrator.', 503);
-            return;
-        }
-
-        // Enforce rate limits before any deterministic or provider-based response path.
-        $rateLimitCheck = checkAIChatRateLimit($db, $user['id'], $settings);
-        if (!$rateLimitCheck['allowed']) {
-            sendError($rateLimitCheck['message'], 429);
             return;
         }
 
@@ -2534,7 +2778,7 @@ REMEMBER (MANDATORY WORKFLOW):
             ['role' => 'system', 'content' => $systemPrompt]
         ];
 
-        // Add merged recent + persistent conversation history for context.
+        // Add active-session conversation history for context.
         $enhancedHistory = [];
         foreach ($conversationHistory as $historyItem) {
             if (isset($historyItem['role']) && isset($historyItem['content'])) {
@@ -2574,199 +2818,52 @@ REMEMBER (MANDATORY WORKFLOW):
         // Add current user message
         $messages[] = ['role' => 'user', 'content' => $message];
 
-        if (!isAIChatProviderEnabled($settings, $provider)) {
-            sendError(getAIChatProviderLabel($provider) . ' is currently disabled. Please contact administrator.', 503);
+        // Enforce provider rate limits only when we are about to make a provider call.
+        $rateLimitCheck = checkAIChatRateLimit($db, $user['id'], $settings);
+        if (!$rateLimitCheck['allowed']) {
+            sendError($rateLimitCheck['message'], 429);
             return;
         }
 
-        $providerApiKey = getAIProviderApiKeyFromDB($provider, $db);
-        if (empty($providerApiKey)) {
-            error_log(getAIChatProviderLabel($provider) . " API key not configured in site_settings.");
-            sendError('AI service is not configured. Please contact support.', 503);
-            return;
-        }
-
-        // Check if cURL is available
-        if (!function_exists('curl_init')) {
-            error_log("cURL extension not available for AI chat");
-            sendError('AI service requires cURL extension. Please contact the administrator.', 503);
-        }
-
-        $maxTokens = (int)($settings['max_tokens_per_request'] ?? 1200);
-        $temperature = (float)($settings['temperature'] ?? 0.7);
-        
-        // Build request body according to OpenAI API reference
-        // Use settings from database (configurable in admin panel)
-        $requestBody = [
-            'model' => $modelName, // From admin settings
-            'messages' => $messages, // Required: array of message objects
-            'temperature' => $temperature, // From admin settings (0-2, controls randomness)
-            'max_tokens' => $maxTokens, // From admin settings (1-4000, max response length)
-            'top_p' => 0.95, // Higher for more natural responses
-            'frequency_penalty' => 0.1, // Lower penalty for more natural flow
-            'presence_penalty' => 0.1 // Lower penalty for more direct answers
-        ];
-        $requestBody = applyAIChatProviderRequestTuning($provider, $modelName, $requestBody, $settings, 'main_chat');
-        
-        // Set provider auth headers
-        $headers = [
-            'Content-Type: application/json',
-            'Authorization: Bearer ' . $providerApiKey
-        ];
-        
-        // SSL verification - enable in production, disable for local dev
-        // Check multiple indicators for local development
-        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-        $serverAddr = $_SERVER['SERVER_ADDR'] ?? '';
-        $isLocalDev = (
-            strpos($serverHost, 'localhost') !== false || 
-            strpos($serverHost, '127.0.0.1') !== false ||
-            strpos($serverHost, '192.168.') !== false ||
-            strpos($serverHost, '10.') !== false ||
-            strpos($serverAddr, '127.0.0.1') !== false ||
-            strpos($serverAddr, '::1') !== false ||
-            (isset($_SERVER['REMOTE_ADDR']) && in_array($_SERVER['REMOTE_ADDR'], ['127.0.0.1', '::1']))
+        $mainChatResult = callAIChatProviderForMainChat(
+            $db,
+            $user,
+            $messages,
+            $settings,
+            $provider,
+            $settings['model_name'] ?? ''
         );
-        
-        // For Windows development environments, always disable SSL verification
-        // as they often lack proper CA certificates
-        $isWindows = (PHP_OS_FAMILY === 'Windows');
-        $disableSSL = $isLocalDev || $isWindows;
-        
-        $executeProviderRequest = function(array $payload) use ($providerConfig, $headers, $disableSSL) {
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $providerConfig['url']);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !$disableSSL);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, !$disableSSL ? 2 : 0);
 
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $error = curl_error($ch);
-            $curlErrno = curl_errno($ch);
-            curl_close($ch);
-
-            return [
-                'response' => $response,
-                'httpCode' => $httpCode,
-                'error' => $error,
-                'curlErrno' => $curlErrno
-            ];
-        };
-
-        $attempt = 0;
-        while (true) {
-            $attempt++;
-            $result = $executeProviderRequest($requestBody);
-            $response = $result['response'];
-            $httpCode = (int)$result['httpCode'];
-            $error = $result['error'];
-            $curlErrno = (int)$result['curlErrno'];
-
-            // Handle cURL errors
-            if ($error || $curlErrno) {
-                $errorMsg = $error ?: curl_strerror($curlErrno);
-                error_log(getAIChatProviderLabel($provider) . " API cURL error (Code: $curlErrno): " . $errorMsg);
-                sendError('AI service connection error. Please check your internet connection and try again.', 503);
+        if (empty($mainChatResult['success'])) {
+            $errorMessage = trim((string)($mainChatResult['message'] ?? 'AI service is temporarily unavailable. Please try again later.'));
+            $statusCode = (int)($mainChatResult['status'] ?? 503);
+            if ($statusCode < 400 || $statusCode > 599) {
+                $statusCode = 503;
             }
 
-            // Handle HTTP errors from provider
-            if ($httpCode !== 200) {
-                $errorResponse = json_decode((string)$response, true);
-
-                // Parse error response according to OpenAI-compatible format
-                $errorMessage = 'Unknown error';
-                $errorType = null;
-                $errorCode = null;
-
-                if (isset($errorResponse['error'])) {
-                    $errorObj = $errorResponse['error'];
-                    $errorMessage = $errorObj['message'] ?? 'Unknown error';
-                    $errorType = $errorObj['type'] ?? null;
-                    $errorCode = $errorObj['code'] ?? null;
-                } else {
-                    $errorMessage = substr((string)$response, 0, 500);
-                }
-
-                error_log(getAIChatProviderLabel($provider) . " API HTTP $httpCode (Type: $errorType, Code: $errorCode): $errorMessage");
-
-                $isModelError = isAIChatModelErrorResponse($httpCode, $errorMessage, $errorType, $errorCode);
-                $currentModel = (string)($requestBody['model'] ?? '');
-                $defaultModel = (string)$providerConfig['default_model'];
-
-                // Retry once with provider default model to recover from bad model settings.
-                if ($isModelError && $attempt === 1 && $currentModel !== $defaultModel) {
-                    error_log(getAIChatProviderLabel($provider) . " model '$currentModel' failed. Retrying with default '$defaultModel'.");
-                    $requestBody['model'] = $defaultModel;
-                    $modelName = $defaultModel;
-                    updateAIChatPersistenceContext(['model_name' => $modelName]);
-                    continue;
-                }
-
-                // Handle specific error codes
-                if ($httpCode === 401) {
-                    sendError('AI service authentication failed. Please check API key configuration.', 503);
-                } elseif ($httpCode === 429) {
-                    sendError('AI provider rate limit or quota reached. Please try again later, or contact admin to check API credits.', 429);
-                } elseif ($httpCode === 400) {
-                    sendError('Invalid request: ' . (is_string($errorMessage) ? substr($errorMessage, 0, 200) : 'Bad request'), 400);
-                } elseif ($httpCode === 500 || $httpCode === 502 || $httpCode === 503) {
-                    sendError('AI service is temporarily unavailable. Please try again later.', 503);
-                } else {
-                    sendError('AI service error (HTTP ' . $httpCode . '): ' . (is_string($errorMessage) ? substr($errorMessage, 0, 200) : 'Unknown error'), 503);
-                }
-            } else {
-                break;
-            }
+            sendError($errorMessage !== '' ? $errorMessage : 'AI service is temporarily unavailable. Please try again later.', $statusCode);
+            return;
         }
 
-        // Parse provider response structure
-        $data = json_decode($response, true);
-        
-        if ($data === null || json_last_error() !== JSON_ERROR_NONE) {
-            error_log(getAIChatProviderLabel($provider) . " API invalid JSON response: " . substr($response, 0, 500));
-            sendError('Invalid response from AI service. Please try again.', 500);
+        $aiResponse = trim((string)($mainChatResult['response'] ?? ''));
+        $tokensUsed = (int)($mainChatResult['tokens_used'] ?? 0);
+        $inputTokens = (int)($mainChatResult['prompt_tokens'] ?? 0);
+        $outputTokens = (int)($mainChatResult['completion_tokens'] ?? 0);
+        $providerUsed = normalizeAIChatProvider((string)($mainChatResult['provider_used'] ?? $provider), $provider);
+        $modelUsed = trim((string)($mainChatResult['model_used'] ?? $modelName));
+        if ($modelUsed === '') {
+            $modelUsed = $modelName;
         }
 
-        // Validate response structure
-        if (!isset($data['choices']) || !is_array($data['choices']) || empty($data['choices'])) {
-            error_log(getAIChatProviderLabel($provider) . " API invalid response structure: " . json_encode($data));
-            sendError('Invalid response structure from AI service. Please try again.', 500);
-        }
-        
-        $firstChoice = $data['choices'][0];
-        if (!isset($firstChoice['message']['content'])) {
-            error_log(getAIChatProviderLabel($provider) . " API missing content in response: " . json_encode($firstChoice));
-            sendError('No response content from AI service. Please try again.', 500);
-        }
-
-        $aiResponse = trim($firstChoice['message']['content']);
-        
-        // Validate response is not empty
-        if (empty($aiResponse)) {
-            error_log(getAIChatProviderLabel($provider) . " API empty response content");
-            sendError('Empty response from AI service. Please try again.', 500);
-        }
-
-        // Track usage: Get token usage from response
-        $tokensUsed = $data['usage']['total_tokens'] ?? 0;
         $responseLength = strlen($aiResponse);
-        
-        // Calculate cost estimate (gpt-4o-mini: $0.15/$0.60 per 1M tokens input/output)
-        $inputTokens = $data['usage']['prompt_tokens'] ?? 0;
-        $outputTokens = $data['usage']['completion_tokens'] ?? 0;
         $costEstimate = ($inputTokens / 1000000 * 0.15) + ($outputTokens / 1000000 * 0.60);
-        $tuningProfile = getAIChatRequestTuningProfile($provider, $modelName, $settings, 'main_chat');
-        
-        // Log usage to database
-        logAIChatUsage($db, $user['id'], $message, $responseLength, $tokensUsed, $modelName, $costEstimate, $tuningProfile);
+        $tuningProfile = getAIChatRequestTuningProfile($providerUsed, $modelUsed, $settings, 'main_chat');
+
+        logAIChatUsage($db, $user['id'], $message, $responseLength, $tokensUsed, $modelUsed, $costEstimate, $tuningProfile);
         updateAIChatPersistenceContext([
             'resolved_message' => $message,
-            'model_name' => $modelName
+            'provider' => $providerUsed,
+            'model_name' => $modelUsed
         ]);
 
         sendSuccess([
@@ -5663,100 +5760,159 @@ function queryCarSpecsFromInternet($message, $makeName, $modelName, $year = null
  * Call OpenAI API for car spec queries (extracted for reuse)
  */
 function callOpenAIAPIForSpecs($db, $user, $messages) {
-    // Get settings
     $settings = getAIChatSettings($db);
-    $provider = normalizeAIChatProvider($settings['ai_provider'] ?? 'openai');
-    $providerConfig = getAIChatProviderConfig($provider);
-
-    if (!isAIChatProviderEnabled($settings, $provider)) {
-        error_log(getAIChatProviderLabel($provider) . " is disabled in AI chat settings");
-        return null;
-    }
-
-    $providerApiKey = getAIProviderApiKeyFromDB($provider, $db);
-    if (empty($providerApiKey)) {
-        error_log(getAIChatProviderLabel($provider) . " API key not configured");
-        return null;
-    }
-
-    $modelName = trim((string)($settings['model_name'] ?? $providerConfig['default_model']));
-    if ($modelName === '') {
-        $modelName = $providerConfig['default_model'];
-    }
-    $maxTokens = (int)($settings['max_tokens_per_request'] ?? 1200);
-    $temperature = (float)($settings['temperature'] ?? 0.7);
+    $preferredProvider = normalizeAIChatProvider($settings['ai_provider'] ?? 'openai');
     $enabled = (int)($settings['enabled'] ?? 1);
-    
+
     if (!$enabled) {
         return null;
     }
-    
-    // Check rate limits
+
+    // Keep provider-backed limits in place, but avoid hard sendError exits in helper flow.
     $rateLimitCheck = checkAIChatRateLimit($db, $user['id'], $settings);
     if (!$rateLimitCheck['allowed']) {
-        sendError($rateLimitCheck['message'], 429);
+        error_log('callOpenAIAPIForSpecs rate-limited for user ' . (int)$user['id'] . ': ' . ($rateLimitCheck['message'] ?? 'limit reached'));
         return null;
     }
-    
-    // Build request
-    $requestBody = [
-        'model' => $modelName,
-        'messages' => $messages,
-        'temperature' => $temperature,
-        'max_tokens' => $maxTokens,
-        'top_p' => 0.95,
-        'frequency_penalty' => 0.1,
-        'presence_penalty' => 0.1
-    ];
-    $requestBody = applyAIChatProviderRequestTuning($provider, $modelName, $requestBody, $settings, 'specs');
-    
-    // Make API call
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $providerConfig['url']);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json',
-        'Authorization: Bearer ' . $providerApiKey
-    ]);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
-    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-    
-    // Disable SSL for Windows/localhost development
+
+    $maxTokens = (int)($settings['max_tokens_per_request'] ?? 1200);
+    $temperature = (float)($settings['temperature'] ?? 0.7);
+    $providerOrder = getAIChatProviderRetryOrder($db, $settings, $preferredProvider);
+
     $isWindows = (PHP_OS_FAMILY === 'Windows');
     $serverHost = $_SERVER['HTTP_HOST'] ?? '';
     $isLocalDev = (strpos($serverHost, 'localhost') !== false || strpos($serverHost, '127.0.0.1') !== false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !($isLocalDev || $isWindows));
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, ($isLocalDev || $isWindows) ? 0 : 2);
-    
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-    curl_close($ch);
-    
-    if ($error || $httpCode !== 200) {
-        error_log(getAIChatProviderLabel($provider) . " API error: " . ($error ?: "HTTP $httpCode"));
-        return null;
+    $disableSSL = $isLocalDev || $isWindows;
+
+    foreach ($providerOrder as $provider) {
+        if (!isAIChatProviderEnabled($settings, $provider)) {
+            continue;
+        }
+
+        $providerConfig = getAIChatProviderConfig($provider);
+        $providerApiKey = getAIProviderApiKeyFromDB($provider, $db);
+        if (empty($providerApiKey)) {
+            error_log(getAIChatProviderLabel($provider) . ' API key not configured for specs flow');
+            continue;
+        }
+
+        $configuredModel = $provider === $preferredProvider
+            ? trim((string)($settings['model_name'] ?? ''))
+            : '';
+        $modelName = normalizeAIChatModelName($provider, $configuredModel, $providerConfig['default_model']);
+
+        $attempt = 0;
+        while ($attempt < 2) {
+            $attempt++;
+
+            $requestBody = [
+                'model' => $modelName,
+                'messages' => $messages,
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
+                'top_p' => 0.95,
+                'frequency_penalty' => 0.1,
+                'presence_penalty' => 0.1
+            ];
+            $requestBody = applyAIChatProviderRequestTuning($provider, $modelName, $requestBody, $settings, 'specs');
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $providerConfig['url']);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $providerApiKey
+            ]);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !$disableSSL);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $disableSSL ? 0 : 2);
+
+            $response = curl_exec($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            $curlErrno = (int)curl_errno($ch);
+            curl_close($ch);
+
+            if ($error || $curlErrno) {
+                $errorMsg = $error ?: curl_strerror($curlErrno);
+                error_log(getAIChatProviderLabel($provider) . ' API cURL error in specs flow (Code: ' . $curlErrno . '): ' . $errorMsg);
+                break;
+            }
+
+            if ($httpCode !== 200) {
+                $errorResponse = json_decode((string)$response, true);
+                $errorMessage = 'Unknown error';
+                $errorType = null;
+                $errorCode = null;
+
+                if (isset($errorResponse['error'])) {
+                    $errorObj = $errorResponse['error'];
+                    $errorMessage = $errorObj['message'] ?? 'Unknown error';
+                    $errorType = $errorObj['type'] ?? null;
+                    $errorCode = $errorObj['code'] ?? null;
+                } else {
+                    $errorMessage = substr((string)$response, 0, 500);
+                }
+
+                $isModelError = isAIChatModelErrorResponse($httpCode, $errorMessage, $errorType, $errorCode);
+                $defaultModel = (string)$providerConfig['default_model'];
+
+                if ($isModelError && $attempt === 1 && $modelName !== $defaultModel) {
+                    error_log(getAIChatProviderLabel($provider) . " model '" . $modelName . "' failed in specs flow. Retrying with default '" . $defaultModel . "'.");
+                    $modelName = $defaultModel;
+                    continue;
+                }
+
+                if (isAIChatProviderRateLimitResponse($httpCode, $errorMessage, $errorType, $errorCode)) {
+                    error_log(getAIChatProviderLabel($provider) . ' rate-limited in specs flow. Trying fallback provider if available.');
+                    break;
+                }
+
+                error_log(getAIChatProviderLabel($provider) . ' API HTTP ' . $httpCode . ' in specs flow: ' . (string)$errorMessage);
+                break;
+            }
+
+            $responseData = json_decode((string)$response, true);
+            if (!isset($responseData['choices'][0]['message']['content'])) {
+                error_log(getAIChatProviderLabel($provider) . ' returned invalid response shape in specs flow.');
+                break;
+            }
+
+            $aiResponse = trim((string)$responseData['choices'][0]['message']['content']);
+            if ($aiResponse === '') {
+                error_log(getAIChatProviderLabel($provider) . ' returned empty content in specs flow.');
+                break;
+            }
+
+            $tokensUsed = (int)($responseData['usage']['total_tokens'] ?? 0);
+            $promptMessage = is_array($messages) && !empty($messages)
+                ? (string)($messages[count($messages) - 1]['content'] ?? '')
+                : '';
+
+            $tuningProfile = getAIChatRequestTuningProfile($provider, $modelName, $settings, 'specs');
+            logAIChatUsage(
+                $db,
+                $user['id'],
+                $promptMessage,
+                strlen($aiResponse),
+                $tokensUsed,
+                $modelName,
+                0,
+                $tuningProfile
+            );
+
+            return [
+                'response' => $aiResponse,
+                'tokens_used' => $tokensUsed,
+                'provider_used' => $provider,
+                'model_used' => $modelName
+            ];
+        }
     }
-    
-    $responseData = json_decode($response, true);
-    
-    if (!isset($responseData['choices'][0]['message']['content'])) {
-        return null;
-    }
-    
-    $aiResponse = $responseData['choices'][0]['message']['content'];
-    $tokensUsed = $responseData['usage']['total_tokens'] ?? 0;
-    
-    // Log usage
-    $tuningProfile = getAIChatRequestTuningProfile($provider, $modelName, $settings, 'specs');
-    logAIChatUsage($db, $user['id'], $messages[count($messages) - 1]['content'], 
-                   strlen($aiResponse), $tokensUsed, $modelName, 0, $tuningProfile);
-    
-    return [
-        'response' => $aiResponse,
-        'tokens_used' => $tokensUsed
-    ];
+
+    return null;
 }
 
 /**
@@ -11231,11 +11387,29 @@ function checkAIChatUserRestriction($db, $userId) {
     }
 }
 
+function ensureAIChatUsageTuningProfileColumn($db) {
+    static $ensured = false;
+
+    if ($ensured) {
+        return;
+    }
+
+    try {
+        $db->exec("ALTER TABLE ai_chat_usage ADD COLUMN tuning_profile VARCHAR(80) DEFAULT 'generic_payload' AFTER model_used");
+    } catch (Exception $e) {
+        // ignore when column already exists
+    }
+
+    $ensured = true;
+}
+
 /**
  * Check if user has exceeded rate limits
  */
 function checkAIChatRateLimit($db, $userId, $settings) {
     try {
+        ensureAIChatUsageTuningProfileColumn($db);
+
         // Ensure settings are properly typed
         $requestsPerDay = (int)($settings['requests_per_day'] ?? 50);
         $requestsPerHour = (int)($settings['requests_per_hour'] ?? 10);
@@ -11249,6 +11423,7 @@ function checkAIChatRateLimit($db, $userId, $settings) {
             FROM ai_chat_usage 
             WHERE user_id = ? 
             AND DATE(created_at) = CURDATE()
+            AND COALESCE(tuning_profile, 'generic_payload') <> 'deterministic_no_provider'
         ");
         $stmt->execute([$userId]);
         $dailyUsage = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -11266,6 +11441,7 @@ function checkAIChatRateLimit($db, $userId, $settings) {
             FROM ai_chat_usage 
             WHERE user_id = ? 
             AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+            AND COALESCE(tuning_profile, 'generic_payload') <> 'deterministic_no_provider'
         ");
         $stmt->execute([$userId]);
         $hourlyUsage = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -11277,6 +11453,7 @@ function checkAIChatRateLimit($db, $userId, $settings) {
                 FROM ai_chat_usage 
                 WHERE user_id = ? 
                 AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                AND COALESCE(tuning_profile, 'generic_payload') <> 'deterministic_no_provider'
             ");
             $stmt->execute([$userId]);
             $oldestRequest = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -11308,6 +11485,8 @@ function checkAIChatRateLimit($db, $userId, $settings) {
  */
 function getUserAIChatUsageRemaining($db, $userId) {
     try {
+        ensureAIChatUsageTuningProfileColumn($db);
+
         $settings = getAIChatSettings($db);
         $requestsPerDay = (int)($settings['requests_per_day'] ?? 50);
         
@@ -11317,6 +11496,7 @@ function getUserAIChatUsageRemaining($db, $userId) {
             FROM ai_chat_usage 
             WHERE user_id = ? 
             AND DATE(created_at) = CURDATE()
+            AND COALESCE(tuning_profile, 'generic_payload') <> 'deterministic_no_provider'
         ");
         $stmt->execute([$userId]);
         $dailyUsage = $stmt->fetch(PDO::FETCH_ASSOC);

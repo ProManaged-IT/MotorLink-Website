@@ -2092,7 +2092,7 @@
                                     <option value="glm">GLM</option>
                                     <option value="auto">Auto (Use Settings)</option>
                                 </select>
-                                <small class="form-text">Select which AI provider to use for learning. Choosing a specific provider keeps learning on that provider. "Auto" is the only mode that can fall back to another enabled provider.</small>
+                                <small class="form-text">Select which AI provider to use for learning. Choosing a specific provider keeps learning on that provider. "Auto" is the only mode that can fall back to another configured provider when the preferred one cannot be used.</small>
                             </div>
 
                             <div class="form-group">
@@ -2127,38 +2127,6 @@
                                 </select>
                                 <input type="text" id="ai-learning-custom-model-name" class="form-control" style="margin-top: 10px; display: none;" maxlength="120" placeholder="Enter the exact API model ID" oninput="updateLearningModelBadge()">
                                 <small class="form-text">Select the specific model used for learning. With a specific provider selected, this mirrors the chat model selector. When AI Provider is set to Auto, learning uses the resolved provider default model.</small>
-                            </div>
-
-                            <div class="form-group">
-                                <label>
-                                    <input type="checkbox" id="openai-enabled" checked>
-                                    Enable OpenAI for Learning
-                                </label>
-                                <small class="form-text">When enabled, OpenAI can be used for learning new topics.</small>
-                            </div>
-
-                            <div class="form-group">
-                                <label>
-                                    <input type="checkbox" id="deepseek-enabled" checked>
-                                    Enable DeepSeek for Learning
-                                </label>
-                                <small class="form-text">When enabled, DeepSeek can be used for learning new topics.</small>
-                            </div>
-
-                            <div class="form-group">
-                                <label>
-                                    <input type="checkbox" id="qwen-enabled" checked>
-                                    Enable Qwen for Learning
-                                </label>
-                                <small class="form-text">When enabled, Qwen can be used for learning new topics.</small>
-                            </div>
-
-                            <div class="form-group">
-                                <label>
-                                    <input type="checkbox" id="glm-enabled" checked>
-                                    Enable GLM for Learning
-                                </label>
-                                <small class="form-text">When enabled, GLM can be used for learning new topics.</small>
                             </div>
 
                             <div class="form-group">

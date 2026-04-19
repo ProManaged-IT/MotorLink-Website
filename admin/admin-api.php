@@ -7090,10 +7090,6 @@ function handleSaveAILearningSettings($db) {
 
         $input = json_decode(file_get_contents('php://input'), true);
         
-        $openaiEnabled = isset($input['openai_enabled']) ? (int)$input['openai_enabled'] : 1;
-        $deepseekEnabled = isset($input['deepseek_enabled']) ? (int)$input['deepseek_enabled'] : 1;
-        $qwenEnabled = isset($input['qwen_enabled']) ? (int)$input['qwen_enabled'] : 1;
-        $glmEnabled = isset($input['glm_enabled']) ? (int)$input['glm_enabled'] : 1;
         $aiProvider = isset($input['ai_provider']) ? trim($input['ai_provider']) : 'glm';
         $learningModelName = trim((string)($input['learning_model_name'] ?? ''));
         $webCacheLimit = isset($input['web_cache_limit']) ? (int)$input['web_cache_limit'] : 20;
@@ -7115,16 +7111,6 @@ function handleSaveAILearningSettings($db) {
         
         // Try to add columns if they don't exist
         try {
-            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN openai_enabled TINYINT(1) DEFAULT 1");
-        } catch (Exception $e) {
-            // Column exists, ignore
-        }
-        try {
-            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN deepseek_enabled TINYINT(1) DEFAULT 1");
-        } catch (Exception $e) {
-            // Column exists, ignore
-        }
-        try {
             $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN ai_provider VARCHAR(20) DEFAULT 'glm'");
         } catch (Exception $e) {
             // Column exists, ignore
@@ -7136,16 +7122,6 @@ function handleSaveAILearningSettings($db) {
         }
         try {
             $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN learning_model_name VARCHAR(120) DEFAULT 'glm-4.7-flash'");
-        } catch (Exception $e) {
-            // Column exists, ignore
-        }
-        try {
-            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN qwen_enabled TINYINT(1) DEFAULT 1");
-        } catch (Exception $e) {
-            // Column exists, ignore
-        }
-        try {
-            $db->exec("ALTER TABLE ai_chat_settings ADD COLUMN glm_enabled TINYINT(1) DEFAULT 1");
         } catch (Exception $e) {
             // Column exists, ignore
         }
@@ -7172,11 +7148,7 @@ function handleSaveAILearningSettings($db) {
         // Update settings
         $stmt = $db->prepare("
             UPDATE ai_chat_settings 
-            SET openai_enabled = ?,
-                deepseek_enabled = ?,
-                qwen_enabled = ?,
-                glm_enabled = ?,
-                learning_ai_provider = ?,
+            SET learning_ai_provider = ?,
                 learning_model_name = ?,
                 web_cache_daily_limit = ?,
                 parts_cache_daily_limit = ?,
@@ -7185,10 +7157,6 @@ function handleSaveAILearningSettings($db) {
             WHERE id = 1
         ");
         $stmt->execute([
-            $openaiEnabled,
-            $deepseekEnabled,
-            $qwenEnabled,
-            $glmEnabled,
             $aiProvider,
             $learningModelName !== '' ? $learningModelName : null,
             $webCacheLimit,

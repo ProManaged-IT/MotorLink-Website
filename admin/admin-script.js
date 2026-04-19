@@ -7621,18 +7621,6 @@ async function loadAILearningSettings() {
             const telemetryToday = telemetry.today || {};
             
             // Update settings
-            if (document.getElementById('openai-enabled')) {
-                document.getElementById('openai-enabled').checked = settings.openai_enabled == 1;
-            }
-            if (document.getElementById('deepseek-enabled')) {
-                document.getElementById('deepseek-enabled').checked = settings.deepseek_enabled == 1;
-            }
-            if (document.getElementById('qwen-enabled')) {
-                document.getElementById('qwen-enabled').checked = settings.qwen_enabled == 1;
-            }
-            if (document.getElementById('glm-enabled')) {
-                document.getElementById('glm-enabled').checked = settings.glm_enabled == 1;
-            }
             if (document.getElementById('ai-provider')) {
                 document.getElementById('ai-provider').value = settings.ai_provider || 'openai';
             }
@@ -7833,10 +7821,6 @@ function updateLearningModelBadge() {
  */
 async function saveAILearningSettings() {
     try {
-        const openaiEnabled = document.getElementById('openai-enabled').checked ? 1 : 0;
-        const deepseekEnabled = document.getElementById('deepseek-enabled').checked ? 1 : 0;
-        const qwenEnabled = document.getElementById('qwen-enabled').checked ? 1 : 0;
-        const glmEnabled = document.getElementById('glm-enabled').checked ? 1 : 0;
         const aiProvider = getSelectedLearningProvider();
         const learningModelName = getSelectedLearningModelName();
         const webCacheLimit = parseInt(document.getElementById('web-cache-limit-input').value);
@@ -7862,10 +7846,6 @@ async function saveAILearningSettings() {
         }
         
         const settings = {
-            openai_enabled: openaiEnabled,
-            deepseek_enabled: deepseekEnabled,
-            qwen_enabled: qwenEnabled,
-            glm_enabled: glmEnabled,
             ai_provider: aiProvider,
             learning_model_name: learningModelName,
             web_cache_limit: webCacheLimit,
