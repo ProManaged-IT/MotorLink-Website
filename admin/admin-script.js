@@ -8329,6 +8329,102 @@ if (featuredListingPriceInput && !featuredListingPriceInput.hasAttribute('data-l
 }
 debugLog('Admin dashboard initialized');
 
+// ===== CACHE MANAGEMENT =====
+
+/**
+ * Clear all server-side caches (OPcache, AI caches, sessions, old logs)
+ * and force a browser-side cache bust.
+ */
+async function clearAllCaches() {
+    const btn = document.getElementById('btn-clear-all-caches');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Clearing...'; }
+
+    try {
+        const apiUrl = getAdminAPIUrl();
+        const separator = apiUrl.includes('?') ? '&' : '?';
+        const response = await fetch(`${apiUrl}${separator}action=clear_all_caches&_t=${Date.now()}`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // Show results
+            const resultsDiv = document.getElementById('cache-clear-results');
+            const resultsList = document.getElementById('cache-results-list');
+            if (resultsDiv && resultsList) {
+                resultsList.innerHTML = '';
+                const labels = {
+                    opcache: 'PHP OPcache',
+                    ai_web_cache: 'AI Web Cache',
+                    ai_learning_cache: 'AI Learning Cache',
+                    php_sessions: 'PHP Sessions',
+                    old_logs: 'Old Log Files',
+                    cache_bust_token: 'Cache-Bust Token'
+                };
+                for (const [key, value] of Object.entries(data.results || {})) {
+                    const li = document.createElement('li');
+                    li.textContent = `${labels[key] || key}: ${value}`;
+                    resultsList.appendChild(li);
+                }
+                resultsDiv.style.display = 'block';
+            }
+
+            // Bust browser cache: unregister any service workers
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const reg of registrations) { await reg.unregister(); }
+            }
+
+            // Clear browser caches via Cache API
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                for (const name of cacheNames) { await caches.delete(name); }
+            }
+
+            admin.showAlert('success', 'All caches cleared successfully! Reload the page to see fresh content.');
+            debugLog('Cache clear results:', data.results);
+        } else {
+            admin.showAlert('error', data.message || 'Failed to clear caches');
+        }
+    } catch (error) {
+        admin.showAlert('error', 'Error clearing caches: ' + error.message);
+        debugLog('Cache clear error:', error);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-fire"></i> Clear All Caches'; }
+    }
+}
+
+/**
+ * Force a full browser cache bypass by hard-reloading the current page
+ * and clearing any service worker / Cache Storage entries.
+ */
+async function clearBrowserCache() {
+    try {
+        // Unregister service workers
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const reg of registrations) { await reg.unregister(); }
+        }
+
+        // Clear Cache Storage
+        if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            for (const name of cacheNames) { await caches.delete(name); }
+        }
+
+        admin.showAlert('info', 'Browser caches cleared. Hard-reloading page...');
+
+        // Hard reload after a brief delay so the user sees the alert
+        setTimeout(() => {
+            window.location.href = window.location.pathname + '?_cacheBust=' + Date.now();
+        }, 1200);
+    } catch (error) {
+        admin.showAlert('error', 'Error clearing browser cache: ' + error.message);
+    }
+}
+
 // ── Single active admin tab enforcement via BroadcastChannel ─────────────
 (function () {
     if (typeof BroadcastChannel === 'undefined') return; // unsupported browser

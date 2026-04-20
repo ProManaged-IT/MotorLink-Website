@@ -774,44 +774,43 @@ function initHeaderOverflowWatcher() {
         }
 
         const isForced = document.body.classList.contains(FORCE_CLASS);
-        const availableWidth = header.clientWidth;
 
         if (!isForced) {
             const requiredWidth = getRequiredWidth();
+            const availableWidth = header.clientWidth;
 
             if (requiredWidth > availableWidth) {
-                releaseThreshold = Math.max(requiredWidth + RELEASE_BUFFER, window.innerWidth + 24);
+                releaseThreshold = requiredWidth + RELEASE_BUFFER;
                 document.body.classList.add(FORCE_CLASS);
                 ensureMobileClones();
                 wasForcedMobile = true;
-            } else {
-                releaseThreshold = requiredWidth + RELEASE_BUFFER;
-                document.body.classList.remove(FORCE_CLASS);
-                if (wasForcedMobile) {
-                    removeForceMobileClones();
-                    wasForcedMobile = false;
-                }
             }
 
             return;
         }
 
-        if (window.innerWidth >= releaseThreshold) {
-            document.body.classList.remove(FORCE_CLASS);
+        /* ── Release check ──
+           Force-mobile hides nav + user-menu so we can't measure them while
+           the class is active.  Temporarily remove it, trigger a synchronous
+           reflow to measure the real desktop/tablet layout, then re-add if
+           items still overflow.  Because this all happens within a single JS
+           turn (inside a rAF callback), the browser will NOT paint the
+           intermediate state — no visual flicker.                          */
+        document.body.classList.remove(FORCE_CLASS);
+        // Force synchronous reflow so getRequiredWidth reads the true layout
+        const requiredWidth = getRequiredWidth();
+        const availableWidth = header.clientWidth;
+
+        if (requiredWidth > availableWidth) {
+            // Still overflows — stay in force-mobile (re-add same frame)
+            releaseThreshold = requiredWidth + RELEASE_BUFFER;
+            document.body.classList.add(FORCE_CLASS);
+        } else {
+            // Items fit — release force-mobile for good
             if (wasForcedMobile) {
                 removeForceMobileClones();
                 wasForcedMobile = false;
             }
-
-            requestAnimationFrame(() => {
-                const requiredWidth = getRequiredWidth();
-                if (requiredWidth > header.clientWidth) {
-                    releaseThreshold = Math.max(requiredWidth + RELEASE_BUFFER, window.innerWidth + 24);
-                    document.body.classList.add(FORCE_CLASS);
-                    ensureMobileClones();
-                    wasForcedMobile = true;
-                }
-            });
         }
     };
 

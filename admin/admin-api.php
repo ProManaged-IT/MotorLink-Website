@@ -504,7 +504,9 @@ try {
             handleManageGuestListingAuth($db);
             break;
 
-            
+        case 'clear_all_caches':
+            handleClearAllCaches($db);
+            break;
 
         default:
             echo json_encode(['success' => false, 'message' => 'Unknown action: ' . $action]);
@@ -7807,4 +7809,91 @@ function handleManageGuestListingAuth($db) {
         error_log('handleManageGuestListingAuth error: ' . $e->getMessage());
         sendAdminError('Failed to process guest listing auth action', 'GUEST_AUTH_UPDATE_FAILED', 500);
     }
+}
+
+// ===== CACHE MANAGEMENT =====
+
+/**
+ * Clear all server-side caches: OPcache, AI web/learning caches, PHP session files, temp files.
+ * Also returns cache-busting headers and a version token the frontend can append to asset URLs.
+ */
+function handleClearAllCaches($db) {
+    requireAdmin();
+
+    $results = [];
+
+    // 1. OPcache
+    if (function_exists('opcache_reset')) {
+        $results['opcache'] = opcache_reset() ? 'cleared' : 'failed';
+    } else {
+        $results['opcache'] = 'not_available';
+    }
+
+    // 2. AI web cache table (ai_web_cache)
+    try {
+        $stmt = $db->prepare("DELETE FROM ai_web_cache WHERE 1=1");
+        $stmt->execute();
+        $results['ai_web_cache'] = $stmt->rowCount() . ' rows deleted';
+    } catch (Exception $e) {
+        $results['ai_web_cache'] = 'skipped (table may not exist)';
+    }
+
+    // 3. AI learning cache table (ai_learning_cache)
+    try {
+        $stmt = $db->prepare("DELETE FROM ai_learning_cache WHERE 1=1");
+        $stmt->execute();
+        $results['ai_learning_cache'] = $stmt->rowCount() . ' rows deleted';
+    } catch (Exception $e) {
+        $results['ai_learning_cache'] = 'skipped (table may not exist)';
+    }
+
+    // 4. PHP session files
+    $sessionPath = session_save_path();
+    if (empty($sessionPath)) {
+        $sessionPath = sys_get_temp_dir();
+    }
+    $sessionCount = 0;
+    if (is_dir($sessionPath)) {
+        $files = glob($sessionPath . '/sess_*');
+        if ($files) {
+            foreach ($files as $file) {
+                if (is_file($file) && @unlink($file)) {
+                    $sessionCount++;
+                }
+            }
+        }
+    }
+    $results['php_sessions'] = $sessionCount . ' session files cleared';
+
+    // 5. Temp/log cleanup in logs/ directory (files older than 7 days)
+    $logsDir = __DIR__ . '/../logs';
+    $tempCount = 0;
+    if (is_dir($logsDir)) {
+        $cutoff = time() - (7 * 86400);
+        $logFiles = glob($logsDir . '/*.log');
+        if ($logFiles) {
+            foreach ($logFiles as $file) {
+                if (is_file($file) && filemtime($file) < $cutoff && @unlink($file)) {
+                    $tempCount++;
+                }
+            }
+        }
+    }
+    $results['old_logs'] = $tempCount . ' old log files removed';
+
+    // 6. Generate a cache-bust version token the frontend can use
+    $cacheBustToken = 'v=' . time();
+    $results['cache_bust_token'] = $cacheBustToken;
+
+    // Send no-cache headers so the response itself is not cached
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'All caches cleared successfully',
+        'results' => $results,
+        'cache_bust_token' => $cacheBustToken
+    ]);
+    exit();
 }

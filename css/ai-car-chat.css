@@ -53,13 +53,14 @@
 /* ── OPEN state — grid layout ───────────────────────────────────────────── */
 .ai-car-chat-widget:not(.minimized) {
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     grid-template-areas:
         "header"
+        "usage"
         "body";
     width: min(390px, calc(100vw - 28px));
-    height: min(640px, calc(100dvh - 100px));
-    max-height: calc(100dvh - 100px);
+    height: min(680px, calc(100dvh - 76px));
+    max-height: calc(100dvh - 76px);
     min-height: min(340px, 60dvh);
     border-radius: var(--ai-border-radius);
     border: 1px solid rgba(0, 0, 0, 0.08);
@@ -248,10 +249,17 @@
 /* Close button hidden — only chevron-down */
 .ai-chat-header-btn.ai-chat-header-close { display: none !important; }
 
-/* When minimized, hide header + body */
+/* When minimized, hide header + usage bar + body */
 .ai-car-chat-widget.minimized .ai-chat-header,
+.ai-car-chat-widget.minimized .ai-usage-bar,
 .ai-car-chat-widget.minimized .ai-chat-body {
     display: none !important;
+}
+
+.ai-usage-bar {
+    grid-area: usage;
+    flex-shrink: 0;
+    min-height: 42px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1241,9 +1249,9 @@
         left: 8px;
         bottom: max(8px, env(safe-area-inset-bottom));
         width: min(340px, calc(100vw - 16px));
-        height: min(70dvh, calc(100dvh - 86px));
-        max-height: calc(100dvh - 86px);
-        min-height: min(300px, 55dvh);
+        height: min(76dvh, calc(100dvh - 72px));
+        max-height: calc(100dvh - 72px);
+        min-height: min(360px, 62dvh);
         border-radius: 16px;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
         animation: slideInFromLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1310,8 +1318,8 @@
         left: 6px;
         bottom: max(6px, env(safe-area-inset-bottom));
         width: calc(100vw - 12px);
-        height: min(68dvh, calc(100dvh - 82px));
-        max-height: calc(100dvh - 82px);
+        height: min(74dvh, calc(100dvh - 68px));
+        max-height: calc(100dvh - 68px);
     }
 
     .ai-chat-minimized {

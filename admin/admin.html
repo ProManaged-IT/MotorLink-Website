@@ -1780,6 +1780,28 @@
                             </button>
                         </div>
 
+                        <!-- Cache Management -->
+                        <div class="settings-card">
+                            <h3><i class="fas fa-broom"></i> Cache Management</h3>
+                            <div class="form-group">
+                                <p>Clear all server and browser caches. Use this after making changes to ensure visitors see the latest content.</p>
+                            </div>
+                            <div id="cache-clear-results" style="display:none; margin-bottom:12px;">
+                                <div class="alert alert-info" style="font-size:0.92em; padding:10px 14px; border-radius:8px;">
+                                    <strong>Last clear results:</strong>
+                                    <ul id="cache-results-list" style="margin:6px 0 0 0; padding-left:18px;"></ul>
+                                </div>
+                            </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                <button class="btn btn-danger" onclick="clearAllCaches()" id="btn-clear-all-caches">
+                                    <i class="fas fa-fire"></i> Clear All Caches
+                                </button>
+                                <button class="btn btn-warning" onclick="clearBrowserCache()">
+                                    <i class="fas fa-globe"></i> Force Browser Refresh
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- Backup & Export -->
                         <div class="settings-card">
                             <h3><i class="fas fa-database"></i> Backup & Export</h3>
