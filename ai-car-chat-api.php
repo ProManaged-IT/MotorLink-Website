@@ -5310,7 +5310,14 @@ function handleCarSpecQuery($db, $message, $conversationHistory, $userContext) {
         }
         
         if ($hasCacheData && !empty($cacheResult['summary'])) {
-            $specContext .= "LEARNED SPEC KNOWLEDGE CACHE:\n{$cacheResult['summary']}\n\n";
+            // Cap the context fed to the AI: send only the first 400 chars of the cache
+            // summary as a reference snippet. The AI has DB specs already; the full
+            // buying guide adds noise and drives up token cost without improving the answer.
+            $cacheSnippet = mb_substr(trim((string)$cacheResult['summary']), 0, 400);
+            if (mb_strlen((string)$cacheResult['summary']) > 400) {
+                $cacheSnippet .= '...';
+            }
+            $specContext .= "LEARNED SPEC CACHE (excerpt):\n{$cacheSnippet}\n\n";
         } else {
             $specContext .= "LEARNED SPEC KNOWLEDGE CACHE: No direct cached spec summary matched this query.\n\n";
         }
@@ -5394,7 +5401,12 @@ function handleCarSpecQuery($db, $message, $conversationHistory, $userContext) {
 
     {$specContext}
 
-    Answer clearly, stay factual, and prefer MotorLink database data whenever it exists.";
+    RESPONSE RULES:
+    - Be concise and direct. Answer only what the user asked.
+    - Prefer MotorLink database specs over cached text when both exist.
+    - Maximum 120 words unless the user explicitly asks for a detailed breakdown.
+    - Do not reproduce full buying guides, ownership cost tables, or competitor lists unless specifically requested.
+    - Use short bullet points for specs; prose for recommendations.";
         
         // Build messages array
         $messages = [
@@ -5455,14 +5467,31 @@ function handleCarSpecQuery($db, $message, $conversationHistory, $userContext) {
         }
 
         if (!empty($cacheResult['found']) && !empty($cacheResult['summary'])) {
+            // Show only the first meaningful paragraph of the cache, not the full guide.
+            $rawSummary = trim((string)$cacheResult['summary']);
+            $firstPara = '';
+            foreach (preg_split('/\n{2,}/', $rawSummary) as $para) {
+                $para = trim((string)$para);
+                if ($para !== '' && strlen($para) >= 30) {
+                    $firstPara = $para;
+                    break;
+                }
+            }
+            if ($firstPara === '') {
+                $firstPara = mb_substr($rawSummary, 0, 280);
+            }
+            if (mb_strlen($rawSummary) > mb_strlen($firstPara) + 5) {
+                $firstPara .= ' …';
+            }
             if (!empty($dbSpecs)) {
-                $offlineLines[] = '**Additional Learned Data:**';
+                $offlineLines[] = '';
+                $offlineLines[] = '_' . $firstPara . '_';
             } else {
                 $label = $vehicleLabel !== '' ? $vehicleLabel : 'Vehicle';
-                $offlineLines[] = "### {$label} — Learned Research Cache";
+                $offlineLines[] = "### {$label}";
                 $offlineLines[] = '';
+                $offlineLines[] = $firstPara;
             }
-            $offlineLines[] = trim((string)$cacheResult['summary']);
             $offlineLines[] = '';
         }
 
