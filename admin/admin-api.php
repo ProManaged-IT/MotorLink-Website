@@ -6604,7 +6604,7 @@ function isAdminGLMThinkingCapableModel($modelName) {
         return false;
     }
 
-    return preg_match('/^glm-(4\.5|4\.6|4\.7|5\.1)(?:$|[-._:])/', $model) === 1;
+    return preg_match('/^glm-(4\.5|4\.6|4\.7|5\.1|5)(?:$|[-._:])/', $model) === 1;
 }
 
 function buildAIProviderHealthProbePayload($provider, $modelName) {
@@ -6628,7 +6628,10 @@ function buildAIProviderHealthProbePayload($provider, $modelName) {
         unset($payload['temperature']);
     }
 
-    if ($provider === 'glm' && isAdminGLMThinkingCapableModel($modelName)) {
+    if ($provider === 'glm') {
+        // Always disable thinking for health probes — flash models based on thinking-capable
+        // base models (e.g. glm-4.7-flash → GLM-4.7) can return empty content if thinking
+        // is active and consumes the token budget before the answer is produced.
         $payload['thinking'] = ['type' => 'disabled'];
     }
 

@@ -7574,7 +7574,7 @@ function isGLMThinkingCapableModel(modelName) {
         return false;
     }
 
-    return /^glm-(4\.5|4\.6|4\.7|5\.1)(?:$|[-._:])/.test(normalized);
+    return /^glm-(4\.5|4\.6|4\.7|5\.1|5)(?:$|[-._:])/.test(normalized);
 }
 
 function getCurrentAITuningProfile() {

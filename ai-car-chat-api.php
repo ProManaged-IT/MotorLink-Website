@@ -154,9 +154,12 @@ function normalizeAIChatModelName($provider, $modelName, $fallbackModel = '') {
             'glm-4-7-flash' => 'glm-4.7-flash',
             'glm4.7flash' => 'glm-4.7-flash',
             'glm 4.7 flash' => 'glm-4.7-flash',
-            'glm5.5-turbo' => 'glm-5.5-turbo',
-            'glm-5-5-turbo' => 'glm-5.5-turbo',
-            'glm 5.5 turbo' => 'glm-5.5-turbo',
+            'glm5.5-turbo' => 'glm-5-turbo',
+            'glm-5.5-turbo' => 'glm-5-turbo',
+            'glm-5-5-turbo' => 'glm-5-turbo',
+            'glm 5.5 turbo' => 'glm-5-turbo',
+            'glm5-turbo' => 'glm-5-turbo',
+            'glm 5 turbo' => 'glm-5-turbo',
             'glm5.1' => 'glm-5.1',
             'glm-5-1' => 'glm-5.1',
             'glm 5.1' => 'glm-5.1'
@@ -225,7 +228,7 @@ function isGLMThinkingCapableModel($modelName) {
         return false;
     }
 
-    return preg_match('/^glm-(4\.5|4\.6|4\.7|5\.1)(?:$|[-._:])/', $model) === 1;
+    return preg_match('/^glm-(4\.5|4\.6|4\.7|5\.1|5)(?:$|[-._:])/', $model) === 1;
 }
 
 function normalizeOpenAIReasoningEffort($effort, $modelName = '') {
