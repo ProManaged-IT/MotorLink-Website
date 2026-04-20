@@ -110,6 +110,7 @@ class AdminDashboard {
         this.isLoggedIn = false;
         this.currentSection = 'dashboard';
         this.adminData = null;
+        this.lastAuthCheckAt = 0;
         this.init();
     }
 
@@ -215,6 +216,7 @@ class AdminDashboard {
                 // Server confirms we have a valid session
                 this.isLoggedIn = true;
                 this.adminData = data.admin;
+                this.lastAuthCheckAt = Date.now();
 
                 // Sync localStorage with server session
                 localStorage.setItem('admin_token', 'server_session');
@@ -248,6 +250,43 @@ class AdminDashboard {
             localStorage.removeItem('admin_email');
             this.showLogin();
             return;
+        }
+    }
+
+    async ensureAuthenticated(force = false) {
+        if (!this.isLoggedIn) {
+            return false;
+        }
+
+        const authCheckTtlMs = 60000;
+        if (!force && this.lastAuthCheckAt && (Date.now() - this.lastAuthCheckAt) < authCheckTtlMs) {
+            return true;
+        }
+
+        try {
+            const separator = this.API_URL.includes('?') ? '&' : '?';
+            const checkAuthUrl = `${this.API_URL}${separator}action=check_admin_auth`;
+            const response = await fetch(checkAuthUrl, {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await response.json();
+
+            if (response.ok && data.success && data.authenticated) {
+                this.isLoggedIn = true;
+                this.adminData = data.admin || this.adminData;
+                this.lastAuthCheckAt = Date.now();
+                return true;
+            }
+
+            this.clearSessionAndShowLogin();
+            return false;
+        } catch (error) {
+            debugLog('Non-blocking admin auth probe failed:', error);
+            return true;
         }
     }
 
@@ -5312,6 +5351,16 @@ async filterMakesModels() {
     }
 
     async apiCall(action, method = 'GET', data = null) {
+        const authExemptActions = ['admin_login', 'admin_logout', 'check_admin_auth'];
+        if (!authExemptActions.includes(action)) {
+            const authenticated = await this.ensureAuthenticated();
+            if (!authenticated) {
+                const authError = new Error('Admin access required. Please login.');
+                authError.code = 'ADMIN_AUTH_REQUIRED';
+                throw authError;
+            }
+        }
+
         // Properly construct URL - check if base URL already has query params
         const separator = this.API_URL.includes('?') ? '&' : '?';
         let url = `${this.API_URL}${separator}action=${action}`;
@@ -5387,6 +5436,7 @@ async filterMakesModels() {
         localStorage.removeItem('admin_token');
         localStorage.removeItem('admin_name');
         localStorage.removeItem('admin_email');
+        this.lastAuthCheckAt = 0;
         
         // Show login screen
         this.showLogin();
@@ -5757,6 +5807,7 @@ async function adminLogin(event) {
             localStorage.setItem('admin_token', 'logged_in');
             localStorage.setItem('admin_name', data.admin.name);
             localStorage.setItem('admin_email', data.admin.email);
+            admin.lastAuthCheckAt = Date.now();
             
             admin.adminData = data.admin;
 
@@ -6843,7 +6894,9 @@ async function loadFuelPriceSettings(requestedDate = null) {
 
         updateFuelPriceStatusCard(response);
     } catch (error) {
-        console.error('Error loading fuel price settings:', error);
+        if (error && error.code !== 'ADMIN_AUTH_REQUIRED') {
+            console.error('Error loading fuel price settings:', error);
+        }
         updateFuelPriceStatusCard(null);
     }
 }

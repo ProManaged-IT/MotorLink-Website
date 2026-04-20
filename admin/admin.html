@@ -1862,10 +1862,10 @@
                                 <strong>Fuel price status:</strong> <span id="fuel-price-current-summary">Loading fuel prices...</span>
                             </div>
 
-                            <button class="btn btn-primary" onclick="saveFuelPriceSettings()">
+                            <button type="button" class="btn btn-primary" onclick="saveFuelPriceSettings()">
                                 <i class="fas fa-save"></i> Save Fuel Prices
                             </button>
-                            <button class="btn btn-secondary" onclick="loadFuelPriceSettings()" style="margin-left: 8px;">
+                            <button type="button" class="btn btn-secondary" onclick="loadFuelPriceSettings()" style="margin-left: 8px;">
                                 <i class="fas fa-sync"></i> Reload Fuel Prices
                             </button>
 
@@ -1907,7 +1907,7 @@
                         <!-- AI Chat Settings -->
                         <div class="settings-card">
                             <h3><i class="fas fa-robot"></i> AI Chat Settings</h3>
-                            <form id="aiChatSettingsForm" onsubmit="event.preventDefault(); saveAIChatSettings();" autocomplete="off">
+                            <div id="aiChatSettingsForm">
                             <div class="form-group">
                                 <label for="ai-chat-enabled">
                                     <input type="checkbox" id="ai-chat-enabled" checked onchange="toggleGlobalAIChat(this)">
@@ -2093,10 +2093,10 @@
                                     <p style="margin: 10px 0 0 0;"><strong>Note:</strong> All changes take effect immediately for new AI chat requests.</p>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-primary">
+                            <button type="button" class="btn btn-primary" onclick="saveAIChatSettings()">
                                 <i class="fas fa-save"></i> Save AI Chat Settings
                             </button>
-                            </form>
+                            </div>
                         </div>
 
                         <!-- AI Provider Health -->

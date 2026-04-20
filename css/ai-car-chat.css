@@ -1227,19 +1227,34 @@
         left: 16px;
     }
 
-    /* Full-screen open state */
+    /* Full-screen open state — flex column is more reliable than grid for 100dvh fill */
     .ai-car-chat-widget:not(.minimized) {
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        width: 100dvw !important;
-        height: 100dvh !important;
-        max-height: 100dvh !important;
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100svh !important;  /* small-viewport fallback */
+        height: 100dvh !important;  /* dynamic (hides/shows browser chrome) */
+        max-height: none !important;
         min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
         border-radius: 0 !important;
         box-shadow: none !important;
         z-index: 10001 !important;
+    }
+
+    /* Body fills remaining flex space */
+    .ai-car-chat-widget:not(.minimized) .ai-chat-body {
+        flex: 1 1 0 !important;
+        min-height: 0 !important;
+        height: 0 !important;   /* flex-basis:0 trick to prevent overflow */
+    }
+
+    /* Header and usage bar don't grow */
+    .ai-car-chat-widget:not(.minimized) .ai-chat-header,
+    .ai-car-chat-widget:not(.minimized) .ai-usage-bar {
+        flex-shrink: 0 !important;
+        flex-grow: 0 !important;
     }
 
     /* No drag cursor when full-screen */
@@ -1266,18 +1281,33 @@
 
     /* Full-screen open state */
     .ai-car-chat-widget:not(.minimized) {
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        width: 100dvw !important;
-        height: 100dvh !important;
-        max-height: 100dvh !important;
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100svh !important;  /* small-viewport fallback */
+        height: 100dvh !important;  /* dynamic */
+        max-height: none !important;
         min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
         border-radius: 0 !important;
         box-shadow: none !important;
         z-index: 10001 !important;
         animation: chatFullScreenIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Body fills all remaining height */
+    .ai-car-chat-widget:not(.minimized) .ai-chat-body {
+        flex: 1 1 0 !important;
+        min-height: 0 !important;
+        height: 0 !important;   /* flex-basis:0 trick */
+    }
+
+    /* Header and usage bar don't grow */
+    .ai-car-chat-widget:not(.minimized) .ai-chat-header,
+    .ai-car-chat-widget:not(.minimized) .ai-usage-bar {
+        flex-shrink: 0 !important;
+        flex-grow: 0 !important;
     }
 
     /* No drag cursor when full-screen */
@@ -1371,17 +1401,23 @@
 }
 
 /* ── Keyboard-open guard (viewport height < 380px) ─────────────────────── */
-/* When the mobile keyboard is open, dvh shrinks. Hide the usage bar so the  */
-/* textarea and messages remain visible and the input doesn't disappear.     */
 @media (max-height: 380px) {
     .ai-usage-bar {
         display: none !important;
     }
+    /* Desktop: keep grid layout intact but collapse usage row */
     .ai-car-chat-widget:not(.minimized) {
         min-height: 220px;
         grid-template-rows: auto minmax(0, 1fr);
         grid-template-areas:
             "header"
             "body";
+    }
+}
+/* Mobile/tablet keyboard-open: flex body still fills remaining height */
+@media (max-height: 380px) and (max-width: 1024px) {
+    .ai-car-chat-widget:not(.minimized) {
+        height: 100dvh !important;
+        min-height: 0 !important;
     }
 }
