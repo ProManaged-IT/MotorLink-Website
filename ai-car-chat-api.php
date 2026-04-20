@@ -2762,6 +2762,16 @@ function handleAICarChat($db) {
                     return;
                 }
 
+                if ($resolvedIntent === 'manage_listing' || $resolvedIntent === 'manage_profile') {
+                    // Route back through the action handler with the rewritten query
+                    $actionResult = detectAndHandleAction($db, $message, $user, $userContext);
+                    if ($actionResult !== false) {
+                        $logDeterministicUsage();
+                        sendSuccess($actionResult);
+                        return;
+                    }
+                }
+
                 if ($resolvedIntent === 'recommendation') {
                     $logDeterministicUsage();
                     handleCarRecommendationQuery($db, $message, $conversationHistory, $userContext);
@@ -3880,6 +3890,11 @@ function detectSearchQuery($message) {
         return false;
     }
 
+    // Exclude management intents — "change the price of my Toyota" is NOT a buying query
+    if (preg_match('/\b(?:change|update|edit|modify|set|adjust|reduce|increase)\s+(?:my|the|listing|profile)/i', $message)) {
+        return false;
+    }
+
     $messageLower = strtolower($message);
 
     // Treat concise filter-only queries like "SUV in Lilongwe" as listing searches.
@@ -4371,6 +4386,8 @@ function resolveConversationalIntentWithAI($db, $message, $conversationHistory, 
         . "- fuel\n"
         . "- spec\n"
         . "- recommendation\n"
+        . "- manage_listing (user wants to update/change/edit/delete their own listing — price, mileage, description, color, etc.)\n"
+        . "- manage_profile (user wants to update their profile — phone, address, city, name, WhatsApp, bio)\n"
         . "- general_automotive\n"
         . "- general_knowledge (for non-automotive questions like math, science, history, weather, coding, etc.)\n"
         . "- out_of_scope (ONLY for harmful/inappropriate content)\n\n"
@@ -8877,6 +8894,83 @@ function detectAndHandleAction($db, $message, $user, $userContext) {
     if (preg_match('/(?:find|search|show).*(?:my|in my).*(?:listing|car|vehicle)/i', $message)) {
         return handleUserListingSearch($db, $userId, $message);
     }
+
+    // ========================================================================
+    // AI-POWERED SMART LISTING UPDATE (catch-all for any editable field)
+    // Handles: mileage, description, color, fuel type, transmission,
+    //          condition, negotiable, seats, doors, engine, drivetrain, location, title
+    // ========================================================================
+    $managementIntent = detectManagementIntent($message);
+
+    if ($managementIntent === 'listing') {
+        $parsed = parseListingUpdateFromMessage($db, $message);
+        if ($parsed !== false && $parsed['value'] !== null) {
+            $listing = identifyListingFromMessage($db, $userId, $message);
+            if ($listing) {
+                return executeSmartListingUpdate($db, $userId, $listing, $parsed['field'], $parsed['value'], $parsed['display_field'], $parsed['raw_value'] ?? $parsed['value']);
+            } else {
+                // Cannot identify listing — show list for selection
+                $listings = getUserListingsForSelection($db, $userId);
+                if (empty($listings)) {
+                    return [
+                        'response' => "You don't have any active listings to update. [Create a listing]({$baseUrl}sell.html) first.",
+                        'action_detected' => 'update_listing',
+                        'requires_clarification' => true
+                    ];
+                }
+                $response = "I can update the **{$parsed['display_field']}** to **{$parsed['raw_value']}**, but which listing?\n\n";
+                foreach (array_slice($listings, 0, 5) as $l) {
+                    $response .= "• [{$l['make_name']} {$l['model_name']} ({$l['year']}) - " . getChatCurrencyCode($db) . " " . number_format($l['price']) . "]({$l['url']}) — **Reference #{$l['id']}**\n";
+                }
+                $response .= "\nJust say e.g. *\"update listing #{$listings[0]['id']} {$parsed['display_field']} to {$parsed['raw_value']}\"* or mention the car name.";
+                return [
+                    'response' => $response,
+                    'action_detected' => 'update_listing',
+                    'requires_clarification' => true
+                ];
+            }
+        } else {
+            // Detected listing update intent but couldn't parse the field/value
+            return [
+                'response' => "I can help you update your listing! Please specify **which field** and **what value**.\n\n"
+                    . "**Examples:**\n"
+                    . "• *\"Change mileage of my Hilux to 85000 km\"*\n"
+                    . "• *\"Update listing #42 price to 12 million\"*\n"
+                    . "• *\"Set color to silver on my Toyota\"*\n"
+                    . "• *\"Change transmission to automatic\"*\n"
+                    . "• *\"Update description to 'Well maintained, one owner'\"*\n"
+                    . "• *\"Set my car as negotiable\"*\n\n"
+                    . "**Editable fields:** price, mileage, description, title, color, fuel type, transmission, condition, negotiable, seats, doors, engine size, drivetrain, location.",
+                'action_detected' => 'update_listing',
+                'requires_clarification' => true
+            ];
+        }
+    }
+
+    if ($managementIntent === 'profile') {
+        $parsed = parseProfileUpdateFromMessage($message);
+        if ($parsed !== false && $parsed['value'] !== null) {
+            return executeSmartProfileUpdate($db, $userId, $parsed['field'], $parsed['value'], $parsed['display_field']);
+        } else {
+            $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $profileUrl = $protocol . '://' . $serverHost . '/profile.html';
+            return [
+                'response' => "I can help you update your profile! Please specify **which field** and **the new value**.\n\n"
+                    . "**Examples:**\n"
+                    . "• *\"Change my phone to +265 999 123 456\"*\n"
+                    . "• *\"Update my WhatsApp number to 0888123456\"*\n"
+                    . "• *\"Change my address to Area 47, Lilongwe\"*\n"
+                    . "• *\"Update my city to Blantyre\"*\n"
+                    . "• *\"Change my name to John Paul\"*\n"
+                    . "• *\"Update my bio to 'Car enthusiast from Lilongwe'\"*\n\n"
+                    . "**Editable fields:** name, phone, WhatsApp, address, city, bio.\n"
+                    . "Or [edit your profile directly]({$profileUrl}).",
+                'action_detected' => 'update_profile',
+                'requires_clarification' => true
+            ];
+        }
+    }
     
     // ========================================================================
     // CAR HIRE SPECIFIC OPERATIONS
@@ -11302,6 +11396,400 @@ function getUserListingsForSelection($db, $userId) {
     }
     
     return $listings;
+}
+
+// ============================================================================
+// AI-POWERED SMART LISTING & PROFILE MANAGEMENT
+// ============================================================================
+
+/**
+ * Detect if the user message is requesting a listing or profile update.
+ * Returns 'listing', 'profile', or false.
+ */
+function detectManagementIntent($message) {
+    $ml = strtolower(trim($message));
+
+    // Profile-level fields
+    if (preg_match('/(?:change|update|edit|modify|set)\s+(?:my\s+)?(?:phone|whatsapp|address|city|name|bio|profile|number|contact)/i', $ml)) {
+        return 'profile';
+    }
+
+    // Listing-level fields — broad catch: update/change/edit + listing attribute
+    if (preg_match('/(?:change|update|edit|modify|set|reduce|increase|lower|raise)\b.*\b(?:price|mileage|km|description|color|colour|location|fuel|transmission|condition|negotiable|seats|doors|engine|drivetrain|title)\b/i', $ml)) {
+        return 'listing';
+    }
+
+    // Phrased differently: "my listing description should be..." / "the mileage is now..."
+    if (preg_match('/\b(?:my listing|my car|my vehicle)\b.*\b(?:price|mileage|description|color|colour|location|fuel|transmission|condition|negotiable|seats|doors|engine)\b/i', $ml)) {
+        return 'listing';
+    }
+
+    return false;
+}
+
+/**
+ * Parse the user's natural-language update request into structured fields.
+ * Returns: ['field' => db_column, 'value' => sanitised_value, 'display_field' => human_label]
+ * or false if it cannot be parsed.
+ */
+function parseListingUpdateFromMessage($db, $message) {
+    $ml = strtolower(trim($message));
+    $result = ['field' => null, 'value' => null, 'display_field' => null, 'raw_value' => null];
+
+    // --- PRICE ---
+    if (preg_match('/\b(?:price)\b/i', $ml)) {
+        if (preg_match('/(?:to|is|at|=|now)\s*(?:mwk|kwacha|mk)?\s*(\d[\d,\.]*)\s*(?:million|m\b)?/i', $message, $m)) {
+            $price = floatval(str_replace(',', '', $m[1]));
+            if (preg_match('/million|(?<!\w)m\b/i', $m[0])) $price *= 1000000;
+            $result = ['field' => 'price', 'value' => $price, 'display_field' => 'Price', 'raw_value' => getChatCurrencyCode($db) . ' ' . number_format($price)];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- MILEAGE ---
+    if (preg_match('/\b(?:mileage|km|kilometers|odometer)\b/i', $ml)) {
+        if (preg_match('/(?:to|is|at|=|now)\s*(\d[\d,\.]*)\s*(?:km|kilometers?)?/i', $message, $m)) {
+            $mileage = (int)str_replace(',', '', $m[1]);
+            $result = ['field' => 'mileage', 'value' => $mileage, 'display_field' => 'Mileage', 'raw_value' => number_format($mileage) . ' km'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- DESCRIPTION ---
+    if (preg_match('/\b(?:description)\b/i', $ml)) {
+        if (preg_match('/description\s+(?:to|is|should be|as)\s+["\']?(.{10,500})["\']?\s*$/i', $message, $m)) {
+            $desc = trim($m[1]);
+            $result = ['field' => 'description', 'value' => $desc, 'display_field' => 'Description', 'raw_value' => mb_substr($desc, 0, 80) . (mb_strlen($desc) > 80 ? '…' : '')];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- TITLE ---
+    if (preg_match('/\b(?:title|headline)\b/i', $ml)) {
+        if (preg_match('/(?:title|headline)\s+(?:to|is|should be|as)\s+["\']?(.{5,200})["\']?\s*$/i', $message, $m)) {
+            $title = trim($m[1]);
+            $result = ['field' => 'title', 'value' => $title, 'display_field' => 'Title', 'raw_value' => $title];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- EXTERIOR COLOR ---
+    if (preg_match('/\b(?:colou?r)\b/i', $ml)) {
+        $colors = ['red','white','black','blue','silver','gray','grey','green','yellow','orange','brown','beige','gold','maroon','burgundy','navy','champagne','bronze','pearl','ivory','cream'];
+        if (preg_match('/(?:to|is|now|=)\s+(\w+)/i', $message, $m)) {
+            $val = strtolower(trim($m[1]));
+            if (in_array($val, $colors)) {
+                $result = ['field' => 'exterior_color', 'value' => ucfirst($val), 'display_field' => 'Exterior Color', 'raw_value' => ucfirst($val)];
+            }
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- FUEL TYPE ---
+    if (preg_match('/\b(?:fuel)\b/i', $ml)) {
+        $fuels = ['petrol' => 'petrol', 'gasoline' => 'petrol', 'diesel' => 'diesel', 'hybrid' => 'hybrid', 'electric' => 'electric'];
+        foreach ($fuels as $key => $dbVal) {
+            if (strpos($ml, $key) !== false) {
+                $result = ['field' => 'fuel_type', 'value' => $dbVal, 'display_field' => 'Fuel Type', 'raw_value' => ucfirst($dbVal)];
+                break;
+            }
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- TRANSMISSION ---
+    if (preg_match('/\b(?:transmission|gearbox|gear)\b/i', $ml)) {
+        if (preg_match('/\b(automatic|auto|manual)\b/i', $ml, $m)) {
+            $val = strtolower($m[1]) === 'auto' ? 'automatic' : strtolower($m[1]);
+            $result = ['field' => 'transmission', 'value' => $val, 'display_field' => 'Transmission', 'raw_value' => ucfirst($val)];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- CONDITION ---
+    if (preg_match('/\b(?:condition)\b/i', $ml)) {
+        if (preg_match('/\b(new|used|certified|salvage|reconditioned)\b/i', $ml, $m)) {
+            $val = strtolower($m[1]);
+            $result = ['field' => 'condition_type', 'value' => $val, 'display_field' => 'Condition', 'raw_value' => ucfirst($val)];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- NEGOTIABLE ---
+    if (preg_match('/\b(?:negotiable)\b/i', $ml)) {
+        $val = preg_match('/\b(not|non|no)\s*negotiable/i', $ml) ? 0 : 1;
+        $result = ['field' => 'negotiable', 'value' => $val, 'display_field' => 'Negotiable', 'raw_value' => $val ? 'Yes' : 'No'];
+        return $result;
+    }
+
+    // --- SEATS ---
+    if (preg_match('/\b(?:seats?|seating|seater)\b/i', $ml)) {
+        if (preg_match('/(\d+)\s*(?:seats?|seater)/i', $message, $m)) {
+            $result = ['field' => 'seats', 'value' => (int)$m[1], 'display_field' => 'Seats', 'raw_value' => $m[1] . ' seats'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- DOORS ---
+    if (preg_match('/\b(?:doors?)\b/i', $ml)) {
+        if (preg_match('/(\d+)\s*(?:doors?)/i', $message, $m)) {
+            $result = ['field' => 'doors', 'value' => (int)$m[1], 'display_field' => 'Doors', 'raw_value' => $m[1] . ' doors'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- ENGINE SIZE ---
+    if (preg_match('/\b(?:engine)\b/i', $ml)) {
+        if (preg_match('/(\d+(?:\.\d+)?)\s*(?:l|liter|litre|cc)/i', $message, $m)) {
+            $result = ['field' => 'engine_size', 'value' => $m[1], 'display_field' => 'Engine Size', 'raw_value' => $m[1] . 'L'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- DRIVETRAIN ---
+    if (preg_match('/\b(?:drivetrain|drive\s*type)\b/i', $ml)) {
+        if (preg_match('/\b(fwd|rwd|awd|4wd|4x4|front.wheel|rear.wheel|all.wheel|four.wheel)\b/i', $ml, $m)) {
+            $map = ['front wheel' => 'FWD', 'rear wheel' => 'RWD', 'all wheel' => 'AWD', 'four wheel' => '4WD'];
+            $val = strtoupper($m[1]);
+            foreach ($map as $k => $v) { if (strpos(strtolower($m[1]), $k) !== false) $val = $v; }
+            $result = ['field' => 'drivetrain', 'value' => $val, 'display_field' => 'Drivetrain', 'raw_value' => $val];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- LOCATION ---
+    if (preg_match('/\b(?:location|city|district|area)\b/i', $ml)) {
+        if (preg_match('/(?:to|is|in|at|=|now)\s+([A-Z][a-zA-Z\s\-]{2,30})/i', $message, $m)) {
+            $locName = trim($m[1]);
+            try {
+                $locStmt = $db->prepare("SELECT id, name FROM locations WHERE LOWER(name) LIKE ? LIMIT 1");
+                $locStmt->execute(['%' . strtolower($locName) . '%']);
+                $loc = $locStmt->fetch(PDO::FETCH_ASSOC);
+                if ($loc) {
+                    $result = ['field' => 'location_id', 'value' => (int)$loc['id'], 'display_field' => 'Location', 'raw_value' => $loc['name']];
+                }
+            } catch (Exception $e) {
+                error_log("parseListingUpdateFromMessage location error: " . $e->getMessage());
+            }
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    return false;
+}
+
+/**
+ * Parse profile update fields from user message.
+ * Returns: ['field' => db_column, 'value' => sanitised, 'display_field' => label] or false.
+ */
+function parseProfileUpdateFromMessage($message) {
+    $ml = strtolower(trim($message));
+    $result = ['field' => null, 'value' => null, 'display_field' => null];
+
+    // --- PHONE ---
+    if (preg_match('/\b(?:phone|phone\s*number|mobile|cell)\b/i', $ml) && !preg_match('/whatsapp/i', $ml)) {
+        if (preg_match('/(?:to|is|=|now)\s*["\']?(\+?\d[\d\s\-]{5,18})["\']?/i', $message, $m)) {
+            $phone = preg_replace('/[\s\-]/', '', trim($m[1]));
+            $result = ['field' => 'phone', 'value' => $phone, 'display_field' => 'Phone'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- WHATSAPP ---
+    if (preg_match('/\b(?:whatsapp|whats\s*app)\b/i', $ml)) {
+        if (preg_match('/(?:to|is|=|now)\s*["\']?(\+?\d[\d\s\-]{5,18})["\']?/i', $message, $m)) {
+            $phone = preg_replace('/[\s\-]/', '', trim($m[1]));
+            $result = ['field' => 'whatsapp', 'value' => $phone, 'display_field' => 'WhatsApp'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- NAME ---
+    if (preg_match('/\b(?:my name|full\s*name|display\s*name)\b/i', $ml)) {
+        if (preg_match('/(?:to|is|=|now)\s+["\']?([A-Z][a-zA-Z\s\.\-]{2,60})["\']?/i', $message, $m)) {
+            $result = ['field' => 'full_name', 'value' => trim($m[1]), 'display_field' => 'Full Name'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- ADDRESS ---
+    if (preg_match('/\b(?:address)\b/i', $ml) && !preg_match('/\b(email|e-mail)\b/i', $ml)) {
+        if (preg_match('/address\s+(?:to|is|=|now)\s+["\']?(.{5,200})["\']?\s*$/i', $message, $m)) {
+            $result = ['field' => 'address', 'value' => trim($m[1]), 'display_field' => 'Address'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- CITY ---
+    if (preg_match('/\b(?:city|town)\b/i', $ml) && preg_match('/(?:profile|my)/i', $ml)) {
+        if (preg_match('/(?:to|is|=|now)\s+["\']?([A-Z][a-zA-Z\s\-]{2,40})["\']?/i', $message, $m)) {
+            $result = ['field' => 'city', 'value' => trim($m[1]), 'display_field' => 'City'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    // --- BIO ---
+    if (preg_match('/\b(?:bio|about\s*me)\b/i', $ml)) {
+        if (preg_match('/(?:to|is|should be|=|now)\s+["\']?(.{10,500})["\']?\s*$/i', $message, $m)) {
+            $result = ['field' => 'bio', 'value' => trim($m[1]), 'display_field' => 'Bio'];
+        }
+        return $result['value'] !== null ? $result : false;
+    }
+
+    return false;
+}
+
+/**
+ * Execute a smart listing field update.
+ * Validates ownership, field bounds, then updates.
+ */
+function executeSmartListingUpdate($db, $userId, $listing, $field, $value, $displayField, $rawValue) {
+    // Immutable fields (make, model, year cannot be changed — fraud prevention)
+    $immutableFields = ['make_id', 'model_id', 'year'];
+    if (in_array($field, $immutableFields)) {
+        return [
+            'response' => "❌ Sorry, you cannot change the **{$displayField}** of a listing. This is to prevent listing fraud. If you made a mistake, please delete this listing and create a new one.",
+            'action_detected' => 'update_listing',
+            'success' => false
+        ];
+    }
+
+    $allowedFields = [
+        'title', 'description', 'price', 'negotiable', 'mileage',
+        'fuel_type', 'transmission', 'condition_type', 'exterior_color',
+        'interior_color', 'engine_size', 'doors', 'seats', 'drivetrain',
+        'location_id', 'listing_type'
+    ];
+
+    if (!in_array($field, $allowedFields)) {
+        return [
+            'response' => "❌ The field **{$displayField}** cannot be updated through chat. Please use the [edit listing page](car.html?id={$listing['id']}&edit=1).",
+            'action_detected' => 'update_listing',
+            'success' => false
+        ];
+    }
+
+    // Price-specific validation: max ±50% change
+    if ($field === 'price') {
+        $originalPrice = floatval($listing['price']);
+        $newPrice = floatval($value);
+        if ($originalPrice > 0) {
+            $changePercent = abs(($newPrice - $originalPrice) / $originalPrice * 100);
+            if ($changePercent > 50) {
+                return [
+                    'response' => "❌ Price change too large. You can only change price by up to 50%. Current: " . getChatCurrencyCode($db) . " " . number_format($originalPrice) . ", Requested: " . getChatCurrencyCode($db) . " " . number_format($newPrice) . ". If you need a larger change, please contact support.",
+                    'action_detected' => 'update_listing',
+                    'success' => false
+                ];
+            }
+        }
+    }
+
+    // Mileage-specific validation: max ±50,000 km change
+    if ($field === 'mileage' && !empty($listing['mileage'])) {
+        $originalMileage = intval($listing['mileage']);
+        $newMileage = intval($value);
+        if (abs($newMileage - $originalMileage) > 50000) {
+            return [
+                'response' => "❌ Mileage change too large. Maximum change is ±50,000 km. Current: " . number_format($originalMileage) . " km, Requested: " . number_format($newMileage) . " km.",
+                'action_detected' => 'update_listing',
+                'success' => false
+            ];
+        }
+    }
+
+    try {
+        $stmt = $db->prepare("UPDATE car_listings SET {$field} = ?, updated_at = NOW() WHERE id = ? AND user_id = ?");
+        $stmt->execute([$value, $listing['id'], $userId]);
+
+        if ($stmt->rowCount() === 0) {
+            return [
+                'response' => "❌ Update failed — no changes were applied. Please verify you own listing **#{$listing['id']}** and try again.",
+                'action_detected' => 'update_listing',
+                'success' => false
+            ];
+        }
+
+        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $baseUrl = $protocol . '://' . $serverHost . '/';
+        $listingUrl = $baseUrl . "car.html?id=" . $listing['id'];
+
+        return [
+            'response' => "✅ **{$displayField}** updated successfully!\n\n"
+                . "**Listing:** {$listing['make_name']} {$listing['model_name']} ({$listing['year']}) — Reference #{$listing['id']}\n"
+                . "**New {$displayField}:** {$rawValue}\n\n"
+                . "[View listing]({$listingUrl})",
+            'action_detected' => 'update_listing',
+            'success' => true,
+            'listing_id' => $listing['id'],
+            'field' => $field,
+            'new_value' => $value
+        ];
+    } catch (Exception $e) {
+        error_log("executeSmartListingUpdate error: " . $e->getMessage());
+        return [
+            'response' => "❌ Database error while updating **{$displayField}**. Please try again or contact support.",
+            'action_detected' => 'update_listing',
+            'success' => false
+        ];
+    }
+}
+
+/**
+ * Execute a smart profile field update.
+ */
+function executeSmartProfileUpdate($db, $userId, $field, $value, $displayField) {
+    $allowedFields = ['full_name', 'phone', 'whatsapp', 'city', 'address', 'bio'];
+
+    if (!in_array($field, $allowedFields)) {
+        return [
+            'response' => "❌ The field **{$displayField}** cannot be updated through chat. Please use your [profile settings](profile.html).",
+            'action_detected' => 'update_profile',
+            'success' => false
+        ];
+    }
+
+    // full_name is required and cannot be blank
+    if ($field === 'full_name' && trim((string)$value) === '') {
+        return [
+            'response' => "❌ Full name cannot be empty.",
+            'action_detected' => 'update_profile',
+            'success' => false
+        ];
+    }
+
+    try {
+        $stmt = $db->prepare("UPDATE users SET {$field} = ?, updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$value, $userId]);
+
+        if ($stmt->rowCount() === 0) {
+            return [
+                'response' => "❌ Profile update failed. Please try again.",
+                'action_detected' => 'update_profile',
+                'success' => false
+            ];
+        }
+
+        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $baseUrl = $protocol . '://' . $serverHost . '/';
+
+        return [
+            'response' => "✅ Your **{$displayField}** has been updated to: **{$value}**\n\n[View profile]({$baseUrl}profile.html)",
+            'action_detected' => 'update_profile',
+            'success' => true,
+            'field' => $field,
+            'new_value' => $value
+        ];
+    } catch (Exception $e) {
+        error_log("executeSmartProfileUpdate error: " . $e->getMessage());
+        return [
+            'response' => "❌ Database error while updating your profile. Please try again or contact support.",
+            'action_detected' => 'update_profile',
+            'success' => false
+        ];
+    }
 }
 
 /**
