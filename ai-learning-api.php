@@ -613,6 +613,8 @@ function executeAILearningAPIRequest($provider, $url, $apiKey, $messages, $model
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
     curl_setopt($ch, CURLOPT_TIMEOUT, 90);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_ENCODING, '');
+    curl_setopt($ch, CURLOPT_TCP_NODELAY, true);
 
     $isLocalDev = (strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false ||
                    strpos($_SERVER['HTTP_HOST'] ?? '', '127.0.0.1') !== false);
@@ -767,6 +769,8 @@ function callAILearningAPIBatch($db, $provider, $requests, $model = null) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
             curl_setopt($ch, CURLOPT_TIMEOUT, 60);
             curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_ENCODING, '');
+            curl_setopt($ch, CURLOPT_TCP_NODELAY, true);
 
             $isLocalDev = (strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false || 
                            strpos($_SERVER['HTTP_HOST'] ?? '', '127.0.0.1') !== false);

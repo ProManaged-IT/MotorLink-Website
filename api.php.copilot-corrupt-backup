@@ -15,6 +15,7 @@ ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/api_errors.log');
 
 require_once __DIR__ . '/includes/runtime-site-config.php';
+require_once __DIR__ . '/includes/fuel-price-runtime.php';
 
 // Headers for CORS and JSON responses
 header('Content-Type: application/json; charset=utf-8');
@@ -69,18 +70,12 @@ if (!$isAllowedOrigin && $origin) {
                 break;
             }
         } else {
-            // Domain pattern - match host only
-            if (preg_match($pattern, $originHost)) {
-                $isAllowedOrigin = true;
-                break;
-            }
-        }
-    }
-}
+            $snapshot = motorlink_resolve_fuel_price_snapshot($db);
 
-if ($isAllowedOrigin && $origin) {
-    header("Access-Control-Allow-Origin: $origin");
-    header('Access-Control-Allow-Credentials: true');
+            sendSuccess([
+                'prices' => $snapshot['prices'] ?? [],
+                'meta' => motorlink_extract_public_fuel_price_meta($snapshot)
+            ]);
 } else if ($origin) {
     // For unknown origins with credentials, reject with specific origin but no credentials
     // This prevents CORS errors while maintaining security
@@ -137,80 +132,102 @@ if (session_status() == PHP_SESSION_NONE) {
         'httponly' => true,
         'samesite' => 'Lax' // Allow cross-site requests
     ]);
-    session_start();
-    
-    // Regenerate session ID periodically for security
-    if (!isset($_SESSION['created'])) {
-        $_SESSION['created'] = time();
-    } else if (time() - $_SESSION['created'] > 1800) {
-        // Regenerate session ID every 30 minutes
-        session_regenerate_id(true);
-        $_SESSION['created'] = time();
-    }
-}
-
-/**
- * Database Connection Singleton Class
- */
-class Database {
-    private static $instance = null;
-    private $connection;
-    
-    private function __construct() {
+    function calculateJourney($db) {
         try {
-            // Increase timeout for remote connections during UAT
-            $options = [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-                PDO::ATTR_TIMEOUT => 10 // 10 second timeout for remote connections
-            ];
+            $user = getCurrentUser(true);
+            $input = json_decode(file_get_contents('php://input'), true);
 
-            $this->connection = new PDO(
-                "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-                DB_USER,
-                DB_PASS,
-                $options
-            );
-        } catch(PDOException $e) {
-            error_log("Database connection failed: " . $e->getMessage());
-            throw new Exception("Database connection failed: " . $e->getMessage());
+            if (empty($input['origin']) || empty($input['destination'])) {
+                sendError('Origin and destination are required', 400);
+                return;
+            }
+
+            $distanceKm = (float)($input['distance_km'] ?? 0);
+            $fuelType = $input['fuel_type'] ?? 'petrol';
+            $fuelConsumption = !empty($input['fuel_consumption']) ? (float)$input['fuel_consumption'] : null;
+
+            if ($distanceKm <= 0) {
+                sendError('Distance must be greater than 0', 400);
+                return;
+            }
+
+            if (empty($fuelConsumption)) {
+                $fuelConsumption = $fuelType === 'diesel' ? 8.5 : 9.5;
+            }
+
+            $snapshot = motorlink_resolve_fuel_price_snapshot($db);
+            $priceRow = motorlink_get_fuel_price_row($snapshot, $fuelType);
+            $fuelPriceMeta = motorlink_extract_public_fuel_price_meta($snapshot);
+
+            $fallbackPrimaryPrice = $fuelType === 'diesel' ? 1950.00 : 1850.00;
+            $fuelPricePerLiter = $priceRow && $priceRow['price_per_liter_mwk'] !== null
+                ? (float)$priceRow['price_per_liter_mwk']
+                : $fallbackPrimaryPrice;
+
+            $displayPricePerLiter = $priceRow && isset($priceRow['display_price_per_liter']) && $priceRow['display_price_per_liter'] !== null
+                ? (float)$priceRow['display_price_per_liter']
+                : $fuelPricePerLiter;
+
+            $displayCurrencyCode = $priceRow['display_currency_code'] ?? ($fuelPriceMeta['display_currency_code'] ?? 'MWK');
+            $displayCurrencySymbol = $priceRow['display_currency_symbol'] ?? ($fuelPriceMeta['display_currency_symbol'] ?? $displayCurrencyCode);
+
+            if (!$priceRow) {
+                $runtimeSettings = motorlink_get_fuel_price_runtime_settings($db);
+                $displayPricePerLiter = $fuelPricePerLiter;
+                $displayCurrencyCode = $runtimeSettings['primary_currency_code'] ?? 'MWK';
+                $displayCurrencySymbol = $runtimeSettings['primary_currency_symbol'] ?? $displayCurrencyCode;
+                $fuelPriceMeta['provider_status'] = 'default_fallback';
+                $fuelPriceMeta['source_label'] = 'Built-in fallback estimate';
+                $fuelPriceMeta['fallback_used'] = true;
+                $fuelPriceMeta['public_notice'] = 'No live or saved fuel prices were available, so the built-in fallback estimate was used for this calculation.';
+            }
+
+            $fuelNeededLiters = ($distanceKm / 100) * $fuelConsumption;
+            $fuelCostMWK = $fuelNeededLiters * $fuelPricePerLiter;
+            $fuelCostDisplay = $fuelNeededLiters * $displayPricePerLiter;
+
+            $journeyId = null;
+            if (!empty($input['save_to_history'])) {
+                $stmt = $db->prepare("\n                INSERT INTO journey_history (\n                    user_id, origin_location, origin_lat, origin_lng,\n                    destination_location, destination_lat, destination_lng,\n                    distance_km, duration_minutes, fuel_type, fuel_needed_liters,\n                    fuel_cost_mwk, fuel_price_per_liter, fuel_consumption_used, notes\n                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ");
+                $stmt->execute([
+                    $user['id'],
+                    $input['origin'],
+                    !empty($input['origin_lat']) ? (float)$input['origin_lat'] : null,
+                    !empty($input['origin_lng']) ? (float)$input['origin_lng'] : null,
+                    $input['destination'],
+                    !empty($input['destination_lat']) ? (float)$input['destination_lat'] : null,
+                    !empty($input['destination_lng']) ? (float)$input['destination_lng'] : null,
+                    $distanceKm,
+                    !empty($input['duration_minutes']) ? (int)$input['duration_minutes'] : null,
+                    $fuelType,
+                    $fuelNeededLiters,
+                    $fuelCostMWK,
+                    $fuelPricePerLiter,
+                    $fuelConsumption,
+                    $input['notes'] ?? null
+                ]);
+                $journeyId = $db->lastInsertId();
+            }
+
+            sendSuccess([
+                'distance_km' => round($distanceKm, 2),
+                'fuel_type' => $fuelType,
+                'fuel_consumption_liters_per_100km' => round($fuelConsumption, 2),
+                'fuel_needed_liters' => round($fuelNeededLiters, 2),
+                'fuel_price_per_liter_mwk' => round($fuelPricePerLiter, 2),
+                'fuel_cost_mwk' => round($fuelCostMWK, 2),
+                'fuel_price_per_liter_display' => round($displayPricePerLiter, $displayCurrencyCode === 'USD' ? 4 : 2),
+                'fuel_cost_display' => round($fuelCostDisplay, $displayCurrencyCode === 'USD' ? 4 : 2),
+                'display_currency_code' => $displayCurrencyCode,
+                'display_currency_symbol' => $displayCurrencySymbol,
+                'fuel_price_meta' => $fuelPriceMeta,
+                'journey_id' => $journeyId
+            ]);
+        } catch (Exception $e) {
+            error_log("calculateJourney error: " . $e->getMessage());
+            sendError('Failed to calculate journey: ' . $e->getMessage(), 500);
         }
     }
-    
-    public static function getInstance() {
-        if (self::$instance === null) {
-            self::$instance = new Database();
-        }
-        return self::$instance;
-    }
-    
-    public function getConnection() {
-        return $this->connection;
-    }
-}
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * Send error response and exit
- */
-function sendError($message, $code = 500) {
-    http_response_code($code);
-    echo json_encode(['success' => false, 'message' => $message, 'timestamp' => date('Y-m-d H:i:s')]);
-    exit;
-}
-
-/**
- * Send error response with stable client-friendly error code and exit
- */
-function sendErrorWithCode($message, $errorCode, $code = 500) {
-    http_response_code($code);
-    echo json_encode([
-        'success' => false,
-        'message' => $message,
         'code' => $errorCode,
         'timestamp' => date('Y-m-d H:i:s')
     ]);
@@ -454,18 +471,12 @@ function clearRateLimitState($db, $actionKey, $identifierHash) {
 
     $stmt = $db->prepare("DELETE FROM api_rate_limits WHERE action_key = ? AND identifier_hash = ?");
     $stmt->execute([$actionKey, $identifierHash]);
-}
+                $snapshot = motorlink_resolve_fuel_price_snapshot($db);
 
-/**
- * Get SMTP settings from site_settings table.
- * Falls back to config-smtp.php values and seeds missing DB keys.
- */
-function getSMTPSettings($db) {
-    require_once(__DIR__ . '/config-smtp.php');
-
-    $defaults = [
-        'smtp_host' => SMTP_HOST,
-        'smtp_port' => (string)SMTP_PORT,
+                sendSuccess([
+                    'prices' => $snapshot['prices'] ?? [],
+                    'meta' => motorlink_extract_public_fuel_price_meta($snapshot)
+                ]);
         'smtp_username' => SMTP_USERNAME,
         'smtp_password' => SMTP_PASSWORD,
         'smtp_from_email' => SMTP_FROM_EMAIL,
@@ -956,26 +967,45 @@ function requestGuestListingManageCode($db) {
                 $email,
                 (string)($listing['guest_seller_name'] ?? 'Guest Seller'),
                 (string)($listing['reference_number'] ?? ''),
-                (int)$listing['id'],
-                $codePayload['code'],
-                $codePayload['expires_at']
-            );
-        }
+                    if ($distanceKm <= 0) {
+                        sendError('Distance must be greater than 0', 400);
+                        return;
+                    }
 
-        // Always return generic success to avoid account/listing enumeration.
-        $response = ['message' => 'If a guest listing exists for this email, a temporary login code has been sent.'];
+                    if (empty($fuelConsumption)) {
+                        $fuelConsumption = $fuelType === 'diesel' ? 8.5 : 9.5;
+                    }
 
-        // Localhost-only diagnostics for smoke testing without relying on email delivery.
-        if (isLocalRuntimeHost() && $listing && $debugCode !== null) {
-            $response['debug_guest_manage_code'] = $debugCode;
-            $response['debug_guest_manage_code_expires_at'] = $debugExpiresAt;
-            $response['debug_guest_listing_id'] = (int)$listing['id'];
-        }
+                    $snapshot = motorlink_resolve_fuel_price_snapshot($db);
+                    $priceRow = motorlink_get_fuel_price_row($snapshot, $fuelType);
+                    $fuelPriceMeta = motorlink_extract_public_fuel_price_meta($snapshot);
 
-        sendSuccess($response);
-    } catch (Exception $e) {
-        error_log('requestGuestListingManageCode error: ' . $e->getMessage());
-        sendError('Failed to request guest login code', 500);
+                    $fallbackPrimaryPrice = $fuelType === 'diesel' ? 1950.00 : 1850.00;
+                    $fuelPricePerLiter = $priceRow && $priceRow['price_per_liter_mwk'] !== null
+                        ? (float)$priceRow['price_per_liter_mwk']
+                        : $fallbackPrimaryPrice;
+
+                    $displayPricePerLiter = $priceRow && isset($priceRow['display_price_per_liter']) && $priceRow['display_price_per_liter'] !== null
+                        ? (float)$priceRow['display_price_per_liter']
+                        : $fuelPricePerLiter;
+
+                    $displayCurrencyCode = $priceRow['display_currency_code'] ?? ($fuelPriceMeta['display_currency_code'] ?? 'MWK');
+                    $displayCurrencySymbol = $priceRow['display_currency_symbol'] ?? ($fuelPriceMeta['display_currency_symbol'] ?? $displayCurrencyCode);
+
+                    if (!$priceRow) {
+                        $runtimeSettings = motorlink_get_fuel_price_runtime_settings($db);
+                        $displayPricePerLiter = $fuelPricePerLiter;
+                        $displayCurrencyCode = $runtimeSettings['primary_currency_code'] ?? 'MWK';
+                        $displayCurrencySymbol = $runtimeSettings['primary_currency_symbol'] ?? $displayCurrencyCode;
+                        $fuelPriceMeta['provider_status'] = 'default_fallback';
+                        $fuelPriceMeta['source_label'] = 'Built-in fallback estimate';
+                        $fuelPriceMeta['fallback_used'] = true;
+                        $fuelPriceMeta['public_notice'] = 'No live or saved fuel prices were available, so the built-in fallback estimate was used for this calculation.';
+                    }
+
+                    $fuelNeededLiters = ($distanceKm / 100) * $fuelConsumption;
+                    $fuelCostMWK = $fuelNeededLiters * $fuelPricePerLiter;
+                    $fuelCostDisplay = $fuelNeededLiters * $displayPricePerLiter;
     }
 }
 
@@ -4119,13 +4149,8 @@ function deleteAccount($db) {
  * Get user statistics
  */
 function getUserStats($db) {
-    // Debug logging
-    error_log("getUserStats called. Session ID: " . session_id());
-    error_log("Session data: " . json_encode($_SESSION));
-    
     // Check authentication first
     if (!isLoggedIn()) {
-        error_log("getUserStats: isLoggedIn() returned false");
         sendError('Authentication required', 401);
         return;
     }
@@ -4134,12 +4159,9 @@ function getUserStats($db) {
     $userId = $_SESSION['user_id'] ?? null;
     
     if (!$userId) {
-        error_log("getUserStats: No user_id in session");
         sendError('User not found', 401);
         return;
     }
-    
-    error_log("getUserStats: User ID from session: $userId");
     
     // Get user data from database to ensure it exists
     // Don't require 'active' status - just check if user exists
@@ -4150,13 +4172,9 @@ function getUserStats($db) {
         $userData = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$userData) {
-            error_log("getUserStats: User ID $userId not found in database");
             sendError('User not found', 401);
             return;
         }
-        
-        // Log for debugging
-        error_log("getUserStats: User ID $userId found, type: {$userData['user_type']}, status: {$userData['status']}");
     } catch (Exception $e) {
         error_log("getUserStats user check error: " . $e->getMessage());
         sendError('Failed to verify user', 500);
@@ -4424,7 +4442,7 @@ function getAdminListings($db) {
             LEFT JOIN car_models mo ON l.model_id = mo.id
             LEFT JOIN locations loc ON l.location_id = loc.id
             LEFT JOIN users u ON l.user_id = u.id
-            WHERE l.approval_status = ?
+            WHERE l.approval_status = ? AND l.status != 'deleted'
             ORDER BY l.created_at DESC
             LIMIT ? OFFSET ?
         ");
@@ -4550,12 +4568,6 @@ function getAdminNotifications($db) {
 function getMyListings($db) {
     $user = getCurrentUser();
 
-    // Debug logging
-    error_log("=== getMyListings START ===");
-    error_log("User ID: " . $user['id']);
-    error_log("User email: " . ($user['email'] ?? 'N/A'));
-    error_log("Full user data: " . json_encode($user));
-
     try {
         $sql = "
             SELECT l.*, m.name as make_name, mo.name as model_name, mo.body_type,
@@ -4576,27 +4588,11 @@ function getMyListings($db) {
             ORDER BY l.created_at DESC
         ";
 
-        error_log("SQL Query: " . $sql);
-        error_log("Binding user_id parameter: " . $user['id']);
-
         $stmt = $db->prepare($sql);
         $stmt->execute([$user['id']]);
         $listings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        error_log("Query returned " . count($listings) . " listings");
-
-        // Log user_ids of all returned listings
-        if (count($listings) > 0) {
-            $userIds = array_map(function($l) { return $l['user_id']; }, $listings);
-            error_log("Listing user_ids: " . implode(', ', array_unique($userIds)));
-            error_log("First listing: ID=" . $listings[0]['id'] . ", Title=" . $listings[0]['title'] . ", user_id=" . $listings[0]['user_id']);
-        } else {
-            error_log("No listings found for user " . $user['id']);
-        }
-
-        error_log("=== getMyListings END ===");
-
-        sendSuccess(['listings' => $listings, 'debug' => ['user_id' => $user['id'], 'count' => count($listings)]]);
+        sendSuccess(['listings' => $listings]);
     } catch (Exception $e) {
         error_log("getMyListings error: " . $e->getMessage());
         sendError('Failed to load listings', 500);
@@ -4739,20 +4735,37 @@ function updateListingStatus($db) {
 function deleteListingImages($db, $listingId) {
     try {
         // Get all images for this listing
-        $stmt = $db->prepare("SELECT id, file_path, thumbnail_path FROM car_listing_images WHERE listing_id = ?");
+        $stmt = $db->prepare("SELECT id, filename, file_path, thumbnail_path FROM car_listing_images WHERE listing_id = ?");
         $stmt->execute([$listingId]);
         $images = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Delete each image file from filesystem
         foreach ($images as $image) {
-            // Delete main image file
-            if (!empty($image['file_path']) && file_exists($image['file_path'])) {
-                @unlink($image['file_path']);
+            // Resolve the actual file path: prefer filename-based relative path (avoids stale absolute dev paths stored in file_path)
+            $resolvedPath = null;
+            if (!empty($image['filename'])) {
+                $candidate = UPLOAD_PATH . $image['filename'];
+                if (file_exists($candidate)) {
+                    $resolvedPath = $candidate;
+                }
+            }
+            // Fall back to stored file_path only if it looks like a relative path (no Windows drive letter or backslash)
+            if (!$resolvedPath && !empty($image['file_path'])) {
+                $fp = $image['file_path'];
+                if (strpos($fp, '\\') === false && strpos($fp, ':') === false && file_exists($fp)) {
+                    $resolvedPath = $fp;
+                }
+            }
+            if ($resolvedPath) {
+                @unlink($resolvedPath);
             }
             
-            // Delete thumbnail if exists
-            if (!empty($image['thumbnail_path']) && file_exists($image['thumbnail_path'])) {
-                @unlink($image['thumbnail_path']);
+            // Delete thumbnail if exists and has a relative path
+            if (!empty($image['thumbnail_path'])) {
+                $tp = $image['thumbnail_path'];
+                if (strpos($tp, '\\') === false && strpos($tp, ':') === false && file_exists($tp)) {
+                    @unlink($tp);
+                }
             }
         }
         
@@ -4883,7 +4896,7 @@ function updateListing($db) {
 
                 if ($priceChangePercent > 50) {
                     sendError(
-                        'Price change too large. You can only change price by up to 50% (┬▒' . number_format($originalPrice * 0.5) . '). ' .
+                        'Price change too large. You can only change price by up to 50% (±' . number_format($originalPrice * 0.5) . '). ' .
                         'Original: ' . number_format($originalPrice) . ', New: ' . number_format($newPrice) . '. ' .
                         'This prevents changing a cheap car to an expensive one.',
                         400
@@ -4899,7 +4912,7 @@ function updateListing($db) {
 
             if (abs($newMileage - $originalMileage) > 50000) {
                 sendError(
-                    'Mileage change too large. Maximum change is ┬▒50,000 km. ' .
+                    'Mileage change too large. Maximum change is ±50,000 km. ' .
                     'Original: ' . number_format($originalMileage) . ' km, New: ' . number_format($newMileage) . ' km. ' .
                     'This prevents changing to a completely different vehicle.',
                     400
@@ -7836,14 +7849,14 @@ function updateVehicleStatus($db) {
     }
 
     try {
-        // First, get the user's car hire company
+        // First, get the user's car hire company (by user_id only — email fallback is a security risk)
         $companyStmt = $db->prepare("
             SELECT id 
             FROM car_hire_companies 
-            WHERE user_id = ? OR email = ?
+            WHERE user_id = ?
             LIMIT 1
         ");
-        $companyStmt->execute([$user['id'], $user['email']]);
+        $companyStmt->execute([$user['id']]);
         $company = $companyStmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$company) {
@@ -7909,7 +7922,7 @@ function deleteCarHireVehicle($db) {
 
         // Delete vehicle image from filesystem
         if (!empty($vehicle['image'])) {
-            $imagePath = 'uploads/' . $vehicle['image'];
+            $imagePath = UPLOAD_PATH . 'fleet/' . $vehicle['image'];
             if (file_exists($imagePath)) {
                 @unlink($imagePath);
             }
@@ -7974,29 +7987,45 @@ function completeRental($db) {
     $rentalId = intval($_GET['rental_id'] ?? $_POST['rental_id'] ?? 0);
 
     if ($rentalId <= 0) {
-        sendError('Invalid rental ID', 400);
-    }
+            if ($distanceKm <= 0) {
+                sendError('Distance must be greater than 0', 400);
+                return;
+            }
 
-    // Placeholder for rental completion logic
-    // Would update rental status and vehicle availability
-    sendSuccess(['message' => 'Rental completed successfully']);
-}
+            if (empty($fuelConsumption)) {
+                $fuelConsumption = $fuelType === 'diesel' ? 8.5 : 9.5;
+            }
 
-/**
- * Upload car hire company logo
- */
-function uploadCarHireLogo($db) {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        sendError('POST method required', 405);
-    }
+            $snapshot = motorlink_resolve_fuel_price_snapshot($db);
+            $priceRow = motorlink_get_fuel_price_row($snapshot, $fuelType);
+            $fuelPriceMeta = motorlink_extract_public_fuel_price_meta($snapshot);
 
-    $user = getCurrentUser();
+            $fallbackPrimaryPrice = $fuelType === 'diesel' ? 1950.00 : 1850.00;
+            $fuelPricePerLiter = $priceRow && $priceRow['price_per_liter_mwk'] !== null
+                ? (float)$priceRow['price_per_liter_mwk']
+                : $fallbackPrimaryPrice;
 
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+            $displayPricePerLiter = $priceRow && isset($priceRow['display_price_per_liter']) && $priceRow['display_price_per_liter'] !== null
+                ? (float)$priceRow['display_price_per_liter']
+                : $fuelPricePerLiter;
 
-    if (empty($_FILES['logo'])) {
+            $displayCurrencyCode = $priceRow['display_currency_code'] ?? ($fuelPriceMeta['display_currency_code'] ?? 'MWK');
+            $displayCurrencySymbol = $priceRow['display_currency_symbol'] ?? ($fuelPriceMeta['display_currency_symbol'] ?? $displayCurrencyCode);
+
+            if (!$priceRow) {
+                $runtimeSettings = motorlink_get_fuel_price_runtime_settings($db);
+                $displayPricePerLiter = $fuelPricePerLiter;
+                $displayCurrencyCode = $runtimeSettings['primary_currency_code'] ?? 'MWK';
+                $displayCurrencySymbol = $runtimeSettings['primary_currency_symbol'] ?? $displayCurrencyCode;
+                $fuelPriceMeta['provider_status'] = 'default_fallback';
+                $fuelPriceMeta['source_label'] = 'Built-in fallback estimate';
+                $fuelPriceMeta['fallback_used'] = true;
+                $fuelPriceMeta['public_notice'] = 'No live or saved fuel prices were available, so the built-in fallback estimate was used for this calculation.';
+            }
+
+            $fuelNeededLiters = ($distanceKm / 100) * $fuelConsumption;
+            $fuelCostMWK = $fuelNeededLiters * $fuelPricePerLiter;
+            $fuelCostDisplay = $fuelNeededLiters * $displayPricePerLiter;
         sendError('No file uploaded', 400);
     }
 
@@ -8541,6 +8570,8 @@ function getSiteSettings($db) {
                 'currency_symbol',
                 'market_scope_label',
                 'fuel_price_country_slug',
+                'fuel_price_source_mode',
+                'fuel_price_display_currency',
                 'geo_region',
                 'geo_placename',
                 'geo_position',
@@ -8699,7 +8730,7 @@ function getListingRestrictions($db) {
  * - phone: is it already tied to an active listing? (duplicate-person warning)
  * - name: fuzzy match against existing guest listing names for same phone/email domain?
  *   (not needed server-side; JS handles name format validation; we only return phone signals here)
- * Intentionally minimal ΓÇö no account detail is returned.
+ * Intentionally minimal — no account detail is returned.
  */
 function checkGuestIdentity($db) {
     $email = strtolower(trim($_GET['email'] ?? ''));
@@ -9234,6 +9265,11 @@ function calculateJourney($db) {
             'fuel_needed_liters' => round($fuelNeededLiters, 2),
             'fuel_price_per_liter_mwk' => round($fuelPricePerLiter, 2),
             'fuel_cost_mwk' => round($fuelCostMWK, 2),
+            'fuel_price_per_liter_display' => round($displayPricePerLiter, $displayCurrencyCode === 'USD' ? 4 : 2),
+            'fuel_cost_display' => round($fuelCostDisplay, $displayCurrencyCode === 'USD' ? 4 : 2),
+            'display_currency_code' => $displayCurrencyCode,
+            'display_currency_symbol' => $displayCurrencySymbol,
+            'fuel_price_meta' => $fuelPriceMeta,
             'journey_id' => $journeyId
         ]);
     } catch (Exception $e) {
@@ -9273,111 +9309,47 @@ function getJourneyHistory($db) {
  */
 function scrapeFuelPrices($db) {
     try {
-        $siteConfig = getSiteRuntimeConfig($db);
-        $countrySource = trim((string)($siteConfig['fuel_price_country_slug'] ?? ($siteConfig['country_name'] ?? '')));
-        $currencyCode = strtoupper(trim((string)($siteConfig['currency_code'] ?? 'LOCAL')));
+        $snapshot = motorlink_resolve_fuel_price_snapshot($db);
 
-        if ($countrySource === '') {
-            sendError('Fuel price country is not configured', 400);
-            return;
+        sendSuccess([
+            'prices' => $snapshot['prices'] ?? [],
+            'meta' => motorlink_extract_public_fuel_price_meta($snapshot)
+        ]);
+            $providedKey = trim((string)($_GET['api_key'] ?? ''));
+            $expectedKey = trim((string)getenv('MOTORLINK_FUEL_SCRAPER_KEY'));
+
+            if ($expectedKey === '') {
+                try {
+                    $keyStmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'fuel_price_sync_api_key' LIMIT 1");
+                    $keyStmt->execute();
+                    $expectedKey = trim((string)$keyStmt->fetchColumn());
+                } catch (Exception $keyError) {
+                    $expectedKey = '';
+                }
+            }
+
+            if ($providedKey === '' || $expectedKey === '' || !hash_equals($expectedKey, $providedKey)) {
+                sendError('Unauthorized', 401);
+                return;
+            }
         }
 
-        $countrySlug = rawurlencode($countrySource);
+        $liveSnapshot = motorlink_fetch_global_petrol_prices_live($db);
+        motorlink_upsert_fuel_price_snapshot($db, $liveSnapshot, $currentUser['id'] ?? null);
 
-        // Optional: Add API key check for security
-        $apiKey = $_GET['api_key'] ?? '';
-        $expectedKey = 'MOTORLINK_FUEL_SCRAPER_KEY_2025'; // Change this!
-        
-        if ($apiKey !== $expectedKey) {
-            sendError('Unauthorized', 401);
-            return;
-        }
-        
-        // Scrape from globalpetrolprices.com
-        $url = "https://www.globalpetrolprices.com/{$countrySlug}/gasoline_prices/";
-        
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        
-        $html = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
-        if ($httpCode !== 200 || empty($html)) {
-            error_log("Failed to fetch fuel prices: HTTP $httpCode");
-            sendError('Failed to fetch fuel prices', 500);
-            return;
-        }
-        
-        // Parse HTML to extract prices (this is a simplified version)
-        // Note: You may need to adjust the parsing based on the actual HTML structure
-        $prices = [];
-        
-        // Try to extract petrol price
-        if (preg_match('/gasoline.*?(\d+\.?\d*)\s*' . preg_quote($currencyCode, '/') . '/i', $html, $matches)) {
-            $prices['petrol'] = (float)$matches[1];
-        }
-        
-        // Try to extract diesel price
-        $dieselUrl = "https://www.globalpetrolprices.com/{$countrySlug}/diesel_prices/";
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $dieselUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        $dieselHtml = curl_exec($ch);
-        curl_close($ch);
-        
-        if (preg_match('/diesel.*?(\d+\.?\d*)\s*' . preg_quote($currencyCode, '/') . '/i', $dieselHtml, $matches)) {
-            $prices['diesel'] = (float)$matches[1];
-        }
-        
-        // If parsing failed, use fallback prices
-        if (empty($prices['petrol'])) {
-            $prices['petrol'] = 1850.00; // Fallback
-        }
-        if (empty($prices['diesel'])) {
-            $prices['diesel'] = 1950.00; // Fallback
-        }
-        
-        // Deactivate old prices
-        $db->prepare("UPDATE fuel_prices SET is_active = 0 WHERE date = CURDATE()")->execute();
-        
-        // Insert new prices
-        $today = date('Y-m-d');
-        foreach ($prices as $fuelType => $price) {
-            $stmt = $db->prepare("
-                INSERT INTO fuel_prices 
-                (fuel_type, price_per_liter_mwk, date, is_active, source, source_url)
-                VALUES (?, ?, ?, 1, 'globalpetrolprices.com', ?)
-                ON DUPLICATE KEY UPDATE 
-                    price_per_liter_mwk = VALUES(price_per_liter_mwk),
-                    is_active = 1,
-                    last_updated = NOW()
-            ");
-            $stmt->execute([
-                $fuelType,
-                $price,
-                $today,
-                "https://www.globalpetrolprices.com/{$countrySlug}/{$fuelType}_prices/"
-            ]);
-        }
-        
+        $publicSnapshot = motorlink_apply_fuel_price_display_settings(
+            $liveSnapshot,
+            motorlink_get_fuel_price_runtime_settings($db, ['force_refresh' => true])
+        );
+
         sendSuccess([
             'message' => 'Fuel prices updated successfully',
-            'prices' => $prices,
-            'date' => $today
+            'prices' => $publicSnapshot['prices'] ?? [],
+            'meta' => motorlink_extract_public_fuel_price_meta($publicSnapshot)
         ]);
     } catch (Exception $e) {
         error_log("scrapeFuelPrices error: " . $e->getMessage());
-        sendError('Failed to scrape fuel prices: ' . $e->getMessage(), 500);
+        sendError('Failed to sync fuel prices: ' . $e->getMessage(), 500);
     }
 }
 
@@ -9391,9 +9363,9 @@ function scrapeFuelPrices($db) {
 function getUserVehicles($db) {
     try {
         $user = getCurrentUser(true);
-        
+
         $stmt = $db->prepare("
-            SELECT 
+            SELECT
                 id,
                 user_id,
                 vin,
@@ -9415,7 +9387,7 @@ function getUserVehicles($db) {
         ");
         $stmt->execute([$user['id']]);
         $vehicles = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
+
         sendSuccess(['vehicles' => $vehicles]);
     } catch (Exception $e) {
         error_log("getUserVehicles error: " . $e->getMessage());
@@ -9430,13 +9402,12 @@ function addUserVehicle($db) {
     try {
         $user = getCurrentUser(true);
         $input = json_decode(file_get_contents('php://input'), true);
-        
-        // Validate required fields
+
         if (empty($input['make_id']) || empty($input['model_id'])) {
             sendError('Make and Model are required', 400);
             return;
         }
-        
+
         $makeId = (int)$input['make_id'];
         $modelId = (int)$input['model_id'];
         $year = !empty($input['year']) ? (int)$input['year'] : null;
@@ -9445,8 +9416,7 @@ function addUserVehicle($db) {
         $userEngineSize = !empty($input['engine_size_liters']) ? (float)$input['engine_size_liters'] : null;
         $userFuelConsumption = !empty($input['fuel_consumption_liters_per_100km']) ? (float)$input['fuel_consumption_liters_per_100km'] : null;
         $userTransmission = !empty($input['transmission']) ? strtolower(trim($input['transmission'])) : null;
-        
-        // Get make and model details
+
         $stmt = $db->prepare("SELECT name FROM car_makes WHERE id = ?");
         $stmt->execute([$makeId]);
         $make = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -9454,10 +9424,10 @@ function addUserVehicle($db) {
             sendError('Invalid make ID', 400);
             return;
         }
-        
+
         $stmt = $db->prepare("
-            SELECT 
-                name, 
+            SELECT
+                name,
                 fuel_type,
                 engine_size_liters,
                 transmission_type as transmission,
@@ -9465,7 +9435,7 @@ function addUserVehicle($db) {
                 fuel_consumption_combined_l100km as fuel_consumption_liters_per_100km,
                 fuel_tank_capacity_liters,
                 year_start
-            FROM car_models 
+            FROM car_models
             WHERE id = ? AND make_id = ?
         ");
         $stmt->execute([$modelId, $makeId]);
@@ -9474,44 +9444,37 @@ function addUserVehicle($db) {
             sendError('Invalid model ID', 400);
             return;
         }
-        
-        // If no year provided, use year_start from model, or current year as fallback
+
         if (!$year) {
             if (!empty($model['year_start'])) {
                 $year = (int)$model['year_start'];
             } else {
-                $year = (int)date('Y'); // Fallback to current year if no year_start
+                $year = (int)date('Y');
             }
         }
-        
-        // Ensure year is valid (not null, not 0)
+
         if (!$year || $year < 1900 || $year > (int)date('Y') + 1) {
-            $year = (int)date('Y'); // Default to current year if invalid
+            $year = (int)date('Y');
         }
-        
-        // Determine fuel type (use from model if available, otherwise default to petrol)
+
         $fuelType = !empty($model['fuel_type']) ? $model['fuel_type'] : 'petrol';
-        // Map fuel_type values if needed
         if ($fuelType === 'gasoline') $fuelType = 'petrol';
         if (!in_array($fuelType, ['petrol', 'diesel', 'electric', 'hybrid', 'lpg', 'cng'])) {
             $fuelType = 'petrol';
         }
-        
-        // Get engine size/capacity (vital for journey planner)
+
         $engineSizeLiters = !empty($model['engine_size_liters']) ? (float)$model['engine_size_liters'] : null;
         if ($userEngineSize && $userEngineSize > 0) {
             $engineSizeLiters = $userEngineSize;
         }
-        
-        // Get fuel consumption (prefer combined, fallback to other values) - VITAL for journey planner
+
         $fuelConsumption = null;
         if (!empty($model['fuel_consumption_liters_per_100km'])) {
             $fuelConsumption = (float)$model['fuel_consumption_liters_per_100km'];
         }
-        // Also check urban/highway if combined is not available
         if (!$fuelConsumption) {
             $stmt = $db->prepare("
-                SELECT fuel_consumption_urban_l100km, fuel_consumption_highway_l100km, 
+                SELECT fuel_consumption_urban_l100km, fuel_consumption_highway_l100km,
                        fuel_consumption_combined_l100km
                 FROM car_models WHERE id = ?
             ");
@@ -9521,7 +9484,6 @@ function addUserVehicle($db) {
                 if (!empty($consumptionData['fuel_consumption_combined_l100km'])) {
                     $fuelConsumption = (float)$consumptionData['fuel_consumption_combined_l100km'];
                 } elseif (!empty($consumptionData['fuel_consumption_urban_l100km']) && !empty($consumptionData['fuel_consumption_highway_l100km'])) {
-                    // Average of urban and highway
                     $fuelConsumption = ((float)$consumptionData['fuel_consumption_urban_l100km'] + (float)$consumptionData['fuel_consumption_highway_l100km']) / 2;
                 } elseif (!empty($consumptionData['fuel_consumption_urban_l100km'])) {
                     $fuelConsumption = (float)$consumptionData['fuel_consumption_urban_l100km'];
@@ -9530,28 +9492,23 @@ function addUserVehicle($db) {
                 }
             }
         }
-        // Final fallback - default based on fuel type
         if (!$fuelConsumption) {
-            $fuelConsumption = $fuelType === 'diesel' ? 8.5 : 9.5; // Default
+            $fuelConsumption = $fuelType === 'diesel' ? 8.5 : 9.5;
         }
         if ($userFuelConsumption && $userFuelConsumption > 0) {
             $fuelConsumption = $userFuelConsumption;
         }
-        
-        // Get fuel tank capacity - VITAL for journey planner
-        // Use user-provided value if available, otherwise use model value, otherwise default
+
         $fuelTankCapacity = null;
         if ($userFuelTankCapacity && $userFuelTankCapacity > 0) {
-            $fuelTankCapacity = $userFuelTankCapacity; // User's custom value takes priority
+            $fuelTankCapacity = $userFuelTankCapacity;
         } elseif (!empty($model['fuel_tank_capacity_liters'])) {
             $fuelTankCapacity = (float)$model['fuel_tank_capacity_liters'];
         }
-        // Fallback default based on fuel type
         if (!$fuelTankCapacity || $fuelTankCapacity <= 0) {
-            $fuelTankCapacity = $fuelType === 'diesel' ? 50.0 : 45.0; // Default
+            $fuelTankCapacity = $fuelType === 'diesel' ? 50.0 : 45.0;
         }
-        
-        // Get transmission
+
         $transmission = null;
         if (!empty($model['transmission'])) {
             $trans = strtolower($model['transmission']);
@@ -9562,25 +9519,22 @@ function addUserVehicle($db) {
         if ($userTransmission && in_array($userTransmission, ['manual', 'automatic', 'cvt', 'semi-automatic', 'dct'])) {
             $transmission = $userTransmission;
         }
-        
-        // Check if user wants this as primary vehicle
+
         $isPrimary = !empty($input['is_primary']) ? 1 : 0;
-        
-        // If setting as primary, unset other primary vehicles
+
         if ($isPrimary) {
             $stmt = $db->prepare("UPDATE user_vehicles SET is_primary = 0 WHERE user_id = ?");
             $stmt->execute([$user['id']]);
         }
-        
-        // Insert vehicle
+
         $stmt = $db->prepare("
             INSERT INTO user_vehicles (
-                user_id, vin, make, model, year, fuel_type, 
+                user_id, vin, make, model, year, fuel_type,
                 engine_size_liters, transmission, body_type,
                 fuel_consumption_liters_per_100km, fuel_tank_capacity_liters, is_primary
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
-        
+
         $stmt->execute([
             $user['id'],
             $vin,
@@ -9588,16 +9542,16 @@ function addUserVehicle($db) {
             $model['name'],
             $year,
             $fuelType,
-            $engineSizeLiters, // Engine capacity in liters - vital for journey planner
+            $engineSizeLiters,
             $transmission,
             !empty($model['body_type']) ? $model['body_type'] : null,
-            $fuelConsumption, // Fuel consumption - vital for journey planner
-            $fuelTankCapacity, // Fuel tank capacity - vital for journey planner
+            $fuelConsumption,
+            $fuelTankCapacity,
             $isPrimary
         ]);
-        
+
         $vehicleId = $db->lastInsertId();
-        
+
         sendSuccess([
             'message' => 'Vehicle added successfully',
             'vehicle_id' => $vehicleId

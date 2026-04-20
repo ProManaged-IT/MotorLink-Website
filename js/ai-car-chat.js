@@ -894,15 +894,19 @@ class AICarChat {
         if (sendBtn) sendBtn.disabled = true;
         this.isSending = true;
         this.setInputSendingState(true, retryAttempt);
-        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 24000 : 20000);
+        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 36000 : 30000);
 
         // Show compact in-chat typing indicator
         this.showTypingIndicator();
 
         try {
             const controller = new AbortController();
-            // Keep timeout aligned with backend provider timeouts to avoid long hanging sends.
-            const timeoutDuration = retryAttempt > 0 ? 18000 : 14000;
+            // Generous timeouts: complex marketplace queries (car hire, dealers with
+            // multiple joins) can legitimately take 8-15s on production. Retry has
+            // more headroom so we only abort truly stuck requests.
+            const messageLength = (message || '').length;
+            const base = messageLength > 280 ? 28000 : 22000;
+            const timeoutDuration = retryAttempt > 0 ? 32000 : base;
             const timeoutId = setTimeout(() => controller.abort('Request timeout'), timeoutDuration);
 
             const response = await fetch(`${CONFIG.API_URL}?action=ai_car_chat`, {

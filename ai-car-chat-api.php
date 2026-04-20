@@ -9,6 +9,7 @@
 // Function definition only - routing is handled in proxy.php
 
 require_once __DIR__ . '/includes/runtime-site-config.php';
+require_once __DIR__ . '/includes/fuel-price-runtime.php';
 
 /**
  * Return the configured currency code for display in chat responses.
@@ -433,14 +434,6 @@ function isAIChatTokenLimitErrorResponse($httpCode, $errorMessage = '', $errorTy
 function getAIChatProviderRetryOrder($db, $settings, $preferredProvider) {
     $preferredProvider = normalizeAIChatProvider($preferredProvider);
 
-    // Prefer the selected provider exclusively when it is enabled and keyed.
-    if (isAIChatProviderEnabled($settings, $preferredProvider)) {
-        $preferredApiKey = getAIProviderApiKeyFromDB($preferredProvider, $db);
-        if (is_string($preferredApiKey) && trim($preferredApiKey) !== '') {
-            return [$preferredProvider];
-        }
-    }
-
     $ordered = [$preferredProvider, 'openai', 'deepseek', 'qwen', 'glm'];
     $retryOrder = [];
 
@@ -455,6 +448,12 @@ function getAIChatProviderRetryOrder($db, $settings, $preferredProvider) {
         }
 
         $retryOrder[] = $provider;
+        // Cap at 2 providers: preferred + one safety-net fallback.
+        // Keeps happy-path fast (no extra latency) while giving resilience
+        // when the preferred provider returns empty/invalid content.
+        if (count($retryOrder) >= 2) {
+            break;
+        }
     }
 
     return !empty($retryOrder) ? $retryOrder : [$preferredProvider];
@@ -582,6 +581,8 @@ function callAIChatProviderForMainChat($db, $user, $messages, $settings, $prefer
             curl_setopt($ch, CURLOPT_TIMEOUT, 14);
             curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1);
             curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 12);
+            curl_setopt($ch, CURLOPT_ENCODING, '');
+            curl_setopt($ch, CURLOPT_TCP_NODELAY, true);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !$disableSSL);
             curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $disableSSL ? 0 : 2);
 
@@ -728,7 +729,20 @@ function callAIChatProviderForMainChat($db, $user, $messages, $settings, $prefer
 
             $aiResponse = trim((string)$firstChoice['message']['content']);
             if ($aiResponse === '') {
-                error_log(getAIChatProviderLabel($provider) . ' API returned empty response content in main chat');
+                error_log(getAIChatProviderLabel($provider) . ' API returned empty response content in main chat (model=' . $modelName . ', attempt=' . $attempt . ')');
+
+                // Auto-heal: on first attempt, retry with the provider's default model.
+                $defaultModel = (string)$providerConfig['default_model'];
+                if ($attempt === 1 && $defaultModel !== '' && $modelName !== $defaultModel) {
+                    $modelName = $defaultModel;
+                    continue;
+                }
+                // On second attempt, reduce token ceiling and retry once more with shorter prompt.
+                if ($attempt === 1 && $requestMaxTokens > 256) {
+                    $requestMaxTokens = 256;
+                    continue;
+                }
+
                 $lastError = [
                     'status' => 500,
                     'message' => 'Empty response from AI service. Please try again.'
@@ -2322,6 +2336,26 @@ function handleAICarChat($db) {
             return;
         }
 
+        // Deterministic greeting short-circuit — instant reply, zero provider cost.
+        // Only applies when there is no prior assistant turn, so follow-up greetings
+        // still reach the model with full context.
+        $trimmedGreet = strtolower(trim($originalMessage));
+        $hasPriorAssistantTurn = false;
+        foreach ($conversationHistory as $__h) {
+            if (($__h['role'] ?? '') === 'assistant') { $hasPriorAssistantTurn = true; break; }
+        }
+        if (!$hasPriorAssistantTurn && preg_match('/^(hi|hello|hey|yo|sup|hola|hiya|howdy|good\s+(morning|afternoon|evening|day))[!.?\s]*$/', $trimmedGreet)) {
+            $siteNameGreet = 'MotorLink';
+            try {
+                $siteCfg = motorlink_get_public_site_runtime_config($db, []);
+                $siteNameGreet = trim((string)($siteCfg['site_name'] ?? 'MotorLink')) ?: 'MotorLink';
+            } catch (Exception $__e) { /* non-fatal */ }
+            $greetReply = "Hi there! 👋 I'm the {$siteNameGreet} AI Assistant. Ask me about cars for sale, car hire, dealers, garages, fuel prices, or any vehicle spec you're curious about.";
+            logAIChatUsage($db, $user['id'], $message, strlen($greetReply), 0, $modelName, 0.0, 'deterministic_greeting');
+            sendSuccess(['response' => $greetReply]);
+            return;
+        }
+
         $logDeterministicUsage = function() use ($db, $user, $message, $modelName) {
             logAIChatUsage($db, $user['id'], $message, 0, 0, $modelName, 0.0, 'deterministic_no_provider');
         };
@@ -2483,17 +2517,9 @@ function handleAICarChat($db) {
                     $logDeterministicUsage();
                     handleSearchQuery($db, $message, $conversationHistory);
                     return;
-                }
-
-                if ($resolvedIntent === 'fuel') {
-                    $logDeterministicUsage();
-                    handleFuelPriceQuery($db, $message, $conversationHistory);
-                    return;
-                }
-
-                if ($resolvedIntent === 'spec') {
-                    $logDeterministicUsage();
-                    handleCarSpecQuery($db, $message, $conversationHistory, $userContext);
+                            $snapshot = motorlink_resolve_fuel_price_snapshot($db);
+                            $prices = $snapshot['prices'] ?? [];
+                            $meta = motorlink_extract_public_fuel_price_meta($snapshot);
                     return;
                 }
 
@@ -2502,31 +2528,48 @@ function handleAICarChat($db) {
                     handlePartsQuery($db, $message, $conversationHistory, $userContext);
                     return;
                 }
-
+                                $response = "I don't have usable fuel prices right now. Please check the [Journey Planner]({$baseUrl}car-database.html#journey-planner) for the latest availability, or contact local fuel stations for current rates.";
                 if ($resolvedIntent === 'recommendation') {
-                    $logDeterministicUsage();
+                                $lastUpdated = !empty($meta['last_updated']) ? date('F j, Y g:i A', strtotime($meta['last_updated'])) : 'Recently';
+                                $publishedDate = !empty($meta['published_date']) ? date('F j, Y', strtotime($meta['published_date'])) : '';
                     handleCarRecommendationQuery($db, $message, $conversationHistory, $userContext);
                     return;
                 }
 
                 if ($resolvedIntent === 'general_automotive') {
-                    $aiIntentMarkedInScope = true;
-                }
+                                    $displayCode = trim((string)($price['display_currency_code'] ?? ($meta['display_currency_code'] ?? getChatCurrencyCode($db))));
+                                    $displaySymbol = trim((string)($price['display_currency_symbol'] ?? ($meta['display_currency_symbol'] ?? $displayCode)));
+                                    $displayDecimals = $displayCode === 'USD' ? 4 : 2;
+                                    $displayValue = number_format((float)($price['display_price_per_liter'] ?? $price['price_per_liter_mwk'] ?? 0), $displayDecimals);
 
-                if ($resolvedIntent === 'general_knowledge') {
-                    $aiIntentMarkedInScope = true;
-                }
+                                    $response .= "⛽ **{$fuelType}**: {$displaySymbol} {$displayValue} per liter";
+
+                                    if (($price['display_currency_source'] ?? 'primary') !== 'usd' && !empty($price['price_per_liter_usd'])) {
+                                        $priceUSD = number_format((float)$price['price_per_liter_usd'], 4);
+                                        $response .= " (USD \${$priceUSD})";
+                                    } elseif (($price['display_currency_source'] ?? '') === 'usd' && !empty($price['price_per_liter_mwk'])) {
+                                        $pricePrimary = number_format((float)$price['price_per_liter_mwk'], 2);
+                                        $response .= " ({$price['currency']} {$pricePrimary})";
             }
+
         }
 
         updateAIChatPersistenceContext(['resolved_message' => $message]);
-
+                                $response .= "\n📡 Source: " . ($meta['source_label'] ?: 'Fuel price service') . "\n";
+                                if ($publishedDate !== '') {
+                                    $response .= "📅 Latest published date: {$publishedDate}\n";
+                                }
+                                $response .= "🕒 Synced: {$lastUpdated}\n";
+                                if (!empty($meta['public_notice'])) {
+                                    $response .= "\nℹ️ {$meta['public_notice']}\n";
+                                }
         // Hard scope gate: do not answer non-automotive / non-MotorLink requests.
         if (!$aiIntentMarkedInScope && isOutOfScopeQuery($message)) {
             $logDeterministicUsage();
             sendSuccess([
                 'response' => buildOutOfScopeResponse()
-            ]);
+                                'fuel_prices' => $prices,
+                                'fuel_prices_meta' => $meta
             return;
         }
         
@@ -2731,8 +2774,12 @@ function handleAICarChat($db) {
             ? "\nRECENT MARKETPLACE ENTITIES (latest results first; use these to resolve references like first/second/that one/their contact):\n{$recentEntityContext}\n"
             : '';
         $retrievalContext = buildAIChatStructuredRetrievalContext($db, $message, $conversationHistory, $runtimeSiteUrl, $userContext);
-        
-        // System prompt - friendly, helpful, and comprehensive with intelligent fallback
+
+        // NOTE: The verbose system prompt block previously built here was deprecated
+        // in favor of the compact fast-response prompt below. Keeping the compact
+        // prompt only reduces PHP string work and keeps token footprint small.
+        $systemPrompt = '';
+        if (false) {
         $systemPrompt = "Hey there! 👋 I'm {$siteName} AI Assistant, your friendly automotive expert here at {$siteName}! I'm here to help you with all things cars - from specs and maintenance to finding the perfect vehicle.
 
     USER CONTEXT: {$contextInfo}{$locationContext}{$longTermMemoryContext}{$conversationBriefContext}{$recentEntityPromptContext}
@@ -2906,6 +2953,7 @@ REMEMBER (MANDATORY WORKFLOW):
 6. **FOLLOW-UP UNDERSTANDING**: Always read the conversation history carefully. When a user says 'what about X' or 'and Y?', relate it to the previous messages. Maintain context across the conversation.
 7. **FORMAT WITH MARKDOWN**: Use **bold** for emphasis, bullet points (- item) for lists, ### for section headers. This makes responses scannable and professional.
 8. I'm always learning and improving to serve you better";
+        }
 
         // Fast-response override: keep runtime prompt/context compact for quick replies.
         $longTermMemoryCompact = $longTermMemoryContext !== ''
@@ -11348,8 +11396,12 @@ function handleBusinessFieldUpdate($db, $userId, $userType, $businessType, $fiel
  * Get AI Chat settings from database
  */
 function getAIChatSettings($db) {
+    static $cachedSettings = null;
+    if ($cachedSettings !== null) {
+        return $cachedSettings;
+    }
     try {
-        // Always fetch fresh settings from database (no caching)
+        // Per-request cache (static) — settings rarely change within one request.
         $stmt = $db->prepare("SELECT * FROM ai_chat_settings WHERE id = 1");
         $stmt->execute();
         $settings = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -11374,6 +11426,7 @@ function getAIChatSettings($db) {
                 'enabled' => 1
             ];
             error_log("AI Chat Settings: No settings found in database, using defaults");
+            $cachedSettings = $defaults;
             return $defaults;
         }
         
@@ -11397,6 +11450,7 @@ function getAIChatSettings($db) {
         // Debug log to verify settings are being read correctly
         error_log("AI Chat Settings loaded: provider={$settings['ai_provider']}, hourly_limit={$settings['requests_per_hour']}, daily_limit={$settings['requests_per_day']}, model={$settings['model_name']}");
         
+        $cachedSettings = $settings;
         return $settings;
     } catch (Exception $e) {
         error_log("Error getting AI chat settings: " . $e->getMessage());

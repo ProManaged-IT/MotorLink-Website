@@ -52,13 +52,17 @@
 /* AI Chat Widget Container */
 .ai-car-chat-widget {
     position: fixed;
+    /* Anchor both top and bottom so the widget stretches vertically
+       to fit the available viewport. Desktop: comfortable 20px margin.
+       Mobile overrides further down tighten this. */
+    top: 20px;
     bottom: 20px;
     left: 20px;
     right: auto;
         width: min(420px, calc(100vw - 24px)) !important;
     max-width: calc(100vw - 40px);
-    /* Cap at 680px so the widget never fills the whole screen on large monitors */
-    max-height: min(680px, calc(100vh - 60px));
+    /* Cap overall height but let flex children share it. */
+    max-height: calc(100vh - 40px);
     background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
     border-radius: var(--ai-border-radius);
     box-shadow: var(--ai-shadow), 0 0 0 1px rgba(0, 200, 83, 0.1);
@@ -121,6 +125,9 @@
 .ai-car-chat-widget.minimized {
     height: auto;
     max-height: none; /* No height limit when minimised — just the bubble */
+    /* Release the top anchor so the FAB sits naturally at the bottom-left. */
+    top: auto;
+    bottom: 20px;
     width: auto;
     background: transparent;
     box-shadow: none;
@@ -511,10 +518,11 @@
 .ai-chat-body {
     display: flex;
     flex-direction: column;
-    /* Use flex:1 so body fills remaining space within the widget max-height cap */
-    flex: 1;
-    min-height: 300px;
-    max-height: 520px;
+    /* Use flex:1 so body fills the remaining space inside the widget.
+       No hard max-height cap — the widget's own max-height governs size
+       so the body expands to show as much conversation as possible. */
+    flex: 1 1 auto;
+    min-height: 260px;
     background: linear-gradient(180deg, #f8faf9 0%, #f0f4f2 100%);
     overflow: hidden;
     position: relative;
@@ -1509,11 +1517,14 @@
 /* Mobile Responsive */
 @media (max-width: 768px) {
     .ai-car-chat-widget {
+        top: 10px;
         bottom: 10px;
         left: 10px;
         right: auto;
         width: auto;
         max-width: calc(100vw - 20px); /* Use nearly full width */
+        /* Fill viewport height minus the 10px top/bottom gutters. */
+        max-height: calc(100vh - 20px);
         border-radius: 16px;
         z-index: 11000 !important; /* Always on top of nav and overlays */
         pointer-events: auto !important;
@@ -1524,8 +1535,12 @@
     
     /* Make minimized widget smaller on mobile */
     .ai-car-chat-widget.minimized {
+        /* Release top anchor so FAB sits at bottom-left. */
+        top: auto;
+        bottom: 10px;
         width: auto;
         max-width: calc(100vw - 80px);
+        max-height: none;
     }
     
     .ai-chat-minimized {
@@ -1728,20 +1743,25 @@
 
 @media (max-width: 480px) {
     .ai-car-chat-widget {
+        top: 8px;
         bottom: 10px;
         left: 10px;
         right: auto;
         width: auto;
         max-width: calc(100vw - 80px); /* Leave space for back-to-top button on right */
         border-radius: 16px;
-        max-height: calc(100vh - env(safe-area-inset-bottom) - 20px);
+        /* Fill the viewport, minus the top/bottom gutters and safe area. */
+        max-height: calc(100vh - env(safe-area-inset-bottom) - 18px);
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
         z-index: 9998; /* Below back-to-top button */
     }
     
     /* Make minimized widget even smaller on very small screens */
     .ai-car-chat-widget.minimized {
+        top: auto;
+        bottom: 10px;
         max-width: calc(100vw - 80px);
+        max-height: none;
     }
     
     .ai-chat-minimized {

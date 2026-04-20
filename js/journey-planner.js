@@ -9,6 +9,7 @@ let directionsService = null;
 let journeyRoutePolyline = null;
 let journeyRouteMarkers = [];
 let currentFuelPrices = {};
+let currentFuelPriceMeta = {};
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -337,53 +338,66 @@ async function loadFuelPrices() {
         const data = await response.json();
         
         if (data.success && data.prices) {
+            currentFuelPrices = {};
+            currentFuelPriceMeta = data.meta || {};
+
             data.prices.forEach(price => {
-                currentFuelPrices[price.fuel_type] = price.price_per_liter_mwk;
+                currentFuelPrices[price.fuel_type] = price;
             });
             
             // Display fuel prices in the UI
-            displayFuelPrices(data.prices);
+            displayFuelPrices(data.prices, currentFuelPriceMeta);
         }
     } catch (error) {
         console.error('Error loading fuel prices:', error);
     }
 }
 
-function displayFuelPrices(prices) {
+function displayFuelPrices(prices, meta = {}) {
     const displayContainer = document.getElementById('fuelPricesDisplay');
     const updateTimeContainer = document.getElementById('fuelPricesUpdateTime');
+    const sourceNoteContainer = document.getElementById('fuelPricesSourceNote');
     
     if (!displayContainer) return;
     
     if (prices.length === 0) {
         displayContainer.innerHTML = '<div style="color: #666;">No fuel prices available</div>';
         if (updateTimeContainer) updateTimeContainer.textContent = 'Not available';
+        if (sourceNoteContainer) sourceNoteContainer.textContent = 'No live or saved fuel prices are available right now.';
         return;
     }
     
-    // Find the most recent update time
-    let mostRecentUpdate = null;
-    prices.forEach(price => {
-        if (price.last_updated) {
-            const updateTime = new Date(price.last_updated);
-            if (!mostRecentUpdate || updateTime > mostRecentUpdate) {
-                mostRecentUpdate = updateTime;
-            }
-        }
-    });
+    const mostRecentUpdate = meta.last_updated ? new Date(meta.last_updated) : null;
     
     // Display prices
     let html = '';
     prices.forEach(price => {
         const fuelTypeName = price.fuel_type.charAt(0).toUpperCase() + price.fuel_type.slice(1);
+        const displayCode = price.display_currency_code || meta.display_currency_code || CONFIG.CURRENCY_CODE || 'MWK';
+        const displaySymbol = price.display_currency_symbol || meta.display_currency_symbol || displayCode;
+        const displayDecimals = displayCode === 'USD' ? 4 : 2;
+        const displayPrice = Number(price.display_price_per_liter ?? price.price_per_liter_mwk ?? 0);
+        let secondaryText = '';
+
+        if ((price.display_currency_source || '') === 'usd' && price.price_per_liter_mwk !== null && price.price_per_liter_mwk !== undefined) {
+            secondaryText = `${price.currency || CONFIG.CURRENCY_CODE || 'MWK'} ${Number(price.price_per_liter_mwk).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/L local`;
+        } else if (price.price_per_liter_usd !== null && price.price_per_liter_usd !== undefined && (price.display_currency_source || '') !== 'usd') {
+            secondaryText = `USD $${Number(price.price_per_liter_usd).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}/L`;
+        }
+
         html += `
             <div style="padding: 10px 15px; background: white; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <div style="font-weight: bold; color: #333; margin-bottom: 5px;">${fuelTypeName}</div>
-                <div style="font-size: 1.2rem; color: #28a745; font-weight: bold;">${CONFIG.CURRENCY_CODE || 'MWK'} ${parseFloat(price.price_per_liter_mwk).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}/L</div>
+                <div style="font-size: 1.2rem; color: #28a745; font-weight: bold;">${displaySymbol} ${displayPrice.toLocaleString('en-US', { minimumFractionDigits: displayDecimals, maximumFractionDigits: displayDecimals })}/L</div>
+                ${secondaryText ? `<div style="font-size: 0.85rem; color: #666; margin-top: 4px;">${secondaryText}</div>` : ''}
             </div>
         `;
     });
     displayContainer.innerHTML = html;
+
+    if (sourceNoteContainer) {
+        sourceNoteContainer.textContent = meta.public_notice || 'Showing the latest available fuel prices.';
+    }
     
     // Display last updated time
     if (updateTimeContainer && mostRecentUpdate) {
@@ -460,50 +474,44 @@ async function calculateJourney() {
         
         // Use provided fuel consumption or vehicle's default
         const finalFuelConsumption = fuelConsumption || vehicleFuelConsumption || (vehicleFuelType === 'diesel' ? 8.5 : 9.5);
-        const fuelSource = resolveJourneyFuelSourceMeta(selectedVehicle, fuelConsumption, vehicleFuelConsumption, vehicleFuelType);
-        
-        // Calculate fuel cost
-        const fuelPrice = currentFuelPrices[vehicleFuelType] || (vehicleFuelType === 'diesel' ? 1950.00 : 1850.00);
-        const fuelNeeded = (distanceKm / 100) * parseFloat(finalFuelConsumption);
-        const fuelCost = fuelNeeded * fuelPrice;
-        
-        // Display results
+        const fuelConsumptionSource = resolveJourneyFuelSourceMeta(selectedVehicle, fuelConsumption, vehicleFuelConsumption, vehicleFuelType);
+
+        const calculation = await saveJourneyToHistory({
+            vehicle_id: vehicleId || null,
+            origin: origin,
+            destination: destination,
+            distance_km: distanceKm,
+            duration_minutes: durationMinutes,
+            fuel_type: vehicleFuelType,
+            fuel_consumption: finalFuelConsumption,
+            origin_lat: route.start_location.lat(),
+            origin_lng: route.start_location.lng(),
+            destination_lat: route.end_location.lat(),
+            destination_lng: route.end_location.lng(),
+            save_to_history: true
+        });
+
         displayJourneyResults({
             origin: origin,
             destination: destination,
-            distanceKm: distanceKm,
+            distanceKm: Number(calculation.distance_km ?? distanceKm),
             durationMinutes: durationMinutes,
-            fuelType: vehicleFuelType,
-            fuelConsumption: finalFuelConsumption,
-            fuelNeeded: fuelNeeded,
-            fuelPrice: fuelPrice,
-            fuelCost: fuelCost,
-            fuelSource: fuelSource,
+            fuelType: calculation.fuel_type || vehicleFuelType,
+            fuelConsumption: Number(calculation.fuel_consumption_liters_per_100km ?? finalFuelConsumption),
+            fuelNeeded: Number(calculation.fuel_needed_liters ?? ((distanceKm / 100) * parseFloat(finalFuelConsumption))),
+            fuelPrice: Number(calculation.fuel_price_per_liter_display ?? calculation.fuel_price_per_liter_mwk ?? 0),
+            fuelPricePrimary: Number(calculation.fuel_price_per_liter_mwk ?? 0),
+            fuelCost: Number(calculation.fuel_cost_display ?? calculation.fuel_cost_mwk ?? 0),
+            fuelCostPrimary: Number(calculation.fuel_cost_mwk ?? 0),
+            displayCurrencyCode: calculation.display_currency_code || currentFuelPriceMeta.display_currency_code || CONFIG.CURRENCY_CODE || 'MWK',
+            displayCurrencySymbol: calculation.display_currency_symbol || currentFuelPriceMeta.display_currency_symbol || CONFIG.CURRENCY_CODE || 'MWK',
+            fuelConsumptionSource: fuelConsumptionSource,
+            fuelPriceMeta: calculation.fuel_price_meta || currentFuelPriceMeta,
             originLat: route.start_location.lat(),
             originLng: route.start_location.lng(),
             destinationLat: route.end_location.lat(),
             destinationLng: route.end_location.lng()
         });
-        
-        // Save to history
-        try {
-            await saveJourneyToHistory({
-                vehicle_id: vehicleId || null,
-                origin: origin,
-                destination: destination,
-                distance_km: distanceKm,
-                duration_minutes: durationMinutes,
-                fuel_type: vehicleFuelType,
-                fuel_consumption: finalFuelConsumption,
-                origin_lat: route.start_location.lat(),
-                origin_lng: route.start_location.lng(),
-                destination_lat: route.end_location.lat(),
-                destination_lng: route.end_location.lng(),
-                save_to_history: true
-            });
-        } catch (error) {
-            console.error('Error saving journey to history:', error);
-        }
         
     } catch (error) {
         console.error('Error calculating journey:', error);
@@ -734,10 +742,15 @@ function renderPathOnMap(path, startLoc, endLoc) {
     journeyMap.fitBounds(bounds, 60);
 }
 
-function formatCurrencyLocal(value) {
-    return `${CONFIG.CURRENCY_CODE || 'MWK'} ${Number(value || 0).toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
+function formatJourneyCurrency(value, currencyCode, currencySymbol, decimals = 2) {
+    const numericValue = Number(value || 0);
+    const safeValue = Number.isFinite(numericValue) ? numericValue : 0;
+    const safeCode = currencyCode || CONFIG.CURRENCY_CODE || 'MWK';
+    const safeSymbol = currencySymbol || safeCode;
+
+    return `${safeSymbol} ${safeValue.toLocaleString('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
     })}`;
 }
 
@@ -745,12 +758,35 @@ function displayJourneyResults(results) {
     const container = document.getElementById('journeyResults');
     if (!container) return;
 
-    const fuelSource = results.fuelSource || {
+    const fuelConsumptionSource = results.fuelConsumptionSource || {
         label: 'Manual fuel consumption',
         detail: 'Custom value entered in the journey planner'
     };
-    const updatedAt = new Date().toLocaleString();
+    const fuelPriceMeta = results.fuelPriceMeta || {};
+    const renderedAt = new Date().toLocaleString();
     const fuelTypeLabel = results.fuelType.charAt(0).toUpperCase() + results.fuelType.slice(1);
+    const displayCurrencyCode = results.displayCurrencyCode || fuelPriceMeta.display_currency_code || CONFIG.CURRENCY_CODE || 'MWK';
+    const displayCurrencySymbol = results.displayCurrencySymbol || fuelPriceMeta.display_currency_symbol || displayCurrencyCode;
+    const displayPriceDecimals = displayCurrencyCode === 'USD' ? 4 : 2;
+    const displayCostText = formatJourneyCurrency(results.fuelCost, displayCurrencyCode, displayCurrencySymbol, 2);
+    const displayPriceText = formatJourneyCurrency(results.fuelPrice, displayCurrencyCode, displayCurrencySymbol, displayPriceDecimals);
+    const primaryCostText = Number(results.fuelCostPrimary || 0) > 0
+        ? formatJourneyCurrency(results.fuelCostPrimary, CONFIG.CURRENCY_CODE || 'MWK', CONFIG.CURRENCY_SYMBOL || CONFIG.CURRENCY_CODE || 'MWK', 2)
+        : '';
+    const primaryPriceText = Number(results.fuelPricePrimary || 0) > 0
+        ? formatJourneyCurrency(results.fuelPricePrimary, CONFIG.CURRENCY_CODE || 'MWK', CONFIG.CURRENCY_SYMBOL || CONFIG.CURRENCY_CODE || 'MWK', 2)
+        : '';
+    const priceSourceLabel = fuelPriceMeta.source_label || 'Current fuel price feed';
+    const pricePublishedDate = fuelPriceMeta.published_date || 'Not available';
+    const priceSyncedAt = fuelPriceMeta.last_updated ? new Date(fuelPriceMeta.last_updated).toLocaleString() : 'Not available';
+    const priceNotice = fuelPriceMeta.public_notice || 'Showing the latest resolved fuel price feed.';
+    const showPrimaryComparison = displayCurrencyCode === 'USD' && primaryCostText !== '';
+    const costSubtext = showPrimaryComparison && primaryCostText !== ''
+        ? `Based on ${results.fuelNeeded.toFixed(2)} L at ${displayPriceText}/L. Local equivalent: ${primaryCostText}`
+        : `Based on ${results.fuelNeeded.toFixed(2)} L at ${displayPriceText}/L`;
+    const priceSubtext = showPrimaryComparison && primaryPriceText !== ''
+        ? `${priceSourceLabel}. Local price: ${primaryPriceText}/L`
+        : `${priceSourceLabel}. Published ${pricePublishedDate}`;
     
     container.style.display = 'block';
     container.innerHTML = `
@@ -760,7 +796,7 @@ function displayJourneyResults(results) {
                     <div class="journey-result-kicker">Trip estimate ready</div>
                     <h3><i class="fas fa-route"></i> Journey Cost Breakdown</h3>
                 </div>
-                <div class="journey-result-updated">${escapeHtml(updatedAt)}</div>
+                <div class="journey-result-updated">${escapeHtml(renderedAt)}</div>
             </div>
 
             <div class="journey-result-route">
@@ -784,8 +820,8 @@ function displayJourneyResults(results) {
             <div class="journey-result-grid">
                 <article class="journey-result-card journey-result-card-highlight">
                     <span class="journey-result-label">Estimated fuel cost</span>
-                    <strong class="journey-result-value journey-result-value-cost">${escapeHtml(formatCurrencyLocal(results.fuelCost))}</strong>
-                    <span class="journey-result-subtext">Based on ${results.fuelNeeded.toFixed(2)} L at ${escapeHtml(formatCurrencyLocal(results.fuelPrice))}/L</span>
+                    <strong class="journey-result-value journey-result-value-cost">${escapeHtml(displayCostText)}</strong>
+                    <span class="journey-result-subtext">${escapeHtml(costSubtext)}</span>
                 </article>
                 <article class="journey-result-card">
                     <span class="journey-result-label">Distance</span>
@@ -805,24 +841,25 @@ function displayJourneyResults(results) {
                 <article class="journey-result-card">
                     <span class="journey-result-label">Consumption used</span>
                     <strong class="journey-result-value">${Number(results.fuelConsumption).toFixed(2)} L/100km</strong>
-                    <span class="journey-result-subtext">${escapeHtml(fuelSource.label || 'Manual fuel consumption')}</span>
+                    <span class="journey-result-subtext">${escapeHtml(fuelConsumptionSource.label || 'Manual fuel consumption')}</span>
                 </article>
                 <article class="journey-result-card">
                     <span class="journey-result-label">Fuel price</span>
-                    <strong class="journey-result-value">${escapeHtml(formatCurrencyLocal(results.fuelPrice))}/L</strong>
-                    <span class="journey-result-subtext">Latest available price loaded for this session</span>
+                    <strong class="journey-result-value">${escapeHtml(displayPriceText)}/L</strong>
+                    <span class="journey-result-subtext">${escapeHtml(priceSubtext)}</span>
                 </article>
             </div>
 
             <div class="journey-result-footer">
                 <div class="journey-result-source">
-                    <span class="journey-result-label">Fuel data source</span>
-                    <strong>${escapeHtml(fuelSource.label || 'Manual fuel consumption')}</strong>
-                    <span class="journey-result-subtext">${escapeHtml(fuelSource.detail || 'Custom value entered in the journey planner')}</span>
+                    <span class="journey-result-label">Fuel consumption source</span>
+                    <strong>${escapeHtml(fuelConsumptionSource.label || 'Manual fuel consumption')}</strong>
+                    <span class="journey-result-subtext">${escapeHtml(fuelConsumptionSource.detail || 'Custom value entered in the journey planner')}</span>
                 </div>
                 <div class="journey-result-meta">
-                    <span class="journey-result-label">Last updated</span>
-                    <strong>${escapeHtml(updatedAt)}</strong>
+                    <span class="journey-result-label">Fuel price data</span>
+                    <strong>${escapeHtml(pricePublishedDate)}</strong>
+                    <span class="journey-result-subtext">${escapeHtml(priceNotice)} Synced: ${escapeHtml(priceSyncedAt)}</span>
                 </div>
             </div>
         </div>

@@ -296,7 +296,7 @@ function handleImageUploads($pdo, $carId) {
                             INSERT INTO car_listing_images (listing_id, filename, file_path, is_primary, uploaded_at)
                             VALUES (?, ?, ?, 0, NOW())
                         ");
-                        $stmt->execute([$carId, $fileName]);
+                        $stmt->execute([$carId, $fileName, 'uploads/cars/' . $fileName]);
                     }
                 }
             }
@@ -570,18 +570,17 @@ function updateDealer($pdo) {
     
     try {
         $updateData = [
-            'business_name' => $_POST['business_name'] ?? '',
-            'owner_name' => $_POST['owner_name'] ?: null,
-            'email' => $_POST['email'] ?: null,
-            'phone' => $_POST['phone'] ?? '',
-            'location' => $_POST['location'] ?? '',
-            'dealer_type' => $_POST['dealer_type'] ?: null,
-            'years_in_business' => isset($_POST['years_in_business']) ? intval($_POST['years_in_business']) : null,
-            'description' => $_POST['description'] ?: null,
-            'specializations' => $_POST['specializations'] ?: null,
-            'rating' => isset($_POST['rating']) ? floatval($_POST['rating']) : null,
-            'status' => $_POST['status'] ?? 'active',
-            'updated_at' => date('Y-m-d H:i:s')
+            'business_name'    => $_POST['business_name'] ?? '',
+            'owner_name'       => $_POST['owner_name'] ?: null,
+            'email'            => $_POST['email'] ?: null,
+            'phone'            => $_POST['phone'] ?? '',
+            'address'          => $_POST['location'] ?? $_POST['address'] ?? '',
+            'years_established'=> isset($_POST['years_in_business']) ? intval($_POST['years_in_business'])
+                                  : (isset($_POST['years_established']) ? intval($_POST['years_established']) : null),
+            'description'      => $_POST['description'] ?: null,
+            'specialization'   => $_POST['specializations'] ?? $_POST['specialization'] ?? null,
+            'status'           => $_POST['status'] ?? 'active',
+            'updated_at'       => date('Y-m-d H:i:s')
         ];
         
         // Build the update query

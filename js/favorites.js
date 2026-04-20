@@ -246,9 +246,6 @@ class FavoritesManager {
     }
 
     resolveListingImageUrl(listing) {
-        if (listing.featured_image) {
-            return `${CONFIG.BASE_URL}uploads/${listing.featured_image}`;
-        }
         if (listing.featured_image_id) {
             return `${CONFIG.API_URL}?action=image&id=${listing.featured_image_id}`;
         }
@@ -260,6 +257,9 @@ class FavoritesManager {
             if (image.filename) {
                 return `${CONFIG.BASE_URL}uploads/${image.filename}`;
             }
+        }
+        if (listing.featured_image) {
+            return `${CONFIG.BASE_URL}uploads/${listing.featured_image}`;
         }
         return '';
     }
@@ -667,12 +667,7 @@ class FavoritesManager {
         if (!section || !grid) return;
 
         grid.innerHTML = recommendations.map((listing) => {
-            let imageUrl = '';
-            if (listing.featured_image) {
-                imageUrl = `${CONFIG.BASE_URL}uploads/${listing.featured_image}`;
-            } else if (listing.featured_image_id) {
-                imageUrl = `${CONFIG.API_URL}?action=image&id=${listing.featured_image_id}`;
-            }
+            const imageUrl = this.resolveListingImageUrl(listing);
 
             return `
                 <div class="car-card" onclick="window.location.href='car.html?id=${listing.id}'" style="cursor: pointer; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s;">
