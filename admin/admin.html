@@ -1846,6 +1846,40 @@
                             <button class="btn btn-secondary" onclick="loadFuelPriceSettings()" style="margin-left: 8px;">
                                 <i class="fas fa-sync"></i> Reload Fuel Prices
                             </button>
+
+                            <hr style="margin: 25px 0;">
+
+                            <h4 style="margin-bottom: 8px;"><i class="fas fa-globe"></i> Live Price Source &amp; Display</h4>
+                            <p class="text-muted">Choose where the Journey Planner and AI Chat get prices from, and how they are shown to users.</p>
+
+                            <div class="form-group">
+                                <label for="fuel-price-source-mode"><strong>Price Source</strong></label>
+                                <select id="fuel-price-source-mode" class="form-control">
+                                    <option value="live_with_fallback">GlobalPetrolPrices.com (live) → Database fallback</option>
+                                    <option value="live_only">GlobalPetrolPrices.com only (no DB fallback)</option>
+                                    <option value="db_only">Database only (admin-entered prices)</option>
+                                </select>
+                                <small class="form-text">Recommended: live with fallback. Users see a "live" badge when GlobalPetrolPrices.com is used.</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="fuel-price-display-currency"><strong>Display Currency for Users</strong></label>
+                                <select id="fuel-price-display-currency" class="form-control">
+                                    <option value="local">Local currency (primary)</option>
+                                    <option value="usd">US Dollars ($)</option>
+                                </select>
+                                <small class="form-text">Controls what users see in the Journey Planner and AI Chat.</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="fuel-price-cache-hours"><strong>Cache Window (hours)</strong></label>
+                                <input type="number" id="fuel-price-cache-hours" class="form-control" min="0" max="168" step="1" value="6">
+                                <small class="form-text">Reuse a live price this recent before re-scraping. 0 = always refresh.</small>
+                            </div>
+
+                            <button class="btn btn-primary" onclick="saveFuelSourceSettings()">
+                                <i class="fas fa-save"></i> Save Source &amp; Display Settings
+                            </button>
                         </div>
 
                         <!-- AI Chat Settings -->

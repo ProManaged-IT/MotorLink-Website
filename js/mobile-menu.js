@@ -681,6 +681,7 @@ function initMobileEnhancements() {
     initMobileMenu();
     moveDescriptionsOnMobile();
     addPageIndicatorToMobileMenu();
+    initHeaderOverflowWatcher();
 
     // Re-run on resize for mobile descriptions
     // Note: Resize handler for menu cleanup is in initMobileMenu()
@@ -692,6 +693,102 @@ function initMobileEnhancements() {
             moveDescriptionsOnMobile();
         }, 250);
     });
+}
+
+// ============================================================================
+// Dynamic header overflow watcher
+// ----------------------------------------------------------------------------
+// This keeps the header stable by switching to the mobile menu only when the
+// rendered header content truly cannot fit. It uses a small release buffer so
+// the layout does not flicker between desktop and mobile states.
+// ============================================================================
+function initHeaderOverflowWatcher() {
+    const header = document.querySelector('.header-container');
+    if (!header) return;
+
+    const FORCE_CLASS = 'header-force-mobile';
+    const MOBILE_MAX_WIDTH = 768;
+    const RELEASE_BUFFER = 48;
+    let releaseThreshold = 0;
+    let rafId = null;
+
+    const getVisibleChildren = () => Array.from(header.children).filter((child) => {
+        const styles = window.getComputedStyle(child);
+        return styles.display !== 'none' && styles.visibility !== 'hidden';
+    });
+
+    const getRequiredWidth = () => {
+        const styles = window.getComputedStyle(header);
+        const gap = parseFloat(styles.columnGap || styles.gap || '0') || 0;
+        const children = getVisibleChildren();
+
+        return children.reduce((total, child) => {
+            return total + Math.ceil(child.getBoundingClientRect().width);
+        }, 0) + (Math.max(0, children.length - 1) * gap) + 12;
+    };
+
+    const updateHeaderMode = () => {
+        if (document.body.classList.contains('mobile-menu-open')) return;
+
+        if (window.innerWidth <= MOBILE_MAX_WIDTH) {
+            document.body.classList.remove(FORCE_CLASS);
+            return;
+        }
+
+        const isForced = document.body.classList.contains(FORCE_CLASS);
+        const availableWidth = header.clientWidth;
+
+        if (!isForced) {
+            const requiredWidth = getRequiredWidth();
+
+            if (requiredWidth > availableWidth) {
+                releaseThreshold = Math.max(requiredWidth + RELEASE_BUFFER, window.innerWidth + 24);
+                document.body.classList.add(FORCE_CLASS);
+            } else {
+                releaseThreshold = requiredWidth + RELEASE_BUFFER;
+                document.body.classList.remove(FORCE_CLASS);
+            }
+
+            return;
+        }
+
+        if (window.innerWidth >= releaseThreshold) {
+            document.body.classList.remove(FORCE_CLASS);
+
+            requestAnimationFrame(() => {
+                const requiredWidth = getRequiredWidth();
+                if (requiredWidth > header.clientWidth) {
+                    releaseThreshold = Math.max(requiredWidth + RELEASE_BUFFER, window.innerWidth + 24);
+                    document.body.classList.add(FORCE_CLASS);
+                }
+            });
+        }
+    };
+
+    const scheduleUpdate = () => {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => requestAnimationFrame(updateHeaderMode));
+    };
+
+    scheduleUpdate();
+    window.addEventListener('load', scheduleUpdate);
+    window.addEventListener('resize', scheduleUpdate, { passive: true });
+
+    if (typeof ResizeObserver === 'function') {
+        const ro = new ResizeObserver(scheduleUpdate);
+        ro.observe(header);
+        getVisibleChildren().forEach(child => ro.observe(child));
+    }
+
+    if (typeof MutationObserver === 'function') {
+        const mo = new MutationObserver(scheduleUpdate);
+        mo.observe(header, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true
+        });
+    }
 }
 
 // Auto-initialize when DOM is ready

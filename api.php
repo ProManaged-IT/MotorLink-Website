@@ -15,6 +15,7 @@ ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/api_errors.log');
 
 require_once __DIR__ . '/includes/runtime-site-config.php';
+require_once __DIR__ . '/includes/fuel-price-runtime.php';
 
 // Headers for CORS and JSON responses
 header('Content-Type: application/json; charset=utf-8');
@@ -8799,34 +8800,22 @@ function getPublicClientConfig($db) {
 
 /**
  * Get current fuel prices (public endpoint)
+ * Uses the fuel price service: live GlobalPetrolPrices.com first, DB fallback,
+ * and adapts display currency based on admin settings.
  */
 function getFuelPrices($db) {
     try {
-        $stmt = $db->prepare("
-            SELECT fuel_type, price_per_liter_mwk, price_per_liter_usd, 
-                   currency, last_updated, date
-            FROM fuel_prices 
-            WHERE is_active = 1 AND date = CURDATE()
-            ORDER BY fuel_type
-        ");
-        $stmt->execute();
-        $prices = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // If no prices for today, get most recent
-        if (empty($prices)) {
-            $stmt = $db->prepare("
-                SELECT fuel_type, price_per_liter_mwk, price_per_liter_usd, 
-                       currency, last_updated, date
-                FROM fuel_prices 
-                WHERE is_active = 1
-                ORDER BY date DESC, fuel_type
-                LIMIT 10
-            ");
-            $stmt->execute();
-            $prices = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        }
-        
-        sendSuccess(['prices' => $prices]);
+        $forceRefresh = isset($_GET['refresh']) && $_GET['refresh'] === '1';
+        $snapshot = motorlink_resolve_fuel_price_snapshot($db, [
+            'force_refresh' => $forceRefresh
+        ]);
+
+        sendSuccess([
+            'prices' => $snapshot['prices'],
+            'meta'   => motorlink_extract_public_fuel_price_meta($snapshot),
+            'is_live' => (bool)($snapshot['is_live'] ?? false),
+            'display_currency' => $snapshot['display_currency'] ?? null
+        ]);
     } catch (Exception $e) {
         error_log("getFuelPrices error: " . $e->getMessage());
         sendError('Failed to load fuel prices', 500);
@@ -9153,50 +9142,73 @@ function lookupOnlineFuelConsumption() {
 
 /**
  * Calculate journey fuel cost
+ * Uses the live/cached/DB fuel price snapshot and respects the admin-selected
+ * display currency. Always stores the cost in primary (local) currency so
+ * journey history stays consistent across display preferences.
  */
 function calculateJourney($db) {
     try {
         $user = getCurrentUser(true);
         $input = json_decode(file_get_contents('php://input'), true);
-        
+
         // Validate required fields
         if (empty($input['origin']) || empty($input['destination'])) {
             sendError('Origin and destination are required', 400);
             return;
         }
-        
+
         $distanceKm = (float)($input['distance_km'] ?? 0);
-        $fuelType = $input['fuel_type'] ?? 'petrol';
+        $fuelType = strtolower(trim((string)($input['fuel_type'] ?? 'petrol')));
+        if (!in_array($fuelType, ['petrol', 'diesel', 'lpg', 'cng'], true)) {
+            $fuelType = 'petrol';
+        }
         $fuelConsumption = !empty($input['fuel_consumption']) ? (float)$input['fuel_consumption'] : null;
-        
+
         // Default fuel consumption if not provided (market-average fallback)
         if (empty($fuelConsumption)) {
             $fuelConsumption = $fuelType === 'diesel' ? 8.5 : 9.5; // L/100km
         }
-        
-        // Get current fuel price
-        $stmt = $db->prepare("
-            SELECT price_per_liter_mwk 
-            FROM fuel_prices 
-            WHERE fuel_type = ? AND is_active = 1 
-            ORDER BY date DESC 
-            LIMIT 1
-        ");
-        $stmt->execute([$fuelType]);
-        $priceData = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$priceData) {
-            // Fallback to default prices
-            $fuelPricePerLiter = $fuelType === 'diesel' ? 1950.00 : 1850.00;
-        } else {
-            $fuelPricePerLiter = (float)$priceData['price_per_liter_mwk'];
+
+        // Resolve current fuel price via snapshot service (live → cache → DB → fallback)
+        $snapshot = motorlink_resolve_fuel_price_snapshot($db);
+        $priceRow = motorlink_pick_fuel_row($snapshot, $fuelType);
+
+        $fuelPricePerLiterPrimary = 0.0; // Local currency / primary
+        $fuelPricePerLiterUsd = null;
+        if ($priceRow) {
+            $fuelPricePerLiterPrimary = (float)($priceRow['price_per_liter_mwk'] ?? 0);
+            $fuelPricePerLiterUsd = isset($priceRow['price_per_liter_usd']) && $priceRow['price_per_liter_usd'] !== null
+                ? (float)$priceRow['price_per_liter_usd']
+                : null;
         }
-        
-        // Calculate fuel needed
+
+        // Market-average fallback if the snapshot was empty
+        if ($fuelPricePerLiterPrimary <= 0) {
+            $fuelPricePerLiterPrimary = $fuelType === 'diesel' ? 6687.00 : 6972.00;
+        }
+
+        // Display currency
+        $displayCurrency = $snapshot['display_currency'] ?? [];
+        $displayCode   = strtoupper((string)($displayCurrency['code'] ?? 'MWK'));
+        $displaySymbol = (string)($displayCurrency['symbol'] ?? $displayCode);
+        $displaySource = (string)($displayCurrency['source'] ?? 'primary');
+
+        // Resolve display price per liter
+        if ($displaySource === 'usd' && $fuelPricePerLiterUsd !== null) {
+            $displayPricePerLiter = $fuelPricePerLiterUsd;
+        } else {
+            $displayPricePerLiter = $fuelPricePerLiterPrimary;
+            $displayCode = strtoupper((string)($snapshot['meta']['primary_currency_code'] ?? $displayCode));
+            $displaySymbol = (string)($snapshot['meta']['primary_currency_symbol'] ?? $displaySymbol);
+            $displaySource = 'primary';
+        }
+
+        // Always compute primary-currency values for journey history (consistent storage)
         $fuelNeededLiters = ($distanceKm / 100) * $fuelConsumption;
-        $fuelCostMWK = $fuelNeededLiters * $fuelPricePerLiter;
-        
-        // Save to journey history if requested
+        $fuelCostPrimary  = $fuelNeededLiters * $fuelPricePerLiterPrimary;
+        $fuelCostDisplay  = $fuelNeededLiters * $displayPricePerLiter;
+
+        // Save to journey history if requested (always store primary currency)
         $journeyId = null;
         if (!empty($input['save_to_history'])) {
             $stmt = $db->prepare("
@@ -9219,22 +9231,29 @@ function calculateJourney($db) {
                 !empty($input['duration_minutes']) ? (int)$input['duration_minutes'] : null,
                 $fuelType,
                 $fuelNeededLiters,
-                $fuelCostMWK,
-                $fuelPricePerLiter,
+                $fuelCostPrimary,
+                $fuelPricePerLiterPrimary,
                 $fuelConsumption,
                 $input['notes'] ?? null
             ]);
             $journeyId = $db->lastInsertId();
         }
-        
+
         sendSuccess([
-            'distance_km' => round($distanceKm, 2),
-            'fuel_type' => $fuelType,
-            'fuel_consumption_liters_per_100km' => round($fuelConsumption, 2),
-            'fuel_needed_liters' => round($fuelNeededLiters, 2),
-            'fuel_price_per_liter_mwk' => round($fuelPricePerLiter, 2),
-            'fuel_cost_mwk' => round($fuelCostMWK, 2),
-            'journey_id' => $journeyId
+            'distance_km'                        => round($distanceKm, 2),
+            'fuel_type'                          => $fuelType,
+            'fuel_consumption_liters_per_100km'  => round($fuelConsumption, 2),
+            'fuel_needed_liters'                 => round($fuelNeededLiters, 2),
+            'fuel_price_per_liter_mwk'           => round($fuelPricePerLiterPrimary, 2),
+            'fuel_price_per_liter_usd'           => $fuelPricePerLiterUsd !== null ? round($fuelPricePerLiterUsd, 4) : null,
+            'fuel_cost_mwk'                      => round($fuelCostPrimary, 2),
+            'fuel_price_per_liter_display'       => round($displayPricePerLiter, $displayCode === 'USD' ? 4 : 2),
+            'fuel_cost_display'                  => round($fuelCostDisplay, 2),
+            'display_currency_code'              => $displayCode,
+            'display_currency_symbol'            => $displaySymbol,
+            'display_currency_source'            => $displaySource,
+            'fuel_price_meta'                    => motorlink_extract_public_fuel_price_meta($snapshot),
+            'journey_id'                         => $journeyId
         ]);
     } catch (Exception $e) {
         error_log("calculateJourney error: " . $e->getMessage());
@@ -9269,111 +9288,38 @@ function getJourneyHistory($db) {
 
 /**
  * Scrape fuel prices from globalpetrolprices.com
- * This should be called daily via cron job
+ * Thin wrapper that forces a refresh through the fuel price service.
+ * Can still be called daily via cron job for pre-warming the cache.
  */
 function scrapeFuelPrices($db) {
     try {
-        $siteConfig = getSiteRuntimeConfig($db);
-        $countrySource = trim((string)($siteConfig['fuel_price_country_slug'] ?? ($siteConfig['country_name'] ?? '')));
-        $currencyCode = strtoupper(trim((string)($siteConfig['currency_code'] ?? 'LOCAL')));
-
-        if ($countrySource === '') {
-            sendError('Fuel price country is not configured', 400);
-            return;
-        }
-
-        $countrySlug = rawurlencode($countrySource);
-
-        // Optional: Add API key check for security
+        // Optional API key check (cron security)
         $apiKey = $_GET['api_key'] ?? '';
-        $expectedKey = 'MOTORLINK_FUEL_SCRAPER_KEY_2025'; // Change this!
-        
+        $expectedKey = getenv('MOTORLINK_FUEL_SCRAPER_KEY') ?: 'MOTORLINK_FUEL_SCRAPER_KEY_2025';
+
         if ($apiKey !== $expectedKey) {
             sendError('Unauthorized', 401);
             return;
         }
-        
-        // Scrape from globalpetrolprices.com
-        $url = "https://www.globalpetrolprices.com/{$countrySlug}/gasoline_prices/";
-        
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        
-        $html = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
-        if ($httpCode !== 200 || empty($html)) {
-            error_log("Failed to fetch fuel prices: HTTP $httpCode");
-            sendError('Failed to fetch fuel prices', 500);
+
+        $snapshot = motorlink_resolve_fuel_price_snapshot($db, ['force_refresh' => true]);
+        $sourceKey = $snapshot['meta']['source_key'] ?? 'none';
+
+        if ($sourceKey === 'none') {
+            sendError('Failed to refresh fuel prices', 500);
             return;
         }
-        
-        // Parse HTML to extract prices (this is a simplified version)
-        // Note: You may need to adjust the parsing based on the actual HTML structure
+
         $prices = [];
-        
-        // Try to extract petrol price
-        if (preg_match('/gasoline.*?(\d+\.?\d*)\s*' . preg_quote($currencyCode, '/') . '/i', $html, $matches)) {
-            $prices['petrol'] = (float)$matches[1];
+        foreach (($snapshot['prices'] ?? []) as $row) {
+            $prices[$row['fuel_type']] = (float)$row['price_per_liter_mwk'];
         }
-        
-        // Try to extract diesel price
-        $dieselUrl = "https://www.globalpetrolprices.com/{$countrySlug}/diesel_prices/";
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $dieselUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        $dieselHtml = curl_exec($ch);
-        curl_close($ch);
-        
-        if (preg_match('/diesel.*?(\d+\.?\d*)\s*' . preg_quote($currencyCode, '/') . '/i', $dieselHtml, $matches)) {
-            $prices['diesel'] = (float)$matches[1];
-        }
-        
-        // If parsing failed, use fallback prices
-        if (empty($prices['petrol'])) {
-            $prices['petrol'] = 1850.00; // Fallback
-        }
-        if (empty($prices['diesel'])) {
-            $prices['diesel'] = 1950.00; // Fallback
-        }
-        
-        // Deactivate old prices
-        $db->prepare("UPDATE fuel_prices SET is_active = 0 WHERE date = CURDATE()")->execute();
-        
-        // Insert new prices
-        $today = date('Y-m-d');
-        foreach ($prices as $fuelType => $price) {
-            $stmt = $db->prepare("
-                INSERT INTO fuel_prices 
-                (fuel_type, price_per_liter_mwk, date, is_active, source, source_url)
-                VALUES (?, ?, ?, 1, 'globalpetrolprices.com', ?)
-                ON DUPLICATE KEY UPDATE 
-                    price_per_liter_mwk = VALUES(price_per_liter_mwk),
-                    is_active = 1,
-                    last_updated = NOW()
-            ");
-            $stmt->execute([
-                $fuelType,
-                $price,
-                $today,
-                "https://www.globalpetrolprices.com/{$countrySlug}/{$fuelType}_prices/"
-            ]);
-        }
-        
+
         sendSuccess([
-            'message' => 'Fuel prices updated successfully',
-            'prices' => $prices,
-            'date' => $today
+            'message' => 'Fuel prices refreshed via ' . ($snapshot['meta']['source_label'] ?? 'fuel service'),
+            'prices'  => $prices,
+            'is_live' => (bool)($snapshot['is_live'] ?? false),
+            'meta'    => motorlink_extract_public_fuel_price_meta($snapshot)
         ]);
     } catch (Exception $e) {
         error_log("scrapeFuelPrices error: " . $e->getMessage());

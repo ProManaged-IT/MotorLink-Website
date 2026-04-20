@@ -3709,3 +3709,82 @@ body.has-hero.has-breadcrumbs .page-breadcrumbs__sep {
         min-height: 300px !important;
     }
 }
+
+/* ============================================================================
+   Dynamic header overflow fallback
+   When JS detects that the desktop/tablet nav can no longer fit without
+   content overlapping, it sets body.header-force-mobile. This block mirrors
+   the native mobile header layout (hamburger + slide-down nav) regardless of
+   viewport width so the UI never breaks or overlaps.
+   ============================================================================ */
+body.header-force-mobile .mobile-menu-toggle {
+    display: flex !important;
+}
+body.header-force-mobile .nav {
+    display: none !important;
+}
+body.header-force-mobile .nav.active,
+body.header-force-mobile .nav.mobile-active {
+    display: flex !important;
+    position: fixed;
+    top: 70px;
+    left: 0;
+    right: 0;
+    background: #ffffff;
+    flex-direction: column;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 9999;
+    max-height: calc(100vh - 70px);
+    overflow-y: auto;
+    gap: 0;
+}
+body.header-force-mobile .nav.active a,
+body.header-force-mobile .nav.mobile-active a {
+    padding: 14px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 15px;
+    width: 100%;
+    justify-content: flex-start;
+}
+body.header-force-mobile .nav.active a:last-child,
+body.header-force-mobile .nav.mobile-active a:last-child {
+    border-bottom: none;
+}
+body.header-force-mobile .user-menu {
+    display: none !important;
+}
+body.header-force-mobile .nav.active #guestMenuMobile,
+body.header-force-mobile .nav.active #userInfoMobile,
+body.header-force-mobile .nav.mobile-active #guestMenuMobile,
+body.header-force-mobile .nav.mobile-active #userInfoMobile {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 0;
+    border-top: 2px solid rgba(0, 0, 0, 0.05);
+    border-bottom: 2px solid rgba(0, 0, 0, 0.05);
+    margin: 16px 0;
+}
+body.header-force-mobile .nav.active #guestMenuMobile .btn,
+body.header-force-mobile .nav.active #userInfoMobile .btn,
+body.header-force-mobile .nav.mobile-active #guestMenuMobile .btn,
+body.header-force-mobile .nav.mobile-active #userInfoMobile .btn {
+    width: 100%;
+    justify-content: center;
+}
+body.header-force-mobile .header {
+    overflow: visible !important;
+}
+body.header-force-mobile .header-container {
+    gap: 8px;
+    padding: 0 12px;
+}
+body.header-force-mobile .logo {
+    font-size: 20px;
+    max-width: 70%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+

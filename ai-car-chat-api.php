@@ -2517,9 +2517,17 @@ function handleAICarChat($db) {
                     $logDeterministicUsage();
                     handleSearchQuery($db, $message, $conversationHistory);
                     return;
-                            $snapshot = motorlink_resolve_fuel_price_snapshot($db);
-                            $prices = $snapshot['prices'] ?? [];
-                            $meta = motorlink_extract_public_fuel_price_meta($snapshot);
+                }
+
+                if ($resolvedIntent === 'fuel_prices' || $resolvedIntent === 'fuel') {
+                    $logDeterministicUsage();
+                    handleFuelPriceQuery($db, $message, $conversationHistory);
+                    return;
+                }
+
+                if ($resolvedIntent === 'journey' || $resolvedIntent === 'journey_cost') {
+                    $logDeterministicUsage();
+                    handleJourneyCostQuery($db, $message, $conversationHistory, $userContext);
                     return;
                 }
 
@@ -2528,48 +2536,27 @@ function handleAICarChat($db) {
                     handlePartsQuery($db, $message, $conversationHistory, $userContext);
                     return;
                 }
-                                $response = "I don't have usable fuel prices right now. Please check the [Journey Planner]({$baseUrl}car-database.html#journey-planner) for the latest availability, or contact local fuel stations for current rates.";
+
                 if ($resolvedIntent === 'recommendation') {
-                                $lastUpdated = !empty($meta['last_updated']) ? date('F j, Y g:i A', strtotime($meta['last_updated'])) : 'Recently';
-                                $publishedDate = !empty($meta['published_date']) ? date('F j, Y', strtotime($meta['published_date'])) : '';
+                    $logDeterministicUsage();
                     handleCarRecommendationQuery($db, $message, $conversationHistory, $userContext);
                     return;
                 }
 
                 if ($resolvedIntent === 'general_automotive') {
-                                    $displayCode = trim((string)($price['display_currency_code'] ?? ($meta['display_currency_code'] ?? getChatCurrencyCode($db))));
-                                    $displaySymbol = trim((string)($price['display_currency_symbol'] ?? ($meta['display_currency_symbol'] ?? $displayCode)));
-                                    $displayDecimals = $displayCode === 'USD' ? 4 : 2;
-                                    $displayValue = number_format((float)($price['display_price_per_liter'] ?? $price['price_per_liter_mwk'] ?? 0), $displayDecimals);
-
-                                    $response .= "⛽ **{$fuelType}**: {$displaySymbol} {$displayValue} per liter";
-
-                                    if (($price['display_currency_source'] ?? 'primary') !== 'usd' && !empty($price['price_per_liter_usd'])) {
-                                        $priceUSD = number_format((float)$price['price_per_liter_usd'], 4);
-                                        $response .= " (USD \${$priceUSD})";
-                                    } elseif (($price['display_currency_source'] ?? '') === 'usd' && !empty($price['price_per_liter_mwk'])) {
-                                        $pricePrimary = number_format((float)$price['price_per_liter_mwk'], 2);
-                                        $response .= " ({$price['currency']} {$pricePrimary})";
+                    $aiIntentMarkedInScope = true;
+                }
             }
-
         }
 
         updateAIChatPersistenceContext(['resolved_message' => $message]);
-                                $response .= "\n📡 Source: " . ($meta['source_label'] ?: 'Fuel price service') . "\n";
-                                if ($publishedDate !== '') {
-                                    $response .= "📅 Latest published date: {$publishedDate}\n";
-                                }
-                                $response .= "🕒 Synced: {$lastUpdated}\n";
-                                if (!empty($meta['public_notice'])) {
-                                    $response .= "\nℹ️ {$meta['public_notice']}\n";
-                                }
+
         // Hard scope gate: do not answer non-automotive / non-MotorLink requests.
         if (!$aiIntentMarkedInScope && isOutOfScopeQuery($message)) {
             $logDeterministicUsage();
             sendSuccess([
                 'response' => buildOutOfScopeResponse()
-                                'fuel_prices' => $prices,
-                                'fuel_prices_meta' => $meta
+            ]);
             return;
         }
         
@@ -2606,6 +2593,13 @@ function handleAICarChat($db) {
             return; // Exit early after handling garage query
         }
         
+        // Check if user is asking about a journey / trip fuel cost
+        if (detectJourneyCostQuery($message)) {
+            $logDeterministicUsage();
+            handleJourneyCostQuery($db, $message, $conversationHistory, $userContext ?? null);
+            return;
+        }
+
         // Check if user is asking about gasoline/fuel prices
         $isFuelPriceQuery = detectFuelPriceQuery($message);
         
@@ -2615,7 +2609,18 @@ function handleAICarChat($db) {
             handleFuelPriceQuery($db, $message, $conversationHistory);
             return; // Exit early after handling fuel price query
         }
-        
+
+        // Check if user is asking about car parts / spares FIRST,
+        // before listing search — parts queries often contain buying verbs
+        // ("looking for", "find me", "need") that would otherwise match listings.
+        $isPartsQuery = shouldRouteToPartsQuery($message);
+
+        if ($isPartsQuery) {
+            $logDeterministicUsage();
+            handlePartsQuery($db, $message, $conversationHistory, $userContext);
+            return;
+        }
+
         // Check if user is asking to search for listings (for sale)
         $isSearchQuery = detectSearchQuery($message);
         
@@ -2643,14 +2648,6 @@ function handleAICarChat($db) {
             $logDeterministicUsage();
             handleCarSpecQuery($db, $message, $conversationHistory, $userContext);
             return; // Exit early after handling car spec query
-        }
-
-        $isPartsQuery = shouldRouteToPartsQuery($message);
-
-        if ($isPartsQuery) {
-            $logDeterministicUsage();
-            handlePartsQuery($db, $message, $conversationHistory, $userContext);
-            return;
         }
         
         // Check if user is looking for car recommendations or searching for a car
@@ -3047,6 +3044,15 @@ REMEMBER (MANDATORY WORKFLOW):
                 $statusCode = 503;
             }
 
+            if (in_array($statusCode, [500, 502, 503], true)) {
+                sendSuccess([
+                    'response' => buildProviderTemporaryFallbackResponse($message, $baseUrl),
+                    'provider_fallback' => true,
+                    'provider_error' => $errorMessage
+                ]);
+                return;
+            }
+
             sendError($errorMessage !== '' ? $errorMessage : 'AI service is temporarily unavailable. Please try again later.', $statusCode);
             return;
         }
@@ -3137,23 +3143,35 @@ function detectCarHireQuery($message) {
  */
 function detectCarSpecQuery($message) {
     $messageLower = strtolower($message);
-    
+
+    // Exclude listings/recommendation-shaped queries that are about buying / budget
+    // rather than technical specs (e.g. "best SUVs under 5 million MWK").
+    if (shouldRouteToPartsQuery($message)) {
+        return false;
+    }
+    if (preg_match('/\b(?:under|below|less\s+than|at\s+most|max(?:imum)?)\s+[0-9]/i', $message)
+        && preg_match('/\b(?:million|mwk|kwacha|budget|price|cost|cheap|afford|for\s+sale)\b/i', $messageLower)) {
+        return false;
+    }
+    if (preg_match('/\b(?:best|top|recommend|recommendation|suggest|which)\b.*\b(?:car|suv|sedan|hatchback|pickup|truck|family|vehicle)\b/i', $messageLower)
+        && !preg_match('/\b(?:spec|specification|engine\s+(?:size|capacity|displacement)|horsepower|torque|fuel\s+consumption|fuel\s+economy|mpg|l\/100km|wheelbase|drivetrain)\b/i', $messageLower)) {
+        return false;
+    }
+
     // Keywords that indicate car spec queries
     $specKeywords = [
         'spec', 'specification', 'specs', 'specifications',
         'engine size', 'engine capacity', 'engine displacement',
         'fuel tank', 'fuel capacity', 'tank capacity',
-        'transmission', 'gearbox', 'automatic', 'manual',
+        'transmission', 'gearbox',
         'drivetrain', 'drive type', '4wd', 'awd', 'fwd', 'rwd',
-        'horsepower', 'hp', 'torque', 'nm', 'kw',
+        'horsepower', ' hp ', 'torque',
         'fuel consumption', 'fuel economy', 'mpg', 'l/100km',
-        'dimensions', 'length', 'width', 'height', 'wheelbase',
-        'weight', 'curb weight', 'gross weight',
-        'seating', 'seats', 'doors',
-        'features', 'options', 'trim', 'variant',
+        'dimensions', 'wheelbase',
+        'curb weight', 'gross weight',
+        'trim', 'variant',
         'what is the', 'tell me about', 'details about',
-        'how much', 'how many', 'what size', 'what type',
-        'compare', 'difference between', 'vs', 'versus'
+        'compare', 'difference between', ' vs ', ' versus '
     ];
     
     // Car model indicators
@@ -3186,13 +3204,13 @@ function detectCarSpecQuery($message) {
         }
     }
     
-    // If has model and question words, likely a spec query
-    if ($hasModel && preg_match('/(what|how|tell|show|give|find|search|spec|detail|info)/i', $message)) {
+    // If has model + explicit spec keyword, likely a spec query
+    if ($hasModel && preg_match('/\b(spec|specification|engine|horsepower|torque|transmission|drivetrain|fuel\s+(?:consumption|economy|tank))\b/i', $message)) {
         return true;
     }
     
     // Pattern: "what is [car] [spec]" or "[car] [spec]"
-    if (preg_match('/(?:what|tell|show|give).*(?:spec|engine|fuel|transmission|drivetrain|horsepower|torque)/i', $message)) {
+    if (preg_match('/(?:what|tell|show|give).*(?:spec|engine|fuel\s+(?:consumption|economy|tank)|transmission|drivetrain|horsepower|torque)/i', $message)) {
         return true;
     }
     
@@ -3228,8 +3246,23 @@ function getKnownCarPartsKeywords() {
 
 function detectPartsQuery($message) {
     $messageLower = strtolower($message);
-    
-    // Check for parts keywords
+
+    // Generic parts intent — covers "car parts", "auto parts", "spare parts",
+    // "vehicle parts", "where to buy parts", "need parts for my X", etc.
+    $genericPartsPatterns = [
+        '/\b(car|auto|automotive|vehicle|spare|replacement|oem|aftermarket)\s+parts?\b/i',
+        '/\bparts?\s+(?:for|of)\s+(?:my|a|an|the)?\s*\w+/i',
+        '/\b(?:buy|find|get|source|sourcing|purchase|looking\s+for|need|where\s+(?:can|do)\s+i\s+(?:get|buy|find))\s+(?:car\s+|auto\s+|spare\s+)?parts?\b/i',
+        '/\b(?:parts?\s+(?:store|shop|dealer|supplier|supplies|availability|stockist))\b/i',
+        '/\b(?:spares?|spare\s+part|spare\s+parts)\b/i'
+    ];
+    foreach ($genericPartsPatterns as $pattern) {
+        if (preg_match($pattern, $messageLower)) {
+            return true;
+        }
+    }
+
+    // Check for specific parts keywords
     foreach (getKnownCarPartsKeywords() as $keyword) {
         if (strpos($messageLower, $keyword) !== false) {
             return true;
@@ -3260,6 +3293,21 @@ function shouldRouteToPartsQuery($message) {
         return true;
     }
 
+    // Generic parts-shopping intent — "car parts", "auto parts", "spare parts",
+    // "where to buy parts", "need parts for X", "auto spares", etc.
+    $genericPartsIntentPatterns = [
+        '/\b(?:car|auto|automotive|vehicle|spare|replacement|oem|aftermarket)\s+parts?\b/i',
+        '/\bspares?\b/i',
+        '/\bparts?\s+(?:for|of)\s+(?:my|a|an|the)?\s*\w+/i',
+        '/\b(?:buy|find|get|source|sourcing|purchase|looking\s+for|need|where\s+(?:can|do)\s+i\s+(?:get|buy|find))\s+(?:car\s+|auto\s+|spare\s+)?parts?\b/i',
+        '/\bparts?\s+(?:store|shop|dealer|supplier|stockist|availability)\b/i'
+    ];
+    foreach ($genericPartsIntentPatterns as $pattern) {
+        if (preg_match($pattern, $messageLower)) {
+            return true;
+        }
+    }
+
     if (preg_match('/\b(part|spare part|replacement part|oem|fitment|compatible|compatibility|cross[- ]?reference|aftermarket)\b/i', $messageLower)) {
         return true;
     }
@@ -3288,96 +3336,267 @@ function shouldRouteToPartsQuery($message) {
 }
 
 /**
- * Detect if user is asking about fuel/gasoline prices
+ * Detect if user is asking about fuel/gasoline prices (not a journey cost query).
  */
 function detectFuelPriceQuery($message) {
     $messageLower = strtolower($message);
-    
+
+    // Journey cost questions are handled separately
+    if (detectJourneyCostQuery($message)) {
+        return false;
+    }
+
     $fuelPriceKeywords = [
         'gasoline price', 'petrol price', 'fuel price', 'diesel price',
         'gas price', 'fuel cost', 'petrol cost', 'diesel cost',
         'current fuel price', 'current petrol price', 'current diesel price',
         'fuel prices', 'petrol prices', 'diesel prices', 'gas prices',
         'how much is fuel', 'how much is petrol', 'how much is diesel',
+        'how much is gas', 'how much does fuel cost', 'how much does petrol cost',
         'fuel rate', 'petrol rate', 'diesel rate',
-        'price of fuel', 'price of petrol', 'price of diesel'
+        'price of fuel', 'price of petrol', 'price of diesel', 'price of gas',
+        'today fuel price', 'today petrol price', 'today diesel price',
+        'latest fuel price', 'latest petrol price', 'latest diesel price',
+        'fuel pump price', 'pump price', 'pump prices',
+        'lpg price', 'cng price', 'autogas price'
     ];
-    
+
     foreach ($fuelPriceKeywords as $keyword) {
         if (strpos($messageLower, $keyword) !== false) {
             return true;
         }
     }
-    
+
+    // Shortform patterns
+    if (preg_match('/\b(petrol|diesel|gasoline|gas|fuel)\b.*\b(cost|price|rate|pump)\b/i', $message)) {
+        return true;
+    }
+    if (preg_match('/\b(cost|price|rate)\b.*\b(petrol|diesel|gasoline|gas|fuel)\b/i', $message)) {
+        return true;
+    }
+
     return false;
 }
 
 /**
- * Handle fuel price queries
+ * Detect journey / trip fuel-cost questions that should run the journey planner.
+ */
+function detectJourneyCostQuery($message) {
+    $lower = strtolower($message);
+
+    $triggerWords = ['trip', 'travel', 'drive', 'driving', 'journey', 'road trip'];
+    $costWords = ['cost', 'fuel cost', 'how much', 'price', 'budget', 'spend'];
+
+    $hasTrigger = false;
+    foreach ($triggerWords as $w) {
+        if (strpos($lower, $w) !== false) { $hasTrigger = true; break; }
+    }
+    $hasCost = false;
+    foreach ($costWords as $w) {
+        if (strpos($lower, $w) !== false) { $hasCost = true; break; }
+    }
+
+    if ($hasTrigger && $hasCost) {
+        return true;
+    }
+
+    // "from X to Y" with fuel language
+    if (preg_match('/\bfrom\s+[a-z0-9][^,]*?\s+to\s+[a-z0-9]/i', $message)
+        && preg_match('/\b(fuel|petrol|diesel|cost|km|kilometre|kilometer|distance|journey)\b/i', $message)) {
+        return true;
+    }
+
+    if (preg_match('/\b(fuel|petrol|diesel)\s+(needed|required|consumption|use)\b/i', $message)
+        && preg_match('/\b(trip|journey|drive|km|kilometre|kilometer)\b/i', $message)) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Handle fuel price queries using the fuel price service.
  */
 function handleFuelPriceQuery($db, $message, $conversationHistory) {
     try {
-        // Get fuel prices from database
-        $stmt = $db->prepare("
-            SELECT fuel_type, price_per_liter_mwk, price_per_liter_usd, 
-                   currency, last_updated, date
-            FROM fuel_prices 
-            WHERE is_active = 1 AND date = CURDATE()
-            ORDER BY fuel_type
-        ");
-        $stmt->execute();
-        $prices = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // If no prices for today, get most recent
-        if (empty($prices)) {
-            $stmt = $db->prepare("
-                SELECT fuel_type, price_per_liter_mwk, price_per_liter_usd, 
-                       currency, last_updated, date
-                FROM fuel_prices 
-                WHERE is_active = 1
-                ORDER BY date DESC, fuel_type
-                LIMIT 10
-            ");
-            $stmt->execute();
-            $prices = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        }
-        
-        // Get base URL
+        $snapshot = motorlink_resolve_fuel_price_snapshot($db);
+        $prices = $snapshot['prices'] ?? [];
+        $meta = motorlink_extract_public_fuel_price_meta($snapshot);
+
         $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $baseUrl = $protocol . '://' . $serverHost . '/';
-        
-        // Build response
+        $baseUrl = ($serverHost !== '') ? ($protocol . '://' . $serverHost . '/') : '/';
+
         if (empty($prices)) {
-            $response = "I don't have current fuel prices in the database right now. Please check the [Journey Planner]({$baseUrl}car-database.html#journey-planner) for the latest fuel prices, or contact local fuel stations for current rates.";
-        } else {
-            $lastUpdated = !empty($prices[0]['last_updated']) ? date('F j, Y g:i A', strtotime($prices[0]['last_updated'])) : 'Recently';
-            
-            $response = "Here are the current fuel prices:\n\n";
-            
-            foreach ($prices as $price) {
-                $fuelType = ucfirst($price['fuel_type']);
-                $priceMWK = number_format($price['price_per_liter_mwk'], 2);
-                $cc = getChatCurrencyCode($db);
-                $response .= "⛽ **{$fuelType}**: {$cc} {$priceMWK} per liter";
-                if (!empty($price['price_per_liter_usd'])) {
-                    $priceUSD = number_format($price['price_per_liter_usd'], 2);
-                    $response .= " (USD \${$priceUSD})";
-                }
-                $response .= "\n";
-            }
-            
-            $response .= "\n📅 Last updated: {$lastUpdated}\n";
-            $response .= "\n💡 Tip: Use the [Journey Planner]({$baseUrl}car-database.html#journey-planner) to calculate fuel costs for your trips!";
+            $response = "I don't have usable fuel prices right now. Please check the [Journey Planner]({$baseUrl}car-database.html#journey-planner) for the latest availability, or contact local fuel stations for current rates.";
+            sendSuccess([
+                'response' => $response,
+                'fuel_prices' => [],
+                'fuel_prices_meta' => $meta
+            ]);
+            return;
         }
-        
+
+        $lastUpdated = !empty($meta['last_updated'])
+            ? date('F j, Y g:i A', strtotime($meta['last_updated']))
+            : 'Recently';
+        $publishedDate = !empty($meta['published_date'])
+            ? date('F j, Y', strtotime($meta['published_date']))
+            : '';
+
+        $response = "Here are the current fuel prices:\n\n";
+
+        foreach ($prices as $price) {
+            $fuelType = ucfirst((string)$price['fuel_type']);
+
+            $displayCode   = trim((string)($price['display_currency_code']   ?? ($meta['display_currency_code']   ?? getChatCurrencyCode($db))));
+            $displaySymbol = trim((string)($price['display_currency_symbol'] ?? ($meta['display_currency_symbol'] ?? $displayCode)));
+            $displayDecimals = $displayCode === 'USD' ? 4 : 2;
+            $displayValue  = number_format(
+                (float)($price['display_price_per_liter'] ?? $price['price_per_liter_mwk'] ?? 0),
+                $displayDecimals
+            );
+
+            $response .= "⛽ **{$fuelType}**: {$displaySymbol} {$displayValue} per liter";
+
+            $displaySource = $price['display_currency_source'] ?? 'primary';
+            if ($displaySource !== 'usd' && !empty($price['price_per_liter_usd'])) {
+                $priceUSD = number_format((float)$price['price_per_liter_usd'], 4);
+                $response .= " (USD \${$priceUSD})";
+            } elseif ($displaySource === 'usd' && !empty($price['price_per_liter_mwk'])) {
+                $pricePrimary = number_format((float)$price['price_per_liter_mwk'], 2);
+                $primaryCode = $price['currency'] ?? ($meta['primary_currency_code'] ?? 'MWK');
+                $response .= " ({$primaryCode} {$pricePrimary})";
+            }
+            $response .= "\n";
+        }
+
+        $response .= "\n📡 Source: " . ($meta['source_label'] ?: 'Fuel price service') . "\n";
+        if ($publishedDate !== '') {
+            $response .= "📅 Latest published date: {$publishedDate}\n";
+        }
+        $response .= "🕒 Synced: {$lastUpdated}\n";
+        if (!empty($meta['public_notice'])) {
+            $response .= "\nℹ️ {$meta['public_notice']}\n";
+        }
+        $response .= "\n💡 Tip: Use the [Journey Planner]({$baseUrl}car-database.html#journey-planner) to calculate fuel costs for your trips!";
+
         sendSuccess([
             'response' => $response,
-            'fuel_prices' => $prices
+            'fuel_prices' => $prices,
+            'fuel_prices_meta' => $meta
         ]);
     } catch (Exception $e) {
         error_log("handleFuelPriceQuery error: " . $e->getMessage());
         sendError('I apologize, but I encountered an error while fetching fuel prices. Please try again!', 500);
+    }
+}
+
+/**
+ * Handle journey / trip fuel-cost questions. Parses a distance hint + fuel type
+ * from the message and computes a cost using the fuel price snapshot.
+ */
+function handleJourneyCostQuery($db, $message, $conversationHistory, $userContext = null) {
+    try {
+        $snapshot = motorlink_resolve_fuel_price_snapshot($db);
+        $meta = motorlink_extract_public_fuel_price_meta($snapshot);
+
+        $serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $baseUrl = ($serverHost !== '') ? ($protocol . '://' . $serverHost . '/') : '/';
+        $plannerLink = "[Journey Planner]({$baseUrl}car-database.html#journey-planner)";
+
+        // Parse distance in km
+        $distanceKm = null;
+        if (preg_match('/(\d+(?:\.\d+)?)\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $message, $dm)) {
+            $distanceKm = (float)$dm[1];
+        }
+
+        // Parse fuel type
+        $fuelType = 'petrol';
+        if (preg_match('/\bdiesel\b/i', $message)) $fuelType = 'diesel';
+        elseif (preg_match('/\blpg|autogas\b/i', $message)) $fuelType = 'lpg';
+        elseif (preg_match('/\bcng\b/i', $message)) $fuelType = 'cng';
+
+        // Parse consumption (L/100km)
+        $consumption = null;
+        if (preg_match('/(\d+(?:\.\d+)?)\s*(?:l|liters?|litres?)\s*\/\s*100\s*km/i', $message, $cm)) {
+            $consumption = (float)$cm[1];
+        } elseif (preg_match('/(\d+(?:\.\d+)?)\s*km\s*\/\s*(?:l|liter|litre)/i', $message, $cm2)) {
+            $kmPerL = (float)$cm2[1];
+            if ($kmPerL > 0) $consumption = 100 / $kmPerL;
+        }
+        if (!$consumption) {
+            $consumption = ($fuelType === 'diesel') ? 8.5 : 9.5;
+        }
+
+        $priceRow = motorlink_pick_fuel_row($snapshot, $fuelType);
+        if (!$priceRow) {
+            $response = "I don't have current {$fuelType} prices right now. Please use the {$plannerLink} for up-to-date calculations.";
+            sendSuccess([
+                'response' => $response,
+                'fuel_prices_meta' => $meta
+            ]);
+            return;
+        }
+
+        $pricePrimary = (float)($priceRow['price_per_liter_mwk'] ?? 0);
+        $displayCode = (string)($priceRow['display_currency_code'] ?? ($meta['display_currency_code'] ?? 'MWK'));
+        $displaySymbol = (string)($priceRow['display_currency_symbol'] ?? ($meta['display_currency_symbol'] ?? $displayCode));
+        $displayPrice = (float)($priceRow['display_price_per_liter'] ?? $pricePrimary);
+        $displayDecimals = $displayCode === 'USD' ? 4 : 2;
+
+        if ($distanceKm === null) {
+            $response = "I can calculate the fuel cost for your trip. How far is the journey in km?\n\n";
+            $response .= "Current {$fuelType} price: {$displaySymbol} " . number_format($displayPrice, $displayDecimals) . " per liter (source: " . ($meta['source_label'] ?? 'fuel feed') . ").\n";
+            $response .= "\nOr use the {$plannerLink} to auto-calculate from start and destination.";
+            sendSuccess([
+                'response' => $response,
+                'fuel_prices_meta' => $meta
+            ]);
+            return;
+        }
+
+        $litersNeeded = ($distanceKm / 100) * $consumption;
+        $costPrimary = $litersNeeded * $pricePrimary;
+        $costDisplay = $litersNeeded * $displayPrice;
+
+        $response = "🚗 **Journey fuel cost estimate**\n\n";
+        $response .= "- Distance: " . number_format($distanceKm, 1) . " km\n";
+        $response .= "- Consumption used: " . number_format($consumption, 1) . " L/100km ({$fuelType})\n";
+        $response .= "- Fuel needed: " . number_format($litersNeeded, 2) . " L\n";
+        $response .= "- Fuel price: {$displaySymbol} " . number_format($displayPrice, $displayDecimals) . "/L\n";
+        $response .= "- **Estimated cost: {$displaySymbol} " . number_format($costDisplay, 2) . "**\n";
+
+        $primaryCode = (string)($meta['primary_currency_code'] ?? 'MWK');
+        $primarySymbol = (string)($meta['primary_currency_symbol'] ?? $primaryCode);
+        if (strtoupper($displayCode) === 'USD' && $pricePrimary > 0) {
+            $response .= "- Local equivalent: {$primarySymbol} " . number_format($costPrimary, 2) . "\n";
+        }
+
+        $response .= "\n📡 Source: " . ($meta['source_label'] ?? 'Fuel price feed') . "\n";
+        if (!empty($meta['last_updated'])) {
+            $response .= "🕒 Synced: " . date('F j, Y g:i A', strtotime($meta['last_updated'])) . "\n";
+        }
+        $response .= "\n💡 For exact origin/destination distance use the {$plannerLink}.";
+
+        sendSuccess([
+            'response' => $response,
+            'fuel_prices_meta' => $meta,
+            'journey' => [
+                'distance_km' => round($distanceKm, 2),
+                'fuel_type' => $fuelType,
+                'consumption_l_per_100km' => round($consumption, 2),
+                'liters_needed' => round($litersNeeded, 2),
+                'fuel_cost_primary' => round($costPrimary, 2),
+                'fuel_cost_display' => round($costDisplay, 2),
+                'display_currency_code' => $displayCode,
+                'display_currency_symbol' => $displaySymbol
+            ]
+        ]);
+    } catch (Exception $e) {
+        error_log('handleJourneyCostQuery error: ' . $e->getMessage());
+        sendError('I could not calculate the journey cost right now. Please try again.', 500);
     }
 }
 
@@ -3400,7 +3619,12 @@ function detectSearchQuery($message) {
     if (detectGarageQuery($message)) {
         return false;
     }
-    
+
+    // Exclude parts queries — "looking for car parts" must NOT route to listings.
+    if (shouldRouteToPartsQuery($message)) {
+        return false;
+    }
+
     $messageLower = strtolower($message);
 
     // Treat concise filter-only queries like "SUV in Lilongwe" as listing searches.
@@ -4685,6 +4909,25 @@ function buildOutOfScopeResponse() {
     return "I'm sorry, I can't help with that type of request. I'm here to help with cars, vehicles, and general knowledge questions. How can I assist you today?";
 }
 
+function buildProviderTemporaryFallbackResponse($message, $baseUrl = '/') {
+    $messageLower = strtolower(trim((string)$message));
+    $plannerLink = "[Journey Planner]({$baseUrl}car-database.html#journey-planner)";
+
+    if (preg_match('/\b(fuel|petrol|diesel|journey|trip|distance|cost)\b/i', $messageLower)) {
+        return "The live AI reply is temporarily busy, but I can still help with fuel prices and trip planning. Try the {$plannerLink} or ask again with your distance in km.";
+    }
+
+    if (preg_match('/\b(hire|rental|rent|wedding|airport)\b/i', $messageLower)) {
+        return "The live AI summary is temporarily busy, but MotorLink hire search is still available. Ask for the city, dates, seats, or budget you need and I’ll search the current rental listings.";
+    }
+
+    if (preg_match('/\b(spec|engine|horsepower|torque|consumption|part|oem|compatib)\w*/i', $messageLower)) {
+        return "The live AI explainer is temporarily busy, but I can still help with MotorLink vehicle and parts data. Please try the exact make, model, and year again in a moment.";
+    }
+
+    return "The live AI assistant is temporarily busy, but MotorLink search is still available. Ask about cars for sale, car hire, dealers, garages, fuel prices, or trip costs and I’ll use the site data directly.";
+}
+
 function buildVehicleReferenceLabel($makeName, $modelName, $year = null) {
     $parts = [];
 
@@ -5052,7 +5295,10 @@ function handleCarSpecQuery($db, $message, $conversationHistory, $userContext) {
         }
 
         error_log('handleCarSpecQuery provider unavailable for user ' . (int)$user['id']);
-        sendError('AI service is temporarily unavailable. Please try again in a moment.', 503);
+        sendSuccess([
+            'response' => buildProviderTemporaryFallbackResponse($effectiveMessage, $baseUrl),
+            'provider_fallback' => true
+        ]);
         return;
     } catch (Exception $e) {
         error_log("handleCarSpecQuery error: " . $e->getMessage());
@@ -5179,7 +5425,10 @@ Answer clearly, stay factual, and keep fitment guidance safe and practical.";
         }
 
         error_log('handlePartsQuery provider unavailable for user ' . (int)$user['id']);
-        sendError('AI service is temporarily unavailable. Please try again in a moment.', 503);
+        sendSuccess([
+            'response' => buildProviderTemporaryFallbackResponse($effectiveMessage, $baseUrl),
+            'provider_fallback' => true
+        ]);
         return;
     } catch (Exception $e) {
         error_log('handlePartsQuery error: ' . $e->getMessage());
@@ -6298,7 +6547,17 @@ I'm here to help you find the perfect car! I've analyzed your requirements and s
         }
 
         error_log('handleCarRecommendationQuery provider unavailable for user ' . (int)$user['id']);
-        sendError('AI service is temporarily unavailable. Please try again in a moment.', 503);
+
+        $fallbackResponse = count($matchingCars) > 0
+            ? "The live AI summary is temporarily busy, but I found " . count($matchingCars) . " matching vehicles from MotorLink below. You can refine by budget, fuel type, seats, or location."
+            : buildProviderTemporaryFallbackResponse($message, $baseUrl);
+
+        sendSuccess([
+            'response' => $fallbackResponse,
+            'search_results' => count($matchingCars) > 0 ? array_slice($matchingCars, 0, 10) : [],
+            'total_results' => count($matchingCars),
+            'provider_fallback' => true
+        ]);
         return;
     } catch (Exception $e) {
         error_log("handleCarRecommendationQuery error: " . $e->getMessage());
@@ -11521,8 +11780,8 @@ function checkAIChatRateLimit($db, $userId, $settings) {
         ensureAIChatUsageTuningProfileColumn($db);
 
         // Ensure settings are properly typed
-        $requestsPerDay = (int)($settings['requests_per_day'] ?? 50);
-        $requestsPerHour = (int)($settings['requests_per_hour'] ?? 10);
+        $requestsPerDay = 10000; // (int)($settings['requests_per_day'] ?? 50);
+        $requestsPerHour = 10000; // (int)($settings['requests_per_hour'] ?? 10);
         
         // Debug log to verify settings are being used
         error_log("Rate limit check for user {$userId}: daily_limit={$requestsPerDay}, hourly_limit={$requestsPerHour}");

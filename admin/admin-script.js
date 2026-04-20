@@ -791,7 +791,8 @@ class AdminDashboard {
                     loadSettings(),
                     loadSystemInfo(),
                     loadAIChatSettings(), // This will also load AI Learning settings
-                    loadFuelPriceSettings()
+                    loadFuelPriceSettings(),
+                    loadFuelSourceSettings()
                 ]);
             default:
                 return Promise.resolve();
@@ -6891,6 +6892,49 @@ async function saveFuelPriceSettings() {
     } catch (error) {
         console.error('Error saving fuel prices:', error);
         admin.showAlert('error', error.message || 'Failed to save fuel prices');
+    }
+}
+
+async function loadFuelSourceSettings() {
+    try {
+        const response = await admin.apiCall('get_settings', 'GET', null);
+        if (!response.success) return;
+        const s = response.settings || {};
+        const modeEl = document.getElementById('fuel-price-source-mode');
+        const currencyEl = document.getElementById('fuel-price-display-currency');
+        const hoursEl = document.getElementById('fuel-price-cache-hours');
+        if (modeEl && s.fuel_price_source) modeEl.value = s.fuel_price_source;
+        if (currencyEl && s.fuel_price_display_currency) currencyEl.value = s.fuel_price_display_currency;
+        if (hoursEl && (s.fuel_price_cache_hours !== undefined && s.fuel_price_cache_hours !== null && s.fuel_price_cache_hours !== '')) {
+            hoursEl.value = s.fuel_price_cache_hours;
+        }
+    } catch (err) {
+        console.error('Error loading fuel source settings:', err);
+    }
+}
+
+async function saveFuelSourceSettings() {
+    try {
+        const mode = document.getElementById('fuel-price-source-mode')?.value || 'live_with_fallback';
+        const currency = document.getElementById('fuel-price-display-currency')?.value || 'local';
+        const hoursRaw = document.getElementById('fuel-price-cache-hours')?.value;
+        const hours = hoursRaw === '' || hoursRaw === null ? 6 : Math.max(0, Math.min(168, parseInt(hoursRaw, 10) || 0));
+
+        const payload = {
+            category: 'fuel_price',
+            settings: {
+                source: mode,
+                display_currency: currency,
+                cache_hours: hours
+            }
+        };
+
+        const response = await admin.apiCall('save_settings', 'POST', payload);
+        if (!response.success) throw new Error(response.message || 'Failed to save fuel source settings');
+        admin.showAlert('success', 'Fuel source and display settings saved');
+    } catch (err) {
+        console.error('Error saving fuel source settings:', err);
+        admin.showAlert('error', err.message || 'Failed to save fuel source settings');
     }
 }
 

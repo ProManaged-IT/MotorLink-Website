@@ -357,6 +357,7 @@ class AICarChat {
         if (!this.currentUser) {
             // Keep widget invisible for guests — do NOT add 'loaded'
             widget.style.display = 'none';
+            widget.classList.remove('loaded');
         } else {
             // Show widget for logged-in users
             widget.style.display = 'block';
@@ -667,6 +668,7 @@ class AICarChat {
 
             const chatInput = document.getElementById('aiChatInput');
             if (chatInput && focus) setTimeout(() => chatInput.focus(), 100);
+            setTimeout(() => this.scrollToBottom(), 80);
 
             if (saveState) {
                 this.saveConversation();
@@ -756,6 +758,10 @@ class AICarChat {
         const nextHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
         textarea.style.height = nextHeight + 'px';
         textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+
+        if (this.isOpen) {
+            this.scrollToBottom();
+        }
     }
 
     ensureInputStatusElement() {
@@ -791,25 +797,9 @@ class AICarChat {
     }
 
     setInputSendingState(isSending, retryAttempt = 0) {
-        const inputContainer = document.querySelector('.ai-chat-input-container');
-        const status = this.ensureInputStatusElement();
-        if (!inputContainer || !status) return;
-
-        if (isSending) {
-            inputContainer.classList.add('ai-chat-input-sending');
-            const label = retryAttempt > 0
-                ? `Reconnecting (${Math.min(retryAttempt, this.maxRetries)}/${this.maxRetries})...`
-                : 'Sending...';
-            const textNode = status.querySelector('.ai-chat-input-status-text');
-            if (textNode) {
-                textNode.textContent = label;
-            }
-            status.hidden = false;
-            return;
-        }
-
-        inputContainer.classList.remove('ai-chat-input-sending');
-        status.hidden = true;
+        // Feature disabled as per user request to remove "Sending..." indicator.
+        // We still disable the inputs in sendMessage() and show typing indicator.
+        return;
     }
 
     clearSendFailsafe() {
@@ -894,7 +884,7 @@ class AICarChat {
         if (sendBtn) sendBtn.disabled = true;
         this.isSending = true;
         this.setInputSendingState(true, retryAttempt);
-        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 36000 : 30000);
+        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 95000 : 65000);
 
         // Show compact in-chat typing indicator
         this.showTypingIndicator();
@@ -904,10 +894,9 @@ class AICarChat {
             // Generous timeouts: complex marketplace queries (car hire, dealers with
             // multiple joins) can legitimately take 8-15s on production. Retry has
             // more headroom so we only abort truly stuck requests.
-            const messageLength = (message || '').length;
-            const base = messageLength > 280 ? 28000 : 22000;
-            const timeoutDuration = retryAttempt > 0 ? 32000 : base;
-            const timeoutId = setTimeout(() => controller.abort('Request timeout'), timeoutDuration);
+            const base = 60000; // Increased base timeout to 60s
+            const timeoutDuration = retryAttempt > 0 ? 90000 : base; // 90s for retries
+            const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
             const response = await fetch(`${CONFIG.API_URL}?action=ai_car_chat`, {
                 method: 'POST',
@@ -1549,9 +1538,17 @@ class AICarChat {
 
     scrollToBottom() {
         const messagesContainer = document.getElementById('aiChatMessages');
-        if (messagesContainer) {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        if (!messagesContainer) {
+            return;
         }
+
+        const stickToLatest = () => {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight + 999;
+        };
+
+        stickToLatest();
+        requestAnimationFrame(stickToLatest);
+        setTimeout(stickToLatest, 80);
     }
 
     escapeHtml(text) {

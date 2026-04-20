@@ -1703,6 +1703,15 @@ class MotorLink {
             let images = [];
             let featuredImageId = listing.featured_image_id || null;
 
+            // If the listing has gallery images with IDs, prefer those API-served
+            // images before any raw uploads path so stale filenames do not trigger 404s.
+            if (!featuredImageId && Array.isArray(listing.images) && listing.images.length > 0) {
+                const fallbackImageWithId = listing.images.find(img => img && typeof img === 'object' && img.id);
+                if (fallbackImageWithId?.id) {
+                    featuredImageId = fallbackImageWithId.id;
+                }
+            }
+
             // Prefer API-served image first because it gracefully falls back if file is missing.
             if (featuredImageId) {
                 images.push(`${CONFIG.API_URL}?action=image&id=${featuredImageId}`);
@@ -3801,7 +3810,14 @@ class ShowroomManager {
 
         carsGrid.innerHTML = cars.map(car => {
             let images = [];
-            const featuredImageId = car.featured_image_id || null;
+            let featuredImageId = car.featured_image_id || null;
+
+            if (!featuredImageId && Array.isArray(car.images) && car.images.length > 0) {
+                const fallbackImageWithId = car.images.find(img => img && typeof img === 'object' && img.id);
+                if (fallbackImageWithId?.id) {
+                    featuredImageId = fallbackImageWithId.id;
+                }
+            }
 
             if (featuredImageId) {
                 images.push(`${CONFIG.API_URL}?action=image&id=${featuredImageId}`);
