@@ -1728,6 +1728,109 @@ function aiChatNormalizePromptText($text, $limit = 220) {
     return aiChatTruncateText($text, $limit);
 }
 
+/**
+ * Scan recent conversation history to extract the vehicle currently being discussed.
+ * Returns a compact context string like "Make: Jaguar | Model: XF | Year: 2017 | Fuel: Petrol"
+ * or empty string if no vehicle context is found.
+ * Used to inject ACTIVE VEHICLE CONTEXT into the general AI system prompt.
+ */
+function extractActiveVehicleFromConversation($conversationHistory) {
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return '';
+    }
+
+    $make = '';
+    $model = '';
+    $year = '';
+    $fuelType = '';
+
+    // Scan last 8 messages (most recent first) for vehicle context
+    $recentSlice = array_reverse(array_slice($conversationHistory, -8));
+    foreach ($recentSlice as $item) {
+        if (!is_array($item)) continue;
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') continue;
+
+        // Extract fuel type from assistant spec responses (e.g. "Fuel: Petrol" or "Fuel Type: Diesel")
+        if (empty($fuelType) && preg_match('/\bfuel(?:\s+type)?:\s*(petrol|diesel|hybrid|electric)/i', $content, $m)) {
+            $fuelType = ucfirst(strtolower($m[1]));
+        }
+
+        // Extract year (4-digit year between 1990-2030)
+        if (empty($year) && preg_match('/\b(199\d|200\d|201\d|202\d)\b/', $content, $m)) {
+            $year = $m[1];
+        }
+
+        // Extract make/model from patterns like "Jaguar XF", "Toyota Hilux", "2017 Jaguar XF"
+        if (empty($make)) {
+            $commonMakes = [
+                'jaguar' => 'Jaguar', 'toyota' => 'Toyota', 'honda' => 'Honda', 'nissan' => 'Nissan',
+                'mazda' => 'Mazda', 'mitsubishi' => 'Mitsubishi', 'subaru' => 'Subaru', 'suzuki' => 'Suzuki',
+                'ford' => 'Ford', 'volkswagen' => 'Volkswagen', 'vw' => 'Volkswagen', 'bmw' => 'BMW',
+                'mercedes' => 'Mercedes-Benz', 'mercedes-benz' => 'Mercedes-Benz', 'audi' => 'Audi',
+                'land rover' => 'Land Rover', 'lexus' => 'Lexus', 'volvo' => 'Volvo', 'porsche' => 'Porsche',
+                'hyundai' => 'Hyundai', 'kia' => 'Kia', 'isuzu' => 'Isuzu', 'peugeot' => 'Peugeot',
+                'renault' => 'Renault', 'citroen' => 'Citroen', 'fiat' => 'Fiat', 'opel' => 'Opel',
+                'chevrolet' => 'Chevrolet', 'chevy' => 'Chevrolet', 'jeep' => 'Jeep', 'infiniti' => 'Infiniti',
+                'acura' => 'Acura', 'alfa romeo' => 'Alfa Romeo', 'maserati' => 'Maserati',
+            ];
+            $contentLower = strtolower($content);
+            foreach ($commonMakes as $key => $val) {
+                if (strpos($contentLower, $key) !== false) {
+                    $make = $val;
+                    // Try to extract a model word immediately after the make
+                    if (preg_match('/\b' . preg_quote($key, '/') . '\s+([A-Z][a-zA-Z0-9\-]{1,12})/i', $content, $mModel)) {
+                        $model = $mModel[1];
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (!empty($make) && !empty($fuelType)) break;
+    }
+
+    if (empty($make)) return '';
+
+    $parts = ["Make: {$make}"];
+    if (!empty($model)) $parts[] = "Model: {$model}";
+    if (!empty($year)) $parts[] = "Year: {$year}";
+    if (!empty($fuelType)) $parts[] = "Fuel: {$fuelType}";
+
+    return implode(' | ', $parts);
+}
+
+/**
+ * When the user references a vehicle using only pronouns ("it", "that one", "the car")
+ * and neither the current message nor conversation history contains a vehicle,
+ * return a clarification question. Otherwise return ''.
+ *
+ * @param string $message          Current user message
+ * @param string $resolvedMake     Make resolved from message + history (may be empty)
+ * @param string $resolvedModel    Model resolved from message + history (may be empty)
+ */
+function buildVehicleClarificationQuestion($message, $resolvedMake, $resolvedModel) {
+    if (!empty($resolvedMake) || !empty($resolvedModel)) {
+        return '';
+    }
+
+    $ml = strtolower(trim($message));
+
+    // Message must reference a vehicle via pronoun/vague term
+    $hasVehicleRef = preg_match('/\b(it|its|the car|this car|that car|the vehicle|this vehicle|the one|that one|this one)\b/i', $ml);
+    if (!$hasVehicleRef) {
+        return '';
+    }
+
+    // And must be asking a concrete question (price, spec, maintenance, parts, etc.)
+    $hasQuestion = preg_match('/\b(how much|price|cost|worth|value|spec|engine|fuel|diesel|petrol|hybrid|electric|dpf|turbo|service|maintain|repair|part|problem|issue|fault|fix|oil|tyre|brake|clutch|battery|mileage|km|year|model|make|tell me|what is|what\'s|is it|does it|has it|can it|will it)\b/i', $ml);
+    if (!$hasQuestion) {
+        return '';
+    }
+
+    return "Which car are you referring to? Please mention the make and model (e.g. Toyota Hilux, Jaguar XF) so I can give you the right answer.";
+}
+
 function buildAIChatConversationBrief($conversationHistory, $limit = 6) {
     if (!is_array($conversationHistory) || empty($conversationHistory)) {
         return '';
@@ -3087,6 +3190,13 @@ REMEMBER (MANDATORY WORKFLOW):
         $databaseContextCompact = substr((string)$databaseContext, 0, 1600);
         $retrievalContextCompact = substr((string)$retrievalContext, 0, 1600);
 
+        // Extract the active vehicle being discussed (make/model/year/fuel type) from conversation
+        // history and inject it prominently so the AI never assumes wrong fuel type etc.
+        $activeVehicleContext = extractActiveVehicleFromConversation($conversationHistory);
+        $activeVehicleBlock = $activeVehicleContext !== ''
+            ? "\n\nACTIVE VEHICLE CONTEXT (extracted from conversation — treat as ground truth):\n{$activeVehicleContext}\nIMPORTANT: Use this vehicle's confirmed fuel type, make, and model when answering. Do NOT assume a different fuel type (e.g. diesel vs petrol) than what is stated here."
+            : '';
+
         $systemPrompt = "You are {$siteName} AI Assistant for {$marketContextLabel}. Provide accurate and prompt responses.\n\n"
             . "PRIORITIES:\n"
             . "1. For automotive/listing/dealer/garage/hire queries, prioritize MotorLink database and retrieval context.\n"
@@ -3096,7 +3206,7 @@ REMEMBER (MANDATORY WORKFLOW):
             . "5. Use simple markdown bullets when helpful.\n"
             . "6. Non-automotive questions are allowed; answer briefly and clearly.\n\n"
             . "USER CONTEXT: {$contextInfo}{$locationContext}{$longTermMemoryCompact}{$conversationBriefCompact}{$recentEntityCompact}\n"
-            . "BASE URL: {$baseUrl}{$databaseContextCompact}{$retrievalContextCompact}";
+            . "BASE URL: {$baseUrl}{$databaseContextCompact}{$retrievalContextCompact}{$activeVehicleBlock}";
 
         // Append self-improvement signals from user feedback (last helpful / unhelpful patterns).
         $feedbackBlock = buildFeedbackSelfImprovementBlock($db);
@@ -3781,7 +3891,7 @@ function detectSearchQuery($message) {
     
     // FAST CHECK: Must have buying/selling intent for car listings
     // Car listings are ONLY for buying/selling, not for hire/rental
-    $buyingKeywords = ['buy', 'purchase', 'for sale', 'selling', 'sell', 'price', 'cost', 'million', 'kwacha', 'own', 'looking for', 'i want', 'i need', 'find me', 'show me'];
+    $buyingKeywords = ['buy', 'purchase', 'for sale', 'selling', 'sell', 'price', 'cost', 'million', 'kwacha', 'own', 'looking for', 'i want', 'i need', 'find me', 'show me', 'how much', 'what does it cost', "what's the price", 'how much is', 'how much does'];
     $hasBuyingIntent = false;
     foreach ($buyingKeywords as $keyword) {
         if (strpos($messageLower, $keyword) !== false) {
@@ -3791,7 +3901,7 @@ function detectSearchQuery($message) {
     }
     
     // Also check for specific car model/make mentions which imply buying intent
-    $carModels = ['fortuner', 'prado', 'hilux', 'landcruiser', 'land cruiser', 'corolla', 'camry', 'rav4', 'harrier', 'vitz', 'axio', 'fielder', 'premio', 'allion', 'wish', 'noah', 'voxy', 'alphard', 'hiace', 'ranger', 'bt-50', 'cx-5', 'cx-3', 'demio', 'mazda3', 'mazda6', 'atenza', 'fit', 'civic', 'accord', 'crv', 'hrv', 'vezel', 'jazz', 'x-trail', 'qashqai', 'note', 'tiida', 'sunny', 'patrol', 'navara', 'np300', 'swift', 'alto', 'jimny', 'vitara', 'escudo', 'forester', 'outback', 'impreza', 'legacy', 'xv', 'benz', 'mercedes', 'bmw', 'audi', 'volkswagen', 'vw', 'golf', 'polo', 'passat', 'tiguan', 'defender', 'discovery', 'range rover', 'evoque', 'sport'];
+    $carModels = ['fortuner', 'prado', 'hilux', 'landcruiser', 'land cruiser', 'corolla', 'camry', 'rav4', 'harrier', 'vitz', 'axio', 'fielder', 'premio', 'allion', 'wish', 'noah', 'voxy', 'alphard', 'hiace', 'ranger', 'bt-50', 'cx-5', 'cx-3', 'demio', 'mazda3', 'mazda6', 'atenza', 'fit', 'civic', 'accord', 'crv', 'hrv', 'vezel', 'jazz', 'x-trail', 'qashqai', 'note', 'tiida', 'sunny', 'patrol', 'navara', 'np300', 'swift', 'alto', 'jimny', 'vitara', 'escudo', 'forester', 'outback', 'impreza', 'legacy', 'xv', 'benz', 'mercedes', 'bmw', 'audi', 'volkswagen', 'vw', 'golf', 'polo', 'passat', 'tiguan', 'defender', 'discovery', 'range rover', 'evoque', 'sport', 'jaguar', 'xf', 'xe', 'xj', 'f-pace', 'lexus', 'volvo', 'porsche', 'cayenne', 'macan', 'bentley', 'rolls royce', 'ferrari', 'lamborghini', 'maserati', 'alfa romeo', 'giulia', 'stelvio', 'infiniti', 'acura', 'genesis', 'jeep', 'wrangler', 'compass', 'renegade', 'chevy', 'chevrolet', 'pickup', 'truck'];
     if (!$hasBuyingIntent) {
         foreach ($carModels as $model) {
             if (strpos($messageLower, $model) !== false) {
@@ -4272,7 +4382,8 @@ function resolveConversationalIntentWithAI($db, $message, $conversationHistory, 
         . "5. Only use out_of_scope for harmful, explicit, or dangerous content.\n"
         . "6. Prefer the latest result set first when resolving references like first, second, that one, their contact, or cheapest one.\n"
         . "7. Return STRICT JSON only with this schema:\n"
-        . "{\"intent\":\"...\",\"rewritten_query\":\"...\",\"confidence\":0.0,\"out_of_scope\":false}";
+        . "{\"intent\":\"...\",\"rewritten_query\":\"...\",\"confidence\":0.0,\"out_of_scope\":false}\n"
+        . "8. For 'listings' intent, the rewritten_query MUST include the specific vehicle make and model extracted from conversation context. Example: 'how much is the jaguar' after discussing Jaguar XF 2017 → rewritten_query: 'Jaguar XF 2017 for sale'.";
 
     $conversationBrief = trim((string)$conversationBrief);
     if ($conversationBrief !== '') {
@@ -4616,10 +4727,44 @@ function handleSearchQuery($db, $message, $conversationHistory) {
         // Only call provider extraction when deterministic parsing cannot infer enough constraints.
         $searchParams = simpleExtractParams($db, $message);
 
+        // If no make was extracted from the current message, scan recent conversation history
+        // to pick up the make/model/year being discussed (e.g. "how much is the jaguar" after a
+        // prior spec discussion about a Jaguar XF 2017).
+        if ((empty($searchParams['make']) || empty($searchParams['min_year'])) && is_array($conversationHistory) && !empty($conversationHistory)) {
+            $recentSlice = array_reverse(array_slice($conversationHistory, -6));
+            foreach ($recentSlice as $histItem) {
+                if (!is_array($histItem)) continue;
+                $histContent = trim((string)($histItem['content'] ?? ''));
+                if ($histContent === '') continue;
+                $histParams = simpleExtractParams($db, $histContent);
+                if (!empty($histParams['make']) && empty($searchParams['make'])) {
+                    $searchParams['make'] = $histParams['make'];
+                    if (empty($searchParams['model']) && !empty($histParams['model'])) {
+                        $searchParams['model'] = $histParams['model'];
+                    }
+                }
+                // Also pick up year from history if not yet in params
+                if (empty($searchParams['min_year']) && preg_match('/\b(199\d|200\d|201\d|202\d)\b/', $histContent, $ym)) {
+                    $searchParams['min_year'] = (int)$ym[1];
+                    $searchParams['max_year'] = (int)$ym[1];
+                }
+                if (!empty($searchParams['make'])) break;
+            }
+        }
+
         if (!hasMeaningfulSearchParams($searchParams)) {
             $aiExtractedParams = extractSearchParams($db, $message);
             if (!empty($aiExtractedParams)) {
                 $searchParams = $aiExtractedParams;
+            }
+        }
+
+        // If still nothing resolved and the message is a pronoun-only vehicle query, clarify
+        if (!hasMeaningfulSearchParams($searchParams)) {
+            $clarificationQ = buildVehicleClarificationQuestion($message, '', '');
+            if ($clarificationQ !== '') {
+                sendSuccess(['response' => $clarificationQ]);
+                return;
             }
         }
 
@@ -5282,6 +5427,13 @@ function handleCarSpecQuery($db, $message, $conversationHistory, $userContext) {
         $vehicleLabel = buildVehicleReferenceLabel($makeName, $modelName, $year);
         $requestedTopics = extractRequestedVehicleSpecTopics($effectiveMessage);
 
+        // Ask for clarification when the user used a pronoun but no vehicle was identified
+        $clarificationQuestion = buildVehicleClarificationQuestion($message, $makeName, $modelName);
+        if ($clarificationQuestion !== '') {
+            sendSuccess(['response' => $clarificationQuestion]);
+            return;
+        }
+
         if ($effectiveMessage !== $message) {
             updateAIChatPersistenceContext(['resolved_message' => $effectiveMessage]);
         }
@@ -5409,6 +5561,14 @@ function handleCarSpecQuery($db, $message, $conversationHistory, $userContext) {
         $specContext .= "- Do not claim live browsing or real-time internet access\n";
         $specContext .= "- If alternatives are available, suggest them clearly\n";
         $specContext .= "- Format the answer with clear sections or bullets\n";
+
+        // Inject confirmed vehicle context from conversation (fuel type, make, model, year)
+        // so the AI never assumes e.g. diesel when prior conversation confirmed petrol.
+        $activeVehicleCtx = extractActiveVehicleFromConversation($conversationHistory);
+        if ($activeVehicleCtx !== '') {
+            $specContext .= "\nCONFIRMED VEHICLE CONTEXT (from conversation history — treat as ground truth):\n{$activeVehicleCtx}\n";
+            $specContext .= "CRITICAL: Use the confirmed fuel type above. Do NOT assume a different fuel type.\n";
+        }
         
         // Get user context
         $user = getCurrentUser(true);
@@ -5589,6 +5749,14 @@ function handlePartsQuery($db, $message, $conversationHistory, $userContext) {
         $makeName = $contextualInfo['make'] ?? null;
         $modelName = $contextualInfo['model'] ?? null;
         $year = $contextualInfo['year'] ?? null;
+
+        // Ask for clarification when the user used a pronoun but no vehicle was identified
+        $clarificationQuestion = buildVehicleClarificationQuestion($message, $makeName, $modelName);
+        if ($clarificationQuestion !== '') {
+            sendSuccess(['response' => $clarificationQuestion]);
+            return;
+        }
+
         $effectiveMessage = buildVehicleContextualMessage($message, $makeName, $modelName, $year);
         $partInfo = extractPartDetailsFromMessage($effectiveMessage);
 
@@ -5636,6 +5804,13 @@ function handlePartsQuery($db, $message, $conversationHistory, $userContext) {
         $partsContext .= "- Never invent a precise OEM number, cross-reference, or price if you are not sure\n";
         $partsContext .= "- Recommend VIN/chassis confirmation whenever fitment is variant-dependent\n";
         $partsContext .= "- Format the answer with clear sections for fitment, numbers, and buying notes\n";
+
+        // Inject confirmed vehicle context from conversation (incl. fuel type)
+        $activeVehicleCtx = extractActiveVehicleFromConversation($conversationHistory);
+        if ($activeVehicleCtx !== '') {
+            $partsContext .= "\nCONFIRMED VEHICLE CONTEXT (from conversation — treat as ground truth):\n{$activeVehicleCtx}\n";
+            $partsContext .= "CRITICAL: Use the confirmed fuel type when assessing part fitment. Do NOT assume a different fuel type.\n";
+        }
 
         $user = getCurrentUser(true);
         $userType = $userContext['user_type'] ?? 'user';
