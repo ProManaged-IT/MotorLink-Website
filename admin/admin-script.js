@@ -421,6 +421,9 @@ class AdminDashboard {
 
         this.currentSection = section;
         this.loadSectionData(section);
+
+        // Notify inline section modules
+        document.dispatchEvent(new CustomEvent('sectionChanged', { detail: { section } }));
     }
 
     toggleSidebar() {

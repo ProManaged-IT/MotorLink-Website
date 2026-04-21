@@ -1,0 +1,72 @@
+{
+    "job_id": "20260421_222424_8cef",
+    "status": "starting",
+    "phase": 0,
+    "phase_label": "Initializing...",
+    "started_at": "2026-04-21 22:24:24",
+    "updated_at": "2026-04-21 22:24:24",
+    "type": "garages",
+    "options": {
+        "refresh": false,
+        "enrich_only": false,
+        "insert_only": false,
+        "enrich_limit": 1000,
+        "country": "Malawi",
+        "primary_cities": "Lilongwe",
+        "secondary_cities": "Lilongwe"
+    },
+    "discovery": {
+        "dealer": {
+            "found": 0,
+            "target": 500
+        },
+        "garage": {
+            "found": 0,
+            "target": 400
+        },
+        "car_hire": {
+            "found": 0,
+            "target": 300
+        }
+    },
+    "inserted": 0,
+    "with_logo": 0,
+    "skipped": 0,
+    "enriched": 0,
+    "log_tail": [],
+    "before": {
+        "car_dealers": {
+            "active": 419,
+            "phone": 308,
+            "website": 129,
+            "facebook": 79,
+            "instagram": 36,
+            "twitter": 36,
+            "whatsapp": 298,
+            "logo": 273
+        },
+        "garages": {
+            "active": 457,
+            "phone": 360,
+            "website": 119,
+            "facebook": 42,
+            "instagram": 14,
+            "twitter": 15,
+            "whatsapp": 358,
+            "logo": 327
+        },
+        "car_hire_companies": {
+            "active": 256,
+            "phone": 192,
+            "website": 83,
+            "facebook": 41,
+            "instagram": 21,
+            "twitter": 21,
+            "whatsapp": 192,
+            "logo": 174
+        }
+    },
+    "summary": [],
+    "error": null,
+    "stop_signal": false
+}

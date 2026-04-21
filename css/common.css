@@ -103,6 +103,7 @@ body {
 html {
     font-size: 16px;
     scroll-behavior: smooth;
+    height: 100%;
     min-height: 100vh;
 }
 
@@ -197,50 +198,187 @@ body > div:not(.footer):not(.header) {
     }
 }
 
-/* Tablet header structure (769px - 1024px) — visual pill styles live in mobile-enhancements.css */
+/* Tablet-specific header adjustments (769px - 1024px) */
 @media (min-width: 769px) and (max-width: 1024px) {
     .header-container {
         height: 70px;
-        gap: 8px;
-        padding: 0 16px;
+        gap: 5px;
+        padding: 0 10px;
         flex-wrap: nowrap;
-        overflow: visible;
-        position: relative;
+        overflow: visible; /* Allow dropdown to extend below */
+        position: relative; /* Anchor tablet-user-menu dropdown */
     }
-
+    
     .logo {
-        font-size: 19px;
-        font-weight: 800;
+        font-size: 20px;
         flex-shrink: 0;
         min-width: auto;
+        max-width: 130px;
         letter-spacing: -0.3px;
     }
-
+    
     .logo i {
-        font-size: 17px;
+        font-size: 18px;
     }
-
+    
+    .nav {
+        display: flex !important;
+        gap: 4px;
+        flex-wrap: nowrap;
+        flex-shrink: 1;
+        min-width: 0;
+        overflow: hidden;
+        padding: 0;
+        box-shadow: none;
+        max-height: none;
+        overflow-y: visible;
+        flex: 1 1 auto;
+        justify-content: flex-start;
+        max-width: none;
+    }
+    
+    .nav a {
+        font-size: 12px;
+        padding: 6px 7px;
+        white-space: nowrap;
+        flex-shrink: 0;
+        display: flex !important;
+        align-items: center;
+    }
+    
+    /* Dashboard link styling for tablets - ensure it fits */
+    .nav .dashboard-link {
+        font-size: 11px !important;
+        padding: 6px 9px !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 4px !important;
+        border-radius: 5px !important;
+        font-weight: 600 !important;
+        letter-spacing: 0 !important;
+    }
+    
+    .nav .dashboard-link i {
+        font-size: 11px !important;
+        flex-shrink: 0 !important;
+    }
+    
+    .nav .dashboard-link span {
+        white-space: nowrap;
+    }
+    
+    .user-menu {
+        flex-shrink: 0;
+        min-width: fit-content;
+        gap: 4px;
+    }
+    
+    /* User menu buttons - make them more compact */
+    .user-menu .btn {
+        padding: 6px 8px !important;
+        font-size: 11px !important;
+        white-space: nowrap !important;
+        min-height: auto !important;
+    }
+    
+    .user-menu .btn i {
+        font-size: 11px !important;
+    }
+    
+    /* User avatar button - compact */
+    .user-avatar-btn {
+        width: 34px !important;
+        height: 34px !important;
+        min-width: 34px !important;
+        font-size: 13px !important;
+        margin-left: 0 !important;
+    }
+    
+    /* Ensure header items don't overflow but allow nav to shrink if needed */
     .header-container > * {
         min-width: 0;
     }
-
+    
+    /* Keep single line but allow the dropdown to extend below */
+    .header-container {
+        overflow: visible;
+    }
+    
     .header-container .logo {
         flex-shrink: 0;
     }
-
+    
     .header-container .nav {
-        flex: 1 1 0;
+        flex-shrink: 1;
         min-width: 0;
-        overflow: visible;
+        overflow: hidden;
     }
-
+    
     .header-container .user-menu {
         flex-shrink: 0;
     }
+    
+    /* Ensure nav items don't wrap */
+    .nav a,
+    .nav .dashboard-link {
+        flex-shrink: 0;
+    }
+    
+    /* Even more compact for smaller tablets */
+    @media (max-width: 850px) {
+        .header-container {
+            gap: 4px;
+            padding: 0 8px;
+        }
+        
+        .logo {
+            font-size: 19px;
+            max-width: 120px;
+        }
+        
+        .logo i {
+            font-size: 17px;
+        }
+        
+        .nav {
+            gap: 3px;
+        }
+        
+        .nav a {
+            font-size: 11.5px;
+            padding: 6px 6px;
+        }
+        
+        .nav .dashboard-link {
+            font-size: 10.5px !important;
+            padding: 6px 8px !important;
+        }
+        
+        .user-menu {
+            gap: 3px;
+        }
+        
+        .user-menu .btn {
+            padding: 6px 7px !important;
+            font-size: 10.5px !important;
+        }
+    }
 }
 
-/* Mobile hamburger nav drawer (< 769px) */
-@media (max-width: 768px) {
+/* Smaller tablets and portrait tablets - use mobile menu (769px - 950px width) */
+@media (min-width: 769px) and (max-width: 950px) {
+    /* Show mobile menu toggle */
+    .mobile-menu-toggle {
+        display: flex !important;
+    }
+    
+    /* Hide regular nav */
+    .nav {
+        display: none !important;
+    }
+    
     /* Show nav in mobile menu format when toggle is active */
     .nav.mobile-active,
     .nav.active {
@@ -266,23 +404,16 @@ body > div:not(.footer):not(.header) {
         font-size: 15px;
         width: 100%;
         justify-content: flex-start;
-        color: var(--text-primary, #212121) !important;
-        background: transparent !important;
-    }
-    
-    .nav.mobile-active a.active,
-    .nav.active a.active {
-        color: var(--primary-green, #00c853) !important;
-        background: rgba(0, 200, 83, 0.08) !important;
-        border-left: 3px solid var(--primary-green, #00c853);
-        border-bottom: 1px solid #e5e7eb !important;
-        padding-left: 13px;
-        font-weight: 700 !important;
     }
     
     .nav.mobile-active a:last-child,
     .nav.active a:last-child {
         border-bottom: none;
+    }
+    
+    /* Hide user menu in header, will be in mobile nav */
+    .user-menu {
+        display: none !important;
     }
     
     /* Ensure mobile clones are visible in mobile menu when active */
@@ -303,7 +434,7 @@ body > div:not(.footer):not(.header) {
         justify-content: center;
     }
     
-    /* Compact logo on mobile */
+    /* Ensure logo doesn't take too much space */
     .logo {
         font-size: 22px;
         flex-shrink: 0;
@@ -425,8 +556,6 @@ body > div:not(.footer):not(.header) {
     }
 }
 
-/* Desktop-only nav hover/active effects (tablet + mobile have their own overrides) */
-@media (min-width: 1025px) {
     /* Cool gradient hover effect */
     .nav a::before {
         content: '';
@@ -478,6 +607,10 @@ body > div:not(.footer):not(.header) {
         background: rgba(0, 200, 83, 0.12) !important;
         box-shadow: 0 2px 8px rgba(0, 200, 83, 0.15) !important;
     }
+
+
+.nav a:hover {
+    color: var(--primary-green);
 }
 
 .nav a:last-child {
@@ -1631,7 +1764,7 @@ a.car-hire-stat:hover {
     .header-container {
         height: 84px;
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-columns: auto 1fr auto;
         align-items: center;
         gap: 20px;
     }
@@ -1669,13 +1802,11 @@ a.car-hire-stat:hover {
     .nav {
         justify-self: center;
         display: flex !important;
-        flex-wrap: nowrap;
         align-items: center;
         justify-content: center;
         gap: 2px;
         width: auto;
         max-width: 100%;
-        min-width: 0;
         padding: 0;
         border: none;
         border-radius: 0;
@@ -3656,49 +3787,5 @@ body.has-hero.has-breadcrumbs .page-breadcrumbs__sep {
         text-overflow: ellipsis;
         white-space: nowrap;
     }
-}
-
-/* ============================================================
- * Cross-Document View Transitions — Persistent Header & Footer
- * Requires Chrome/Edge 126+ · Safari 18.2+ (graceful fallback)
- * ============================================================ */
-@view-transition {
-    navigation: auto;
-}
-
-/* Header is a named shared element — treated as persistent */
-.header {
-    view-transition-name: site-header;
-    contain: layout;
-}
-
-/* Footer is a named shared element — treated as persistent */
-footer.footer {
-    view-transition-name: site-footer;
-    contain: layout;
-}
-
-/* Named elements don't animate — they appear to stay in place */
-::view-transition-old(site-header),
-::view-transition-new(site-header),
-::view-transition-old(site-footer),
-::view-transition-new(site-footer) {
-    animation: none;
-    mix-blend-mode: normal;
-}
-
-/* Page body content fades cleanly between pages */
-::view-transition-old(root) {
-    animation: 180ms ease-out vt-page-out;
-}
-::view-transition-new(root) {
-    animation: 220ms ease-in vt-page-in;
-}
-
-@keyframes vt-page-out {
-    to { opacity: 0; }
-}
-@keyframes vt-page-in {
-    from { opacity: 0; }
 }
 

@@ -2481,7 +2481,7 @@ function getGarages($db) {
             INNER JOIN locations loc ON g.location_id = loc.id
             WHERE {$whereClause}
             ORDER BY g.featured DESC, g.certified DESC, g.verified DESC, g.name ASC
-            LIMIT 50
+            LIMIT 500
         ";
         
         $stmt = $db->prepare($sql);
@@ -2514,6 +2514,7 @@ function getGarages($db) {
                 'instagram_url' => $garage['instagram_url'] ?? null,
                 'twitter_url' => $garage['twitter_url'] ?? null,
                 'linkedin_url' => $garage['linkedin_url'] ?? null,
+                'logo_url' => $garage['logo_url'] ?? null,
                 'operating_hours' => $garage['operating_hours'],
                 'business_hours' => $garage['business_hours'],
                 'website' => $garage['website'],
@@ -2540,7 +2541,7 @@ function getGarages($db) {
 function getDealers($db) {
     try {
         $stmt = $db->query("
-            SELECT d.*, loc.name as location_name, loc.region,
+            SELECT d.*, loc.name as location_name, loc.region, loc.district,
                    (SELECT COUNT(*) 
                     FROM car_listings cl 
                     INNER JOIN users u ON cl.user_id = u.id 
@@ -2550,7 +2551,6 @@ function getDealers($db) {
             INNER JOIN locations loc ON d.location_id = loc.id
             WHERE d.status = 'active'
             ORDER BY d.featured DESC, d.certified DESC, d.verified DESC, d.business_name ASC
-            LIMIT 50
         ");
         $dealers = $stmt->fetchAll(PDO::FETCH_ASSOC);
         sendSuccess(['dealers' => $dealers]);

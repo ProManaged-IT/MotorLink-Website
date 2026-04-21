@@ -70,45 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit();
 }
 
-// Enhanced session configuration - set cookie params only before session starts.
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    $isHTTPS = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || (($_SERVER['SERVER_PORT'] ?? null) == 443)
-        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
-
-    session_set_cookie_params([
-        'lifetime' => 86400,
-        'path' => '/',
-        'domain' => '',  // Empty domain for compatibility
-        'secure' => $isHTTPS,
-        'httponly' => true,
-        'samesite' => 'Lax'
-    ]);
-
-    // Start session early
-    session_start();
-}
-
-// Get action
-$action = $_GET['action'] ?? '';
-
-if (empty($action)) {
-    echo json_encode(['success' => false, 'message' => 'No action specified']);
-    exit();
-}
-
-try {
-    $actionsWithoutDatabase = ['admin_logout', 'check_admin_auth'];
-    $db = null;
-
-    if (!in_array($action, $actionsWithoutDatabase, true)) {
-        $db = getDatabase();
-
-        // Test database connection first
-        $db->query("SELECT 1");
-    }
-    
-    switch ($action) {
+//  switch ($action) {
         case 'admin_login':
             handleAdminLogin($db);
             break;
@@ -1581,8 +1543,7 @@ function approveUser($db) {
     try {
         $db->beginTransaction();
         
-        // NOTE: users.status enum = active|pending|suspended|banned (no 'rejected')
-        $newStatus = ($action === 'approve') ? 'active' : 'suspended';
+        $newStatus = ($action === 'approve') ? 'active' : 'rejected';
         $adminId = $_SESSION['admin_id'] ?? null;
         
         // Get user email, name, and business info BEFORE updating
@@ -3424,32 +3385,18 @@ function handleUpdateUser($db) {
 
     try {
         $allowedFields = ['full_name', 'email', 'phone', 'user_type', 'status'];
-        $allowedUserTypes = ['individual', 'dealer', 'garage', 'car_hire', 'admin'];
-        $allowedStatuses = ['active', 'pending', 'suspended', 'banned'];
 
         $updateData = [];
         foreach ($allowedFields as $field) {
-            if (!isset($input[$field])) { continue; }
-            $value = $input[$field];
-            if ($field === 'user_type' && !in_array($value, $allowedUserTypes, true)) {
-                echo json_encode(['success' => false, 'message' => 'Invalid user_type']);
-                return;
+            if (isset($input[$field])) {
+                $updateData[$field] = $input[$field];
             }
-            if ($field === 'status' && !in_array($value, $allowedStatuses, true)) {
-                echo json_encode(['success' => false, 'message' => 'Invalid status']);
-                return;
-            }
-            if ($field === 'email' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
-                echo json_encode(['success' => false, 'message' => 'Invalid email']);
-                return;
-            }
-            $updateData[$field] = $value;
         }
 
         // Handle password update if provided
         if (!empty($input['password'])) {
-            if (strlen($input['password']) < 8) {
-                echo json_encode(['success' => false, 'message' => 'Password must be at least 8 characters']);
+            if (strlen($input['password']) < 6) {
+                echo json_encode(['success' => false, 'message' => 'Password must be at least 6 characters']);
                 return;
             }
             $updateData['password_hash'] = password_hash($input['password'], PASSWORD_DEFAULT);
@@ -3647,51 +3594,54 @@ function handleDeleteUser($db) {
         }
         
         // 4. Delete user's favorites (saved_listings)
-        $stmt = $db->prepare("DELETE FROM saved_listings WHERE user_id = ?");
-        $stmt->execute([$id]);
-
-        // 5. Delete conversations + their messages (messages table has no recipient_id;
-        //    it links via conversation.buyer_id / seller_id)
-        $convStmt = $db->prepare("SELECT id FROM conversations WHERE buyer_id = ? OR seller_id = ?");
-        $convStmt->execute([$id, $id]);
-        $convIds = $convStmt->fetchAll(PDO::FETCH_COLUMN);
-        if (!empty($convIds)) {
-            $ph = str_repeat('?,', count($convIds) - 1) . '?';
-            $db->prepare("DELETE FROM messages WHERE conversation_id IN ($ph)")->execute($convIds);
-            $db->prepare("DELETE FROM conversations WHERE id IN ($ph)")->execute($convIds);
-        }
-        // Any orphaned messages where this user was the sender
-        $db->prepare("DELETE FROM messages WHERE sender_id = ?")->execute([$id]);
-
-        // 6. Delete AI chat data scoped to this user
-        foreach ([
-            'ai_chat_user_restrictions',
-            'ai_chat_user_memory',
-            'ai_chat_user_summaries',
-            'ai_chat_usage',
-            'ai_chat_feedback',
-            'ai_chat_conversations'
-        ] as $aiTable) {
-            try {
-                $db->prepare("DELETE FROM `$aiTable` WHERE user_id = ?")->execute([$id]);
-            } catch (Exception $e) {
-                error_log("handleDeleteUser: skipped {$aiTable}: " . $e->getMessage());
-            }
-        }
-
-        // 7. Delete user preferences + vehicles
-        $db->prepare("DELETE FROM user_preferences WHERE user_id = ?")->execute([$id]);
-        $db->prepare("DELETE FROM user_vehicles WHERE user_id = ?")->execute([$id]);
-
-        // 8. Null-out reviewer FK on listing_reports (preserve report history)
         try {
-            $db->prepare("UPDATE listing_reports SET reviewed_by = NULL WHERE reviewed_by = ?")->execute([$id]);
-            $db->prepare("DELETE FROM listing_reports WHERE user_id = ?")->execute([$id]);
+            $stmt = $db->prepare("DELETE FROM saved_listings WHERE user_id = ?");
+            $stmt->execute([$id]);
         } catch (Exception $e) {
-            error_log("handleDeleteUser listing_reports: " . $e->getMessage());
+            error_log("Note: saved_listings table may not exist or already deleted: " . $e->getMessage());
         }
-
-        // 9. FINALLY, delete the user account itself
+        
+        // 5. Delete user's messages (both sent and received)
+        try {
+            $stmt = $db->prepare("DELETE FROM messages WHERE sender_id = ? OR recipient_id = ?");
+            $stmt->execute([$id, $id]);
+        } catch (Exception $e) {
+            error_log("Note: messages table may not exist or already deleted: " . $e->getMessage());
+        }
+        
+        // 6. Delete user's notifications
+        try {
+            $stmt = $db->prepare("DELETE FROM notifications WHERE user_id = ?");
+            $stmt->execute([$id]);
+        } catch (Exception $e) {
+            error_log("Note: notifications table may not exist or already deleted: " . $e->getMessage());
+        }
+        
+        // 7. Delete user's sessions
+        try {
+            $stmt = $db->prepare("DELETE FROM user_sessions WHERE user_id = ?");
+            $stmt->execute([$id]);
+        } catch (Exception $e) {
+            error_log("Note: user_sessions table may not exist or already deleted: " . $e->getMessage());
+        }
+        
+        // 8. Delete user's search history
+        try {
+            $stmt = $db->prepare("DELETE FROM search_history WHERE user_id = ?");
+            $stmt->execute([$id]);
+        } catch (Exception $e) {
+            error_log("Note: search_history table may not exist or already deleted: " . $e->getMessage());
+        }
+        
+        // 9. Delete user's saved searches
+        try {
+            $stmt = $db->prepare("DELETE FROM saved_searches WHERE user_id = ?");
+            $stmt->execute([$id]);
+        } catch (Exception $e) {
+            error_log("Note: saved_searches table may not exist or already deleted: " . $e->getMessage());
+        }
+        
+        // 10. FINALLY, delete the user account itself
         $stmt = $db->prepare("DELETE FROM users WHERE id = ?");
         $stmt->execute([$id]);
 
@@ -4508,86 +4458,41 @@ function handleAddUser($db) {
     $input = json_decode(file_get_contents('php://input'), true);
 
     try {
-        $email = trim((string)($input['email'] ?? ''));
-        $fullName = trim((string)($input['full_name'] ?? ''));
-        $password = (string)($input['password'] ?? '');
-
-        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            echo json_encode(['success' => false, 'message' => 'Valid email is required']);
-            return;
-        }
-        if ($fullName === '') {
-            echo json_encode(['success' => false, 'message' => 'Full name is required']);
-            return;
-        }
-        if (strlen($password) < 6) {
-            echo json_encode(['success' => false, 'message' => 'Password must be at least 6 characters']);
-            return;
-        }
-
-        $allowedTypes = ['individual', 'dealer', 'garage', 'car_hire'];
-        $userType = (string)($input['user_type'] ?? 'individual');
-        if (!in_array($userType, $allowedTypes, true)) {
-            $userType = 'individual';
-        }
-
-        $allowedStatuses = ['active', 'pending', 'suspended', 'banned'];
-        $status = (string)($input['status'] ?? 'active');
-        if (!in_array($status, $allowedStatuses, true)) {
-            $status = 'active';
-        }
-
-        // Check duplicate email
+        // Check if email already exists
         $stmt = $db->prepare("SELECT id FROM users WHERE email = ?");
-        $stmt->execute([$email]);
+        $stmt->execute([$input['email']]);
         if ($stmt->fetch()) {
             echo json_encode(['success' => false, 'message' => 'Email already exists']);
             return;
         }
 
-        // Derive/validate unique username (users.username is NOT NULL UNIQUE)
-        $username = trim((string)($input['username'] ?? ''));
-        if ($username === '') {
-            $username = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '', strtok($email, '@')) ?: 'user');
-        }
-        $baseUsername = substr($username, 0, 40) ?: 'user';
-        $candidate = $baseUsername;
-        $usernameCheck = $db->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
-        for ($i = 0; $i < 25; $i++) {
-            $usernameCheck->execute([$candidate]);
-            if (!$usernameCheck->fetch()) { break; }
-            $candidate = substr($baseUsername, 0, 40 - 5) . '_' . bin2hex(random_bytes(2));
-        }
-        $username = $candidate;
-
-        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+        // Hash password
+        $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
 
         $sql = "INSERT INTO users (
-            username, full_name, email, password_hash, phone, whatsapp, city, address,
-            user_type, status, email_verified, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())";
+            full_name, email, password_hash, phone, whatsapp, city, address,
+            user_type, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
 
         $stmt = $db->prepare($sql);
         $stmt->execute([
-            $username,
-            $fullName,
-            $email,
+            $input['full_name'],
+            $input['email'],
             $passwordHash,
             $input['phone'] ?? null,
             $input['whatsapp'] ?? null,
             $input['city'] ?? null,
             $input['address'] ?? null,
-            $userType,
-            $status
+            $input['user_type'] ?? 'buyer',
+            $input['status'] ?? 'active'
         ]);
 
         $userId = $db->lastInsertId();
-        logActivity($db, 'user_added', 'User created by admin', "User ID: {$userId}, email: {$email}", $_SESSION['admin_id'] ?? null);
-        echo json_encode(['success' => true, 'message' => 'User added successfully', 'user_id' => $userId, 'username' => $username]);
+        echo json_encode(['success' => true, 'message' => 'User added successfully', 'user_id' => $userId]);
         exit();
     } catch (Exception $e) {
         error_log("handleAddUser error: " . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Failed to add user']);
+        echo json_encode(['success' => false, 'message' => 'Failed to add user: ' . $e->getMessage()]);
         exit();
     }
 }
@@ -4605,57 +4510,37 @@ function handleAddAdmin($db) {
     }
 
     try {
-        $email = trim((string)($input['email'] ?? ''));
-        $username = trim((string)($input['username'] ?? ''));
-        $fullName = trim((string)($input['full_name'] ?? ''));
-        $password = (string)($input['password'] ?? '');
-
-        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            echo json_encode(['success' => false, 'message' => 'Valid email is required']);
-            return;
-        }
-        if ($username === '') {
-            echo json_encode(['success' => false, 'message' => 'Username is required']);
-            return;
-        }
-        if ($fullName === '') {
-            echo json_encode(['success' => false, 'message' => 'Full name is required']);
-            return;
-        }
-        if (strlen($password) < 8) {
-            echo json_encode(['success' => false, 'message' => 'Admin password must be at least 8 characters']);
-            return;
-        }
-
-        // admin_users.status enum = active|inactive|suspended
-        $allowedStatuses = ['active', 'inactive', 'suspended'];
-        $status = (string)($input['status'] ?? 'active');
-        if (!in_array($status, $allowedStatuses, true)) { $status = 'active'; }
-
-        // Check duplicate email or username
-        $stmt = $db->prepare("SELECT id FROM admin_users WHERE email = ? OR username = ? LIMIT 1");
-        $stmt->execute([$email, $username]);
+        // Check if email already exists
+        $stmt = $db->prepare("SELECT id FROM admin_users WHERE email = ?");
+        $stmt->execute([$input['email']]);
         if ($stmt->fetch()) {
-            echo json_encode(['success' => false, 'message' => 'Email or username already exists']);
+            echo json_encode(['success' => false, 'message' => 'Email already exists']);
             return;
         }
 
-        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+        // Hash password
+        $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
 
         $sql = "INSERT INTO admin_users (
             username, email, password_hash, full_name, role, status, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
 
         $stmt = $db->prepare($sql);
-        $stmt->execute([$username, $email, $passwordHash, $fullName, $requestedRole, $status]);
+        $stmt->execute([
+            $input['username'],
+            $input['email'],
+            $passwordHash,
+            $input['full_name'],
+            $requestedRole,
+            $input['status'] ?? 'active'
+        ]);
 
         $adminId = $db->lastInsertId();
-        logActivity($db, 'admin_added', 'Admin user created', "Admin ID: {$adminId}, role: {$requestedRole}", $_SESSION['admin_id'] ?? null);
         echo json_encode(['success' => true, 'message' => 'Admin added successfully', 'admin_id' => $adminId]);
         exit();
     } catch (Exception $e) {
         error_log("handleAddAdmin error: " . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Failed to add admin']);
+        echo json_encode(['success' => false, 'message' => 'Failed to add admin: ' . $e->getMessage()]);
         exit();
     }
 }

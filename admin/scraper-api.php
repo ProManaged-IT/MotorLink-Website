@@ -106,6 +106,14 @@ case 'start':
     $enrichLimit = max(10, min(5000, (int)($_POST['enrich_limit'] ?? 1000)));
     $flags[] = '--enrich-limit=' . $enrichLimit;
 
+    // Country / Cities overrides for multi-country support
+    $country         = preg_replace('/[^a-zA-Z\s\-]/', '', trim($_POST['country'] ?? 'Malawi')) ?: 'Malawi';
+    $primaryCities   = substr(preg_replace('/[^a-zA-Z0-9,\s\-]/', '', trim($_POST['primary_cities']   ?? '')), 0, 1000);
+    $secondaryCities = substr(preg_replace('/[^a-zA-Z0-9,\s\-]/', '', trim($_POST['secondary_cities'] ?? '')), 0, 2000);
+    $flags[] = '--country=' . $country;
+    if ($primaryCities)   $flags[] = '--primary-cities='   . $primaryCities;
+    if ($secondaryCities) $flags[] = '--secondary-cities=' . $secondaryCities;
+
     $newJobId  = date('Ymd_His') . '_' . substr(uniqid(), -4);
     $flags[]   = '--job-id=' . $newJobId;
 
@@ -122,10 +130,13 @@ case 'start':
         'updated_at' => date('Y-m-d H:i:s'),
         'type'       => $postType ?: 'all',
         'options'    => [
-            'refresh'       => !empty($_POST['refresh']),
-            'enrich_only'   => !empty($_POST['enrich_only']),
-            'insert_only'   => !empty($_POST['insert_only']),
-            'enrich_limit'  => $enrichLimit,
+            'refresh'         => !empty($_POST['refresh']),
+            'enrich_only'     => !empty($_POST['enrich_only']),
+            'insert_only'     => !empty($_POST['insert_only']),
+            'enrich_limit'    => $enrichLimit,
+            'country'         => $country,
+            'primary_cities'  => $primaryCities,
+            'secondary_cities'=> $secondaryCities,
         ],
         'discovery'  => ['dealer' => ['found' => 0, 'target' => 500], 'garage' => ['found' => 0, 'target' => 400], 'car_hire' => ['found' => 0, 'target' => 300]],
         'inserted'   => 0,
@@ -167,11 +178,44 @@ case 'status':
         file_put_contents(jobFile($jobsDir, $jobId), json_encode($job, JSON_PRETTY_PRINT));
     }
 
-    echo json_encode(['success' => true, 'job' => $job]);
+    // Normalize field names for the frontend
+    $job['total_new']     = $job['inserted']  ?? 0;
+    $job['total_updated'] = $job['enriched']  ?? 0;
+    $job['total_skipped'] = $job['skipped']   ?? 0;
+    $job['total_scanned'] = ($job['inserted'] ?? 0) + ($job['enriched'] ?? 0) + ($job['skipped'] ?? 0);
+
+    // Phase-based progress (0-100)
+    $phase = (int)($job['phase'] ?? 0);
+    $job['progress'] = min(99, $phase >= 4 ? 100 : max($phase * 25, 0));
+    if ($job['status'] === 'done') $job['progress'] = 100;
+
+    // Stream log file chunk
+    $logFile   = $jobsDir . '/' . $jobId . '.log';
+    $logOffset = max(0, (int)($_POST['log_offset'] ?? $_GET['log_offset'] ?? 0));
+    $logChunk  = '';
+    $nextOffset= $logOffset;
+    if (file_exists($logFile)) {
+        $fh = fopen($logFile, 'rb');
+        if ($fh) {
+            fseek($fh, $logOffset);
+            $logChunk  = fread($fh, 16384); // up to 16KB per poll
+            $nextOffset = ftell($fh);
+            fclose($fh);
+        }
+    }
+
+    echo json_encode([
+        'success'     => true,
+        'job'         => $job,
+        'log_chunk'   => $logChunk,
+        'next_offset' => $nextOffset,
+        'log_tail'    => $job['log_tail'] ?? [],
+    ]);
     break;
 
-// ── LIST ──────────────────────────────────────────────────────────────────────
+// ── LIST / HISTORY ────────────────────────────────────────────────────────────
 case 'list':
+case 'history':
     $files = glob($jobsDir . '/*.json') ?: [];
     usort($files, fn($a, $b) => filemtime($b) - filemtime($a));
     $list = [];
@@ -179,16 +223,18 @@ case 'list':
         $j = json_decode((string)file_get_contents($f), true);
         if ($j) {
             $list[] = [
-                'job_id'     => $j['job_id']     ?? '',
-                'status'     => $j['status']     ?? 'unknown',
-                'phase'      => $j['phase']      ?? 0,
-                'phase_label'=> $j['phase_label']?? '',
-                'started_at' => $j['started_at'] ?? '',
-                'updated_at' => $j['updated_at'] ?? '',
-                'type'       => $j['type']       ?? 'all',
-                'inserted'   => $j['inserted']   ?? 0,
-                'enriched'   => $j['enriched']   ?? 0,
-                'skipped'    => $j['skipped']    ?? 0,
+                'id'          => $j['job_id']     ?? '',
+                'job_id'      => $j['job_id']     ?? '',
+                'status'      => $j['status']     ?? 'unknown',
+                'phase'       => $j['phase']      ?? 0,
+                'phase_label' => $j['phase_label']?? '',
+                'started_at'  => isset($j['started_at']) ? strtotime($j['started_at']) : 0,
+                'updated_at'  => $j['updated_at'] ?? '',
+                'type'        => $j['type']       ?? 'all',
+                'options'     => $j['options']    ?? [],
+                'total_new'   => $j['inserted']   ?? 0,
+                'total_updated'=> $j['enriched']  ?? 0,
+                'total_skipped'=> $j['skipped']   ?? 0,
             ];
         }
     }

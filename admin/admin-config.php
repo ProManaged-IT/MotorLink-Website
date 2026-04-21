@@ -4,233 +4,85 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
-// Database Configuration
-// Auto-detect environment: Production vs UAT (User Acceptance Testing)
-//
-// PRODUCTION: Running on promanaged-it.com server -> Use localhost (DB on same server)
-// UAT: Running locally on developer laptop -> Use remote DB (promanaged-it.com)
-//
-// Detection: Check if the server hostname matches the production server
-// Production: Any non-localhost hostname (flexible for any domain)
-$serverHost = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
-$isLocalhost = in_array($serverHost, ['localhost', '127.0.0.1']) || 
-               strpos($serverHost, 'localhost:') === 0 || 
-               strpos($serverHost, '127.0.0.1:') === 0 ||
-               preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $serverHost);
-$isProduction = !$isLocalhost && !empty($serverHost);
+// Start the admin session with the correct cookie params BEFORE including api-common.php
+// so that api-common.php's session_start() guard sees PHP_SESSION_ACTIVE and skips.
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    $isHTTPS = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['SERVER_PORT'] ?? null) == 443)
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
 
-// Bootstrap DB connection configuration (env only, no hardcoded secrets).
-// Final admin DB credentials are loaded from site_settings after bootstrap connection.
-$defaultDbHost = $isProduction ? 'localhost' : 'promanaged-it.com';
-
-$adminLocalSecrets = [];
-foreach ([__DIR__ . '/admin-secrets.local.php', __DIR__ . '/admin-secrets.example.php'] as $__adminSecretPath) {
-    if (file_exists($__adminSecretPath)) {
-        $__loadedSecrets = require $__adminSecretPath;
-        if (is_array($__loadedSecrets)) {
-            $adminLocalSecrets = $__loadedSecrets;
-            break;
-        }
-    }
+    session_set_cookie_params([
+        'lifetime' => 86400,
+        'path'     => '/',
+        'domain'   => '',
+        'secure'   => $isHTTPS,
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+    session_start();
 }
-unset($__adminSecretPath, $__loadedSecrets);
+
+// Reuse the shared bootstrap in api-common.php so that admin-api.php gets its
+// DB credentials from exactly the same place as api.php and api-common.php.
+// Credentials resolve: env vars → admin-secrets.local.php → admin-secrets.example.php → site_settings.
+// No separate credential-loading logic lives here.
+if (!defined('DB_HOST')) {
+    require_once __DIR__ . '/../api-common.php';
+}
 
 function getAdminBootstrapDbConfig($defaultHost) {
-    $local = $GLOBALS['adminLocalSecrets'] ?? [];
-
-    $config = [
-        'host' => getenv('MOTORLINK_DB_HOST') ?: ($local['MOTORLINK_DB_HOST'] ?? $defaultHost),
-        'user' => getenv('MOTORLINK_DB_USER') ?: ($local['MOTORLINK_DB_USER'] ?? ''),
-        'pass' => getenv('MOTORLINK_DB_PASS') ?: ($local['MOTORLINK_DB_PASS'] ?? ''),
-        'name' => getenv('MOTORLINK_DB_NAME') ?: ($local['MOTORLINK_DB_NAME'] ?? '')
+    // Delegate entirely to api-common.php's already-resolved constants.
+    return [
+        'host' => DB_HOST,
+        'user' => DB_USER,
+        'pass' => DB_PASS,
+        'name' => DB_NAME
     ];
-
-    // Fallback: read shared DB constants from api.php without executing it.
-    // Executing api.php here starts the main API session/bootstrap and breaks
-    // admin session cookie setup on live requests.
-    if ($config['user'] === '' || $config['pass'] === '' || $config['name'] === '') {
-        $sharedConfig = readSharedApiDbConfig(__DIR__ . '/../api.php', $defaultHost);
-        if ($config['user'] === '' && !empty($sharedConfig['user'])) {
-            $config['user'] = $sharedConfig['user'];
-        }
-        if ($config['pass'] === '' && !empty($sharedConfig['pass'])) {
-            $config['pass'] = $sharedConfig['pass'];
-        }
-        if ($config['name'] === '' && !empty($sharedConfig['name'])) {
-            $config['name'] = $sharedConfig['name'];
-        }
-        if ($config['host'] === $defaultHost && !empty($sharedConfig['host'])) {
-            $config['host'] = $sharedConfig['host'];
-        }
-    }
-
-    if ($config['user'] === '' || $config['pass'] === '' || $config['name'] === '') {
-        throw new Exception('Missing bootstrap DB credentials. Set MOTORLINK_DB_* env vars or provide admin/admin-secrets.local.php.');
-    }
-
-    return $config;
 }
 
-function readSharedApiDbConfig($apiFilePath, $defaultHost) {
-    $config = [
-        'host' => $defaultHost,
-        'user' => '',
-        'pass' => '',
-        'name' => ''
-    ];
-
-    if (!is_file($apiFilePath) || !is_readable($apiFilePath)) {
-        return $config;
-    }
-
-    $contents = @file_get_contents($apiFilePath);
-    if ($contents === false || $contents === '') {
-        return $config;
-    }
-
-    $patterns = [
-        'user' => "/define\('DB_USER',\s*'([^']*)'\);/",
-        'pass' => "/define\('DB_PASS',\s*'([^']*)'\);/",
-        'name' => "/define\('DB_NAME',\s*'([^']*)'\);/",
-        'host' => "/define\('DB_HOST',\s*'([^']*)'\);/"
-    ];
-
-    foreach ($patterns as $key => $pattern) {
-        if (preg_match($pattern, $contents, $matches)) {
-            $config[$key] = $matches[1];
-        }
-    }
-
-    return $config;
+// Utility function to get database connection
+function getDatabase() {
+    return Database::getInstance()->getConnection();
 }
-
-
-// Note: Session is started in admin-api.php after setting session parameters
-// Do not start session here to avoid conflicts
 
 /**
  * Database Connection Singleton Class
+ * Uses the credentials already resolved by api-common.php.
  */
 class Database {
     private static $instance = null;
     private $connection;
 
-    private function createConnection(array $config) {
-        $options = [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-            PDO::ATTR_TIMEOUT => 10
-        ];
-
-        return new PDO(
-            "mysql:host={$config['host']};dbname={$config['name']};charset=utf8mb4",
-            $config['user'],
-            $config['pass'],
-            $options
-        );
-    }
-
-    private function seedAdminDbCredentialSettings(PDO $db, array $bootstrapConfig) {
-        $defaults = [
-            'admin_db_host' => $bootstrapConfig['host'],
-            'admin_db_user' => $bootstrapConfig['user'],
-            'admin_db_pass' => $bootstrapConfig['pass'],
-            'admin_db_name' => $bootstrapConfig['name']
-        ];
-
-        foreach ($defaults as $key => $value) {
-            try {
-                $stmt = $db->prepare("SELECT id FROM site_settings WHERE setting_key = ? LIMIT 1");
-                $stmt->execute([$key]);
-
-                if (!$stmt->fetch()) {
-                    $insert = $db->prepare("INSERT INTO site_settings (setting_key, setting_value, setting_group, setting_type, description, is_public) VALUES (?, ?, 'security', 'string', ?, 0)");
-                    $insert->execute([$key, $value, 'Admin DB credential setting: ' . $key]);
-                }
-            } catch (Exception $e) {
-                error_log('Admin DB settings seed warning for ' . $key . ': ' . $e->getMessage());
-            }
-        }
-    }
-
-    private function loadFinalAdminDbConfig(PDO $db, array $fallbackConfig) {
-        $keyMap = [
-            'admin_db_host' => 'host',
-            'admin_db_user' => 'user',
-            'admin_db_pass' => 'pass',
-            'admin_db_name' => 'name'
-        ];
-
-        $resolved = $fallbackConfig;
-
-        try {
-            $keys = array_keys($keyMap);
-            $placeholders = implode(',', array_fill(0, count($keys), '?'));
-            $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
-            $stmt->execute($keys);
-
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $targetKey = $keyMap[$row['setting_key']] ?? null;
-                if ($targetKey && $row['setting_value'] !== null && $row['setting_value'] !== '') {
-                    $resolved[$targetKey] = $row['setting_value'];
-                }
-            }
-        } catch (Exception $e) {
-            error_log('Admin DB settings load warning: ' . $e->getMessage());
-        }
-
-        return $resolved;
-    }
-    
     private function __construct() {
         try {
-            $bootstrapConfig = getAdminBootstrapDbConfig($GLOBALS['defaultDbHost']);
-            $bootstrapDb = $this->createConnection($bootstrapConfig);
-
-            // Ensure DB-backed credentials exist, then load final admin DB config from site_settings.
-            $this->seedAdminDbCredentialSettings($bootstrapDb, $bootstrapConfig);
-            $finalConfig = $this->loadFinalAdminDbConfig($bootstrapDb, $bootstrapConfig);
-
-            $usesBootstrap = (
-                $finalConfig['host'] === $bootstrapConfig['host'] &&
-                $finalConfig['user'] === $bootstrapConfig['user'] &&
-                $finalConfig['pass'] === $bootstrapConfig['pass'] &&
-                $finalConfig['name'] === $bootstrapConfig['name']
+            $options = [
+                PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES   => false,
+                PDO::ATTR_TIMEOUT            => 10
+            ];
+            $this->connection = new PDO(
+                'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
+                DB_USER,
+                DB_PASS,
+                $options
             );
-
-            if ($usesBootstrap) {
-                $this->connection = $bootstrapDb;
-                return;
-            }
-
-            try {
-                $this->connection = $this->createConnection($finalConfig);
-            } catch (PDOException $e) {
-                error_log('Admin final DB settings failed, falling back to bootstrap connection: ' . $e->getMessage());
-                $this->connection = $bootstrapDb;
-            }
-        } catch(PDOException $e) {
-            error_log("Database connection failed: " . $e->getMessage());
-            throw new Exception("Database connection failed: " . $e->getMessage());
+        } catch (PDOException $e) {
+            error_log('Admin DB connection failed: ' . $e->getMessage());
+            throw new Exception('Database connection failed: ' . $e->getMessage());
         }
     }
-    
+
     public static function getInstance() {
         if (self::$instance === null) {
             self::$instance = new Database();
         }
         return self::$instance;
     }
-    
+
     public function getConnection() {
         return $this->connection;
     }
-}
-
-// Utility function to get database connection
-function getDatabase() {
-    return Database::getInstance()->getConnection();
 }
 
 /**

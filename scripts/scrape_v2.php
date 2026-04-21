@@ -48,6 +48,16 @@ foreach ($args as $a) {
     if (preg_match('/^--job-id=([a-zA-Z0-9_\-]+)$/', $a, $m)) $jobId = $m[1];
 }
 
+// Country/Cities CLI overrides (used to scrape countries other than Malawi)
+$COUNTRY_OVERRIDE        = null;
+$PRIMARY_CITIES_OVERRIDE = null;
+$SECONDARY_CITIES_OVERRIDE = null;
+foreach ($args as $a) {
+    if (preg_match('/^--country=(.+)$/',           $a, $m)) $COUNTRY_OVERRIDE          = trim($m[1]);
+    if (preg_match('/^--primary-cities=(.+)$/',    $a, $m)) $PRIMARY_CITIES_OVERRIDE   = array_filter(array_map('trim', explode(',', $m[1])));
+    if (preg_match('/^--secondary-cities=(.+)$/',  $a, $m)) $SECONDARY_CITIES_OVERRIDE = array_filter(array_map('trim', explode(',', $m[1])));
+}
+
 // ── JOB TRACKING ─────────────────────────────────────────────────────────────
 $jobsDir  = __DIR__ . '/scrape_jobs';
 $jobFile  = $jobId ? $jobsDir . '/' . $jobId . '.json' : null;
@@ -84,12 +94,19 @@ function updateJob(array $patch): void
     file_put_contents($jobFile, json_encode($jobState, JSON_PRETTY_PRINT));
 }
 
-/** Append a line to the log tail and emit to stdout. */
+/** Append a line to the log tail, emit to stdout, AND write directly to the job .log file
+ *  so the admin UI can stream it via status polling regardless of stdout redirect. */
 function jlog(string $line): void
 {
-    global $logTail;
-    $logTail[] = date('H:i:s') . ' ' . $line;
-    echo $line . "\n";
+    global $logTail, $jobId, $jobsDir;
+    $ts   = date('H:i:s');
+    $full = $ts . ' ' . $line;
+    $logTail[] = $full;
+    echo $full . "\n";
+    // Direct file-append — works even when the shell stdout redirect fails
+    if (!empty($jobId) && !empty($jobsDir)) {
+        @file_put_contents($jobsDir . '/' . $jobId . '.log', $full . "\n", FILE_APPEND | LOCK_EX);
+    }
 }
 
 /** Check stop signal — call between expensive iterations. */
@@ -166,6 +183,11 @@ $CITIES_SECONDARY = [
     // Mzuzu sub-areas
     'Chibanja Mzuzu', 'Katoto Mzuzu',
 ];
+
+// ── Apply CLI overrides for country-agnostic scraping ────────────────────────
+$COUNTRY = $COUNTRY_OVERRIDE ?: 'Malawi';
+if ($PRIMARY_CITIES_OVERRIDE)   $CITIES_PRIMARY   = $PRIMARY_CITIES_OVERRIDE;
+if ($SECONDARY_CITIES_OVERRIDE) $CITIES_SECONDARY = $SECONDARY_CITIES_OVERRIDE;
 
 // ── CITY COORDINATES for Nearby Search (lat, lng) ────────────────────────────
 $CITY_COORDS = [
@@ -269,6 +291,14 @@ $QUERY_TEMPLATES = [
 ];
 
 // ── NEARBY SEARCH TYPE KEYWORDS ──────────────────────────────────────────────
+// Apply country override to query templates (replaces hardcoded 'Malawi')
+if ($COUNTRY !== 'Malawi') {
+    foreach ($QUERY_TEMPLATES as $type => &$tpls) {
+        $tpls = array_map(fn($t) => str_replace('Malawi', $COUNTRY, $t), $tpls);
+    }
+    unset($tpls);
+}
+
 $NEARBY_KEYWORDS = [
     'dealer'   => 'car dealership',
     'garage'   => 'auto repair garage',
@@ -448,21 +478,38 @@ function extractFromWebsite(string $websiteUrl): array
     // ── Plain-text phone + WhatsApp extraction ────────────────────────────────
     $text = strip_tags($html);
 
-    // Malawi phone: +265 x xxxx xxxx  or  0888 xxx xxx  or  0999 xxx xxx
+    // Phone extraction — uses international format first (+XX...), then generic local format
     if (!$out['phone']) {
-        if (preg_match('/\+265[\s\-]?(?:1|2|7|8|9)\s?\d[\d\s\-]{5,12}\d/', $text, $pm)) {
+        // Try specific country code if COUNTRY is set (e.g. +265 for Malawi, +260 for Zambia)
+        global $COUNTRY;
+        $countryPhoneCodes = [
+            'Malawi' => '265', 'Zambia' => '260', 'Zimbabwe' => '263',
+            'Tanzania' => '255', 'Mozambique' => '258', 'Kenya' => '254',
+            'Uganda' => '256', 'South Africa' => '27', 'Botswana' => '267',
+        ];
+        $cc = $countryPhoneCodes[$COUNTRY] ?? null;
+        if ($cc && preg_match('/\+' . $cc . '[\s\-]?\d[\d\s\-]{6,14}\d/', $text, $pm)) {
             $out['phone'] = preg_replace('/\s{2,}/', ' ', trim($pm[0]));
-        } elseif (preg_match('/\b0(?:1\d{2}|2\d{2}|888|880|88\d|99\d|97\d|98\d)[\s\-]?\d{3}[\s\-]?\d{3}\b/', $text, $pm)) {
+        } elseif (preg_match('/\b0\d{2,3}[\s\-]?\d{3}[\s\-]?\d{3,4}\b/', $text, $pm)) {
+            // Generic local format: 0XXX XXX XXX
+            $out['phone'] = trim($pm[0]);
+        } elseif ($cc && preg_match('/\b0(?:1\d{2}|2\d{2}|888|880|88\d|99\d|97\d|98\d)[\s\-]?\d{3}[\s\-]?\d{3}\b/', $text, $pm)) {
             $out['phone'] = trim($pm[0]);
         }
     }
 
-    // WhatsApp from text: "WhatsApp: +265 ..." or "wa: 0999..."
+    // WhatsApp from text: "WhatsApp: +XXX ..." or "wa: 0999..."
     if (!$out['whatsapp']) {
-        if (preg_match('/[Ww]hats[Aa]pp[:\s]+(\+?265[\s\-\d]{9,14}|0[89\d][\d\s\-]{8,11})/', $text, $wpm)) {
+        if (preg_match('/[Ww]hats[Aa]pp[:\s]+(\+?[0-9]{7,15}|0[89\d][\d\s\-]{8,11})/', $text, $wpm)) {
             $num = preg_replace('/[^0-9+]/', '', $wpm[1]);
-            if (strlen($num) >= 9) {
-                if (!str_starts_with($num, '+')) $num = '+265' . ltrim($num, '0');
+            if (strlen($num) >= 7) {
+                // If no + prefix and looks like a local number, try to prefix with country code
+                if (!str_starts_with($num, '+') && strlen($num) <= 10) {
+                    global $COUNTRY;
+                    $ccMap = ['Malawi' => '265', 'Zambia' => '260', 'Zimbabwe' => '263', 'Tanzania' => '255'];
+                    $cc2   = $ccMap[$COUNTRY ?? 'Malawi'] ?? '265';
+                    $num   = $cc2 . ltrim($num, '0');
+                }
                 $out['whatsapp'] = 'https://wa.me/' . ltrim($num, '+');
             }
         }
@@ -953,7 +1000,7 @@ if (!$insertOnly) {
             LIMIT {$enrichLimit}
         ")->fetchAll();
 
-        jlog("\n  $tbl: " . count($rows) . " rows need enrichment")
+        jlog("\n  $tbl: " . count($rows) . " rows need enrichment");
 
         foreach ($rows as $row) {
             $bizId       = (int)$row['id'];
@@ -1061,10 +1108,8 @@ if (!$insertOnly) {
                         $newTw ? 'y' : '-',
                         $newWa ? 'y' : '-'
                     ));
-                    updateJob(['enriched' => $enriched]));
                     updateJob(['enriched' => $enriched]);
                 } catch (PDOException $ex) {
-                    jlog("    ! FAIL $bizName: " . $ex->getMessage())
                     jlog("    ! FAIL $bizName: " . $ex->getMessage());
                 }
             } else {
@@ -1074,8 +1119,6 @@ if (!$insertOnly) {
             try { $db->query("SELECT 1"); } catch (Throwable $e) { $db = freshDb(); }
         }
     }
-jlog("\n  Enriched: $enriched  |  No change / no data found: $enrichSkip");
-    updateJob(['enriched' => $enriched])
     jlog("\n  Enriched: $enriched  |  No change / no data found: $enrichSkip");
     updateJob(['enriched' => $enriched]);
 }
@@ -1097,11 +1140,5 @@ foreach (['car_dealers', 'garages', 'car_hire_companies'] as $t) {
         $t, $tot, $ph, $web, $fb, $ig, $wa, $lg));
 }
 
-jlog("Credentials saved to: scripts/_scrape_v2_credentials.csv");
-jlog("Done.");
-updateJob(['status' => 'done', 'phase' => 4, 'phase_label' => 'Completed', 'summary' => $summaryData])ot, $ph, $web, $fb, $ig, $wa, $lg));
-}
-
-jlog("Credentials saved to: scripts/_scrape_v2_credentials.csv");
 jlog("Done.");
 updateJob(['status' => 'done', 'phase' => 4, 'phase_label' => 'Completed', 'summary' => $summaryData]);

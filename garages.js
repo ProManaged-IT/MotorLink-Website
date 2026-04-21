@@ -1317,8 +1317,13 @@ function createGarageCard(garage) {
     // === HEADER SECTION ===
     html += `<div class="garage-card-header">`;
     
-    // Left side: Name and meta info
+    // Left side: Logo (if available) + Name and meta info
     html += `<div class="garage-header-left">`;
+    if (!isFromGoogle && garage.logo_url) {
+        html += `<div class="garage-card-logo" style="width:42px;height:42px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#f5f5f5;border:1px solid #e0e0e0;margin-bottom:6px;">
+            <img src="${garage.logo_url}" alt="${escapeHtml(garage.name)} logo" style="width:100%;height:100%;object-fit:contain;" onerror="this.parentElement.style.display='none';">
+        </div>`;
+    }
     html += `<h3 class="garage-service-name">${escapeHtml(garage.name)}</h3>`;
     
     // Location meta — only if there's data to show
