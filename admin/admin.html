@@ -1979,6 +1979,8 @@
                                 <small class="form-text" style="display: block; margin-bottom: 12px;">
                                     Stored in <strong>site_settings</strong>. Keys are never shown in full here. Leave a field blank to keep the current secret.
                                 </small>
+                                <!-- form wrapper required: browser warns if password inputs have no parent form -->
+                                <form onsubmit="return false;" autocomplete="off" aria-label="Provider API Key entry">
                                 <div class="row">
                                     <div class="col-md-6">
                                         <label for="ai-openai-api-key">OpenAI API Key</label>
@@ -2003,6 +2005,7 @@
                                         <small id="ai-glm-api-key-status" class="form-text">Status: Not configured</small>
                                     </div>
                                 </div>
+                                </form>
                                 <small id="ai-provider-keys-permission-status" class="form-text" style="display: block; margin-top: 12px; color: #455a64;">
                                     Only super admins should overwrite provider API keys from this panel.
                                 </small>

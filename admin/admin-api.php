@@ -70,7 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit();
 }
 
-//  switch ($action) {
+try {
+switch ($action) {
         case 'admin_login':
             handleAdminLogin($db);
             break;
