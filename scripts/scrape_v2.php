@@ -41,9 +41,74 @@ $insertOnly  = in_array('--insert-only',  $args, true);
 $enrichOnly  = in_array('--enrich-only',  $args, true);
 $enrichLimit = 1000;
 $onlyType    = null;
+$jobId       = null;
 foreach ($args as $a) {
     if (preg_match('/^--type=(.+)$/',         $a, $m)) $onlyType    = strtolower(trim($m[1]));
     if (preg_match('/^--enrich-limit=(\d+)$/', $a, $m)) $enrichLimit = max(1, (int)$m[1]);
+    if (preg_match('/^--job-id=([a-zA-Z0-9_\-]+)$/', $a, $m)) $jobId = $m[1];
+}
+
+// ── JOB TRACKING ─────────────────────────────────────────────────────────────
+$jobsDir  = __DIR__ . '/scrape_jobs';
+$jobFile  = $jobId ? $jobsDir . '/' . $jobId . '.json' : null;
+$jobState = [];  // in-memory mirror of the JSON job file
+$logTail  = [];  // last 100 lines
+
+if ($jobFile && !is_dir($jobsDir)) @mkdir($jobsDir, 0775, true);
+
+/**
+ * Write current job state to JSON file.
+ * Also checks stop_signal so the scraper can be halted from the admin UI.
+ */
+function updateJob(array $patch): void
+{
+    global $jobFile, $jobState, $logTail;
+    if (!$jobFile) return;
+
+    // Merge patch into state
+    foreach ($patch as $k => $v) $jobState[$k] = $v;
+    $jobState['log_tail']   = array_slice($logTail, -100);
+    $jobState['updated_at'] = date('Y-m-d H:i:s');
+
+    // Read existing file to preserve fields we don't own (e.g. stop_signal from API)
+    if (file_exists($jobFile)) {
+        $existing = json_decode((string)file_get_contents($jobFile), true) ?: [];
+        // Honour stop_signal written by API
+        if (!empty($existing['stop_signal'])) $jobState['stop_signal'] = true;
+        // Preserve 'before' snapshot written by API
+        if (!empty($existing['before']) && empty($jobState['before'])) {
+            $jobState['before'] = $existing['before'];
+        }
+    }
+
+    file_put_contents($jobFile, json_encode($jobState, JSON_PRETTY_PRINT));
+}
+
+/** Append a line to the log tail and emit to stdout. */
+function jlog(string $line): void
+{
+    global $logTail;
+    $logTail[] = date('H:i:s') . ' ' . $line;
+    echo $line . "\n";
+}
+
+/** Check stop signal — call between expensive iterations. */
+function checkStop(): bool
+{
+    global $jobFile;
+    if (!$jobFile || !file_exists($jobFile)) return false;
+    $j = json_decode((string)file_get_contents($jobFile), true);
+    return !empty($j['stop_signal']);
+}
+
+// Seed initial running state (only if job file already exists from API)
+if ($jobFile && file_exists($jobFile)) {
+    $existing   = json_decode((string)file_get_contents($jobFile), true) ?: [];
+    $jobState   = $existing;
+    $jobState['status'] = 'running';
+    $jobState['phase']  = 0;
+    $jobState['phase_label'] = 'Starting up...';
+    file_put_contents($jobFile, json_encode($jobState, JSON_PRETTY_PRINT));
 }
 
 // ── DB ───────────────────────────────────────────────────────────────────────
@@ -67,8 +132,11 @@ $db = freshDb();
 $stmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'google_maps_api_key'");
 $stmt->execute();
 $apiKey = trim((string)($stmt->fetchColumn() ?: ''));
-if (!$apiKey) die("ERROR: google_maps_api_key not in site_settings.\n");
-echo "API key loaded.\n\n";
+if (!$apiKey) {
+    updateJob(['status' => 'error', 'error' => 'google_maps_api_key not in site_settings']);
+    die("ERROR: google_maps_api_key not in site_settings.\n");
+}
+jlog("API key loaded.");
 
 // ── TARGETS ──────────────────────────────────────────────────────────────────
 $TARGETS = ['dealer' => 500, 'garage' => 400, 'car_hire' => 300];
@@ -529,17 +597,18 @@ $discovered = ['dealer' => [], 'garage' => [], 'car_hire' => []];
 $allCities  = array_merge($CITIES_PRIMARY, $CITIES_SECONDARY);
 
 if (!$enrichOnly) {
-    echo "=== PHASE 1: DISCOVER ===\n";
+    jlog("=== PHASE 1: DISCOVER ===");
+    updateJob(['phase' => 1, 'phase_label' => 'Phase 1: Discovering businesses']);
 
     // Load existing cache unless --refresh
     if (!$doRefresh && file_exists($cachePath)) {
         $cached = json_decode((string)file_get_contents($cachePath), true);
         if (is_array($cached) && !empty($cached['dealer'])) {
             $discovered = $cached;
-            echo "  [cache] dealer=" . count($discovered['dealer'])
+            jlog("  [cache] dealer=" . count($discovered['dealer'])
                . " garage=" . count($discovered['garage'])
                . " car_hire=" . count($discovered['car_hire'])
-               . " — run with --refresh to re-discover\n\n";
+               . " — run with --refresh to re-discover");
         }
     }
 
@@ -555,12 +624,14 @@ if (!$enrichOnly) {
                 $discovered[$type] = [];
                 continue;
             }
+            if (checkStop()) { updateJob(['status' => 'stopped', 'phase_label' => 'Stopped by user']); die("Stopped.\n"); }
             $target = $TARGETS[$type];
-            echo "\n  -- $type (target: $target) --\n";
+            jlog("\n  -- $type (target: $target) --");
 
             // Round 1: Text Search across all cities × all templates
             foreach ($allCities as $city) {
                 if (count($discovered[$type]) >= $target) break;
+                if (checkStop()) { updateJob(['status' => 'stopped', 'phase_label' => 'Stopped by user']); die("Stopped.\n"); }
                 foreach ($templates as $tpl) {
                     if (count($discovered[$type]) >= $target) break;
                     $q    = sprintf($tpl, $city);
@@ -570,33 +641,40 @@ if (!$enrichOnly) {
                         $discovered[$type][] = $h + ['city_hint' => $city];
                     }
                 }
-                echo "    [text] [{$city}] $type: " . count($discovered[$type]) . "\n";
+                jlog("    [text] [{$city}] $type: " . count($discovered[$type]));
+                updateJob([
+                    'discovery' => array_map(fn($t) => [
+                        'found'  => count($discovered[$t]),
+                        'target' => $TARGETS[$t],
+                    ], array_combine(array_keys($TARGETS), array_keys($TARGETS))),
+                ]);
             }
 
             // Round 2: Nearby Search (GPS radius) — fills remaining gap
             if (count($discovered[$type]) < $target) {
-                echo "  [nearby-search round for $type]\n";
+                jlog("  [nearby-search round for $type]");
                 $keyword = $NEARBY_KEYWORDS[$type] . ' Malawi';
                 foreach ($CITY_COORDS as $city => [$lat, $lng]) {
                     if (count($discovered[$type]) >= $target) break;
+                    if (checkStop()) { updateJob(['status' => 'stopped', 'phase_label' => 'Stopped by user']); die("Stopped.\n"); }
                     $hits = nearbySearch((float)$lat, (float)$lng, $keyword, $apiKey, $seenPids);
                     if ($hits) {
                         foreach ($hits as $h) {
                             if (count($discovered[$type]) >= $target) break;
                             $discovered[$type][] = $h + ['city_hint' => $city];
                         }
-                        echo "    [nearby] [{$city}] +" . count($hits)
-                           . " → total " . count($discovered[$type]) . "\n";
+                        jlog("    [nearby] [{$city}] +" . count($hits)
+                           . " → total " . count($discovered[$type]));
                     }
                     usleep(250000);
                 }
             }
 
-            echo "  Total $type: " . count($discovered[$type]) . "\n";
+            jlog("  Total $type: " . count($discovered[$type]));
         }
 
         file_put_contents($cachePath, json_encode($discovered, JSON_PRETTY_PRINT));
-        echo "\n  [cache] Saved to _scrape_v2_cache.json\n\n";
+        jlog("  [cache] Saved to _scrape_v2_cache.json");
     }
 }
 
@@ -615,7 +693,8 @@ $skipped  = 0;
 $withLogo = 0;
 
 if (!$enrichOnly) {
-    echo "=== PHASE 2: INSERT NEW BUSINESSES ===\n";
+    jlog("=== PHASE 2: INSERT NEW BUSINESSES ===");
+    updateJob(['phase' => 2, 'phase_label' => 'Phase 2: Inserting new businesses']);
 
     $db = freshDb();
 
@@ -675,7 +754,7 @@ if (!$enrichOnly) {
 
     foreach ($discovered as $type => $list) {
         if ($onlyType && $type !== $onlyType) continue;
-        echo "\n  Processing $type (" . count($list) . " candidates)...\n";
+        jlog("\n  Processing $type (" . count($list) . " candidates)...");
 
         foreach ($list as $b) {
             $pidSuffix = substr($b['pid'], -6);
@@ -711,11 +790,11 @@ if (!$enrichOnly) {
             if ($website) {
                 $social = extractFromWebsite($website);
                 if (!$phone && $social['phone']) $phone = $social['phone'];
-                echo "    [web] $name: fb=" . ($social['facebook']  ? 'y' : '-')
+                jlog("    [web] $name: fb=" . ($social['facebook']  ? 'y' : '-')
                    . " ig=" . ($social['instagram'] ? 'y' : '-')
                    . " tw=" . ($social['twitter']   ? 'y' : '-')
                    . " wa=" . ($social['whatsapp']  ? 'y' : '-')
-                   . " ph=" . ($phone               ? 'y' : '-') . "\n";
+                   . " ph=" . ($phone               ? 'y' : '-'));
                 usleep(400000);
             }
 
@@ -805,24 +884,26 @@ if (!$enrichOnly) {
                     $social['twitter'], $social['linkedin'], $social['whatsapp'],
                     $logoPath ? 'yes' : 'no', $b['pid'],
                 ]);
-                echo sprintf("    + [%s] %s%s%s\n",
+                jlog(sprintf("    + [%s] %s%s%s",
                     $type, $name,
                     $logoPath ? ' [logo]' : '',
                     ($social['facebook'] || $social['instagram'] || $social['whatsapp']) ? ' [social]' : ''
-                );
+                ));
+                updateJob(['inserted' => $inserted, 'with_logo' => $withLogo, 'skipped' => $skipped]);
 
             } catch (PDOException $e) {
                 if ($db->inTransaction()) $db->rollBack();
                 $skipped++;
                 // Only show non-routine errors (suppress duplicate key noise)
                 if (strpos($e->getMessage(), '1062') === false) {
-                    echo "    ! FAIL $name: " . $e->getMessage() . "\n";
+                    jlog("    ! FAIL $name: " . $e->getMessage());
                 }
             }
         }
     }
 
-    echo "\n  Inserted: $inserted  |  With logo: $withLogo  |  Skipped/duplicate: $skipped\n";
+    jlog("\n  Inserted: $inserted  |  With logo: $withLogo  |  Skipped/duplicate: $skipped");
+    updateJob(['inserted' => $inserted, 'with_logo' => $withLogo, 'skipped' => $skipped]);
 }
 
 fclose($csvFp);
@@ -832,8 +913,9 @@ fclose($csvFp);
 // PHASE 3 — ENRICH EXISTING BUSINESSES
 // ═════════════════════════════════════════════════════════════════════════════
 if (!$insertOnly) {
-    echo "\n=== PHASE 3: ENRICH EXISTING RECORDS ===\n";
-    echo "    (limit: $enrichLimit rows per table)\n";
+    jlog("=== PHASE 3: ENRICH EXISTING RECORDS ===");
+    jlog("    (limit: $enrichLimit rows per table)");
+    updateJob(['phase' => 3, 'phase_label' => 'Phase 3: Enriching existing records']);
 
     $db = freshDb();
 
@@ -871,7 +953,7 @@ if (!$insertOnly) {
             LIMIT {$enrichLimit}
         ")->fetchAll();
 
-        echo "\n  $tbl: " . count($rows) . " rows need enrichment\n";
+        jlog("\n  $tbl: " . count($rows) . " rows need enrichment")
 
         foreach ($rows as $row) {
             $bizId       = (int)$row['id'];
@@ -970,7 +1052,7 @@ if (!$insertOnly) {
                     }
 
                     $enriched++;
-                    echo sprintf("    ~ %-32s | ph:%s web:%s fb:%s ig:%s tw:%s wa:%s\n",
+                    jlog(sprintf("    ~ %-32s | ph:%s web:%s fb:%s ig:%s tw:%s wa:%s",
                         substr($bizName, 0, 32),
                         $newPhone ? 'y' : '-',
                         $newWebsite ? 'y' : '-',
@@ -978,10 +1060,12 @@ if (!$insertOnly) {
                         $newIg ? 'y' : '-',
                         $newTw ? 'y' : '-',
                         $newWa ? 'y' : '-'
-                    );
+                    ));
+                    updateJob(['enriched' => $enriched]));
+                    updateJob(['enriched' => $enriched]);
                 } catch (PDOException $ex) {
-                    $enrichSkip++;
-                    echo "    ! FAIL $bizName: " . $ex->getMessage() . "\n";
+                    jlog("    ! FAIL $bizName: " . $ex->getMessage())
+                    jlog("    ! FAIL $bizName: " . $ex->getMessage());
                 }
             } else {
                 $enrichSkip++;
@@ -990,26 +1074,34 @@ if (!$insertOnly) {
             try { $db->query("SELECT 1"); } catch (Throwable $e) { $db = freshDb(); }
         }
     }
-
-    echo "\n  Enriched: $enriched  |  No change / no data found: $enrichSkip\n";
+jlog("\n  Enriched: $enriched  |  No change / no data found: $enrichSkip");
+    updateJob(['enriched' => $enriched])
+    jlog("\n  Enriched: $enriched  |  No change / no data found: $enrichSkip");
+    updateJob(['enriched' => $enriched]);
 }
-
-// ═════════════════════════════════════════════════════════════════════════════
 // SUMMARY
-// ═════════════════════════════════════════════════════════════════════════════
-echo "\n=== SUMMARY ===\n";
+// ═══════════════════════════════════════════════════════════════════════════
+jlog("=== SUMMARY ===");
 $db = freshDb();
+$summaryData = [];
 foreach (['car_dealers', 'garages', 'car_hire_companies'] as $t) {
-    $tot = $db->query("SELECT COUNT(*)  FROM `$t` WHERE status='active'")->fetchColumn();
-    $ph  = $db->query("SELECT COUNT(*)  FROM `$t` WHERE status='active' AND phone        != '' AND phone        IS NOT NULL")->fetchColumn();
-    $web = $db->query("SELECT COUNT(*)  FROM `$t` WHERE status='active' AND website      != '' AND website      IS NOT NULL")->fetchColumn();
-    $fb  = $db->query("SELECT COUNT(*)  FROM `$t` WHERE status='active' AND facebook_url != '' AND facebook_url IS NOT NULL")->fetchColumn();
-    $ig  = $db->query("SELECT COUNT(*)  FROM `$t` WHERE status='active' AND instagram_url!= '' AND instagram_url IS NOT NULL")->fetchColumn();
-    $wa  = $db->query("SELECT COUNT(*)  FROM `$t` WHERE status='active' AND whatsapp     != '' AND whatsapp     IS NOT NULL")->fetchColumn();
-    $lg  = $db->query("SELECT COUNT(*)  FROM `$t` WHERE status='active' AND logo_url     IS NOT NULL")->fetchColumn();
-    printf("  %-24s  active:%3d | phone:%3d | web:%3d | fb:%3d | ig:%3d | wa:%3d | logo:%3d\n",
-        $t, $tot, $ph, $web, $fb, $ig, $wa, $lg);
+    $tot = $db->query("SELECT COUNT(*) FROM `$t` WHERE status='active'")->fetchColumn();
+    $ph  = $db->query("SELECT COUNT(*) FROM `$t` WHERE status='active' AND phone != '' AND phone IS NOT NULL")->fetchColumn();
+    $web = $db->query("SELECT COUNT(*) FROM `$t` WHERE status='active' AND website != '' AND website IS NOT NULL")->fetchColumn();
+    $fb  = $db->query("SELECT COUNT(*) FROM `$t` WHERE status='active' AND facebook_url != '' AND facebook_url IS NOT NULL")->fetchColumn();
+    $ig  = $db->query("SELECT COUNT(*) FROM `$t` WHERE status='active' AND instagram_url != '' AND instagram_url IS NOT NULL")->fetchColumn();
+    $wa  = $db->query("SELECT COUNT(*) FROM `$t` WHERE status='active' AND whatsapp != '' AND whatsapp IS NOT NULL")->fetchColumn();
+    $lg  = $db->query("SELECT COUNT(*) FROM `$t` WHERE status='active' AND logo_url IS NOT NULL")->fetchColumn();
+    $summaryData[$t] = ['active' => (int)$tot, 'phone' => (int)$ph, 'website' => (int)$web, 'facebook' => (int)$fb, 'instagram' => (int)$ig, 'whatsapp' => (int)$wa, 'logo' => (int)$lg];
+    jlog(sprintf("  %-24s  active:%3d | phone:%3d | web:%3d | fb:%3d | ig:%3d | wa:%3d | logo:%3d",
+        $t, $tot, $ph, $web, $fb, $ig, $wa, $lg));
 }
 
-echo "\nCredentials saved to: scripts/_scrape_v2_credentials.csv\n";
-echo "Done.\n";
+jlog("Credentials saved to: scripts/_scrape_v2_credentials.csv");
+jlog("Done.");
+updateJob(['status' => 'done', 'phase' => 4, 'phase_label' => 'Completed', 'summary' => $summaryData])ot, $ph, $web, $fb, $ig, $wa, $lg));
+}
+
+jlog("Credentials saved to: scripts/_scrape_v2_credentials.csv");
+jlog("Done.");
+updateJob(['status' => 'done', 'phase' => 4, 'phase_label' => 'Completed', 'summary' => $summaryData]);

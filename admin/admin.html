@@ -213,6 +213,9 @@
                     <a href="#" class="nav-item" data-section="ai-chat-usage">
                         <i class="fas fa-robot"></i> AI Chat Usage
                     </a>
+                    <a href="#" class="nav-item" data-section="scraper">
+                        <i class="fas fa-spider"></i> Business Scraper
+                    </a>
                 </div>
             </nav>
 
@@ -2499,7 +2502,179 @@
         <div class="mobile-overlay" id="mobileOverlay"></div>
           <!-- Dashboard Alerts (fixed toast notifications while logged in) -->
           <div id="dashboardAlerts"></div>
-     </div><!-- /adminDashboard -->
+                <!-- Business Scraper Section -->
+                <div class="content-section" id="scraper-section" style="display:none;">
+                    <div class="section-header">
+                        <h2><i class="fas fa-spider"></i> Business Scraper</h2>
+                        <button class="btn btn-outline" onclick="scraperLoadHistory()">
+                            <i class="fas fa-history"></i> History
+                        </button>
+                    </div>
+
+                    <!-- DB Snapshot Bar -->
+                    <div id="scraperDbBar" style="display:none;"></div>
+
+                    <!-- Run Controls -->
+                    <div class="card" style="margin-bottom:20px;" id="scraperControlCard">
+                        <div class="card-header" style="padding:14px 20px;">
+                            <strong><i class="fas fa-play-circle"></i> Start New Scrape</strong>
+                        </div>
+                        <div class="card-body" style="padding:20px;">
+                            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:18px;">
+                                <div>
+                                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Business Type</label>
+                                    <select id="scraperType" class="form-control" style="font-size:13px;">
+                                        <option value="all">All Types</option>
+                                        <option value="dealer">Dealers Only</option>
+                                        <option value="garage">Garages Only</option>
+                                        <option value="car_hire">Car Hire Only</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Mode</label>
+                                    <select id="scraperMode" class="form-control" style="font-size:13px;">
+                                        <option value="">Full Run (Discover + Insert + Enrich)</option>
+                                        <option value="enrich_only">Enrich Only (update existing)</option>
+                                        <option value="insert_only">Insert Only (skip enrich)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Enrich Limit</label>
+                                    <input type="number" id="scraperEnrichLimit" class="form-control" value="1000" min="10" max="5000" style="font-size:13px;">
+                                </div>
+                                <div style="display:flex;align-items:flex-end;gap:10px;">
+                                    <label style="font-size:12px;font-weight:600;margin:0;cursor:pointer;">
+                                        <input type="checkbox" id="scraperRefresh" style="margin-right:5px;">
+                                        Re-discover (refresh cache)
+                                    </label>
+                                </div>
+                            </div>
+                            <div style="display:flex;gap:10px;align-items:center;">
+                                <button class="btn btn-primary" id="scraperStartBtn" onclick="scraperStart()">
+                                    <i class="fas fa-rocket"></i> Start Scrape
+                                </button>
+                                <button class="btn btn-danger" id="scraperStopBtn" onclick="scraperStop()" style="display:none;">
+                                    <i class="fas fa-stop-circle"></i> Stop
+                                </button>
+                                <span id="scraperStatusBadge" style="font-size:13px;color:#666;"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Panel -->
+                    <div id="scraperProgressPanel" style="display:none;">
+                        <!-- Phase indicators -->
+                        <div style="display:flex;gap:0;margin-bottom:20px;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0;">
+                            <div class="scraper-phase-step" id="sphase0" style="flex:1;text-align:center;padding:10px 6px;font-size:12px;font-weight:600;background:#f8f9fa;color:#999;">
+                                <i class="fas fa-hourglass-start"></i><br>Init
+                            </div>
+                            <div class="scraper-phase-step" id="sphase1" style="flex:1;text-align:center;padding:10px 6px;font-size:12px;font-weight:600;background:#f8f9fa;color:#999;">
+                                <i class="fas fa-search"></i><br>Discover
+                            </div>
+                            <div class="scraper-phase-step" id="sphase2" style="flex:1;text-align:center;padding:10px 6px;font-size:12px;font-weight:600;background:#f8f9fa;color:#999;">
+                                <i class="fas fa-plus-circle"></i><br>Insert
+                            </div>
+                            <div class="scraper-phase-step" id="sphase3" style="flex:1;text-align:center;padding:10px 6px;font-size:12px;font-weight:600;background:#f8f9fa;color:#999;">
+                                <i class="fas fa-magic"></i><br>Enrich
+                            </div>
+                            <div class="scraper-phase-step" id="sphase4" style="flex:1;text-align:center;padding:10px 6px;font-size:12px;font-weight:600;background:#f8f9fa;color:#999;">
+                                <i class="fas fa-check-circle"></i><br>Done
+                            </div>
+                        </div>
+
+                        <!-- Live counters -->
+                        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="scraperCounters">
+                            <div class="stat-card" style="padding:14px;text-align:center;">
+                                <div style="font-size:24px;font-weight:700;color:#00c853;" id="scraperCntInserted">0</div>
+                                <div style="font-size:11px;color:#888;margin-top:4px;">Inserted</div>
+                            </div>
+                            <div class="stat-card" style="padding:14px;text-align:center;">
+                                <div style="font-size:24px;font-weight:700;color:#2196f3;" id="scraperCntEnriched">0</div>
+                                <div style="font-size:11px;color:#888;margin-top:4px;">Enriched</div>
+                            </div>
+                            <div class="stat-card" style="padding:14px;text-align:center;">
+                                <div style="font-size:24px;font-weight:700;color:#ff9800;" id="scraperCntSkipped">0</div>
+                                <div style="font-size:11px;color:#888;margin-top:4px;">Skipped</div>
+                            </div>
+                            <div class="stat-card" style="padding:14px;text-align:center;">
+                                <div style="font-size:24px;font-weight:700;color:#9c27b0;" id="scraperCntLogos">0</div>
+                                <div style="font-size:11px;color:#888;margin-top:4px;">Logos</div>
+                            </div>
+                        </div>
+
+                        <!-- Discovery progress bars -->
+                        <div id="scraperDiscoveryBars" style="margin-bottom:20px;">
+                            <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:#555;">DISCOVERY PROGRESS</div>
+                            <div style="margin-bottom:8px;">
+                                <div style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:3px;">
+                                    <span><i class="fas fa-handshake"></i> Dealers</span>
+                                    <span id="scraperDealerPct">0 / 500</span>
+                                </div>
+                                <div style="background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden;">
+                                    <div id="scraperDealerBar" style="height:100%;background:#00c853;border-radius:4px;transition:width 0.5s;width:0%;"></div>
+                                </div>
+                            </div>
+                            <div style="margin-bottom:8px;">
+                                <div style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:3px;">
+                                    <span><i class="fas fa-tools"></i> Garages</span>
+                                    <span id="scraperGaragePct">0 / 400</span>
+                                </div>
+                                <div style="background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden;">
+                                    <div id="scraperGarageBar" style="height:100%;background:#2196f3;border-radius:4px;transition:width 0.5s;width:0%;"></div>
+                                </div>
+                            </div>
+                            <div style="margin-bottom:8px;">
+                                <div style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:3px;">
+                                    <span><i class="fas fa-key"></i> Car Hire</span>
+                                    <span id="scraperHirePct">0 / 300</span>
+                                </div>
+                                <div style="background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden;">
+                                    <div id="scraperHireBar" style="height:100%;background:#ff9800;border-radius:4px;transition:width 0.5s;width:0%;"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live log -->
+                        <div>
+                            <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:#555;display:flex;justify-content:space-between;">
+                                <span>LIVE LOG</span>
+                                <label style="font-weight:400;font-size:11px;cursor:pointer;">
+                                    <input type="checkbox" id="scraperAutoScroll" checked style="margin-right:4px;"> Auto-scroll
+                                </label>
+                            </div>
+                            <div id="scraperLog" style="
+                                background:#1a1a2e;color:#e0e0e0;font-family:monospace;font-size:11px;
+                                padding:12px;border-radius:8px;height:260px;overflow-y:auto;
+                                line-height:1.6;white-space:pre-wrap;word-break:break-all;
+                            "></div>
+                        </div>
+                    </div>
+
+                    <!-- Results / Before vs After -->
+                    <div id="scraperResults" style="display:none;margin-top:20px;">
+                        <div style="font-size:14px;font-weight:700;margin-bottom:14px;color:#333;">
+                            <i class="fas fa-chart-bar"></i> Results: Before vs After
+                        </div>
+                        <div id="scraperResultsTable"></div>
+                    </div>
+
+                    <!-- Job History -->
+                    <div id="scraperHistory" style="display:none;margin-top:24px;">
+                        <div style="font-size:14px;font-weight:700;margin-bottom:12px;color:#333;">
+                            <i class="fas fa-history"></i> Past Scrape Jobs
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-striped" style="font-size:13px;">
+                                <thead>
+                                    <tr><th>Job ID</th><th>Type</th><th>Started</th><th>Status</th><th>Inserted</th><th>Enriched</th><th>Actions</th></tr>
+                                </thead>
+                                <tbody id="scraperHistoryBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+        </div><!-- /adminDashboard -->
 
     <!-- Modal placeholder — editCarModal is created dynamically by admin-script.js -->
 
@@ -2513,6 +2688,267 @@
     <script src="admin-edit.js?v=20251217003"></script>
     <script src="admin-modals.js?v=20251217003"></script>
     <script src="admin-script.js?v=20251217003"></script>
+    <script>
+    // ── BUSINESS SCRAPER ──────────────────────────────────────────────────────
+    (function () {
+        const API = 'scraper-api.php';
+        let currentJobId = null;
+        let pollTimer    = null;
+        let beforeCounts = null;
 
+        function scraperApiFetch(params) {
+            const fd = new FormData();
+            Object.entries(params).forEach(([k, v]) => fd.append(k, v));
+            return fetch(API, { method: 'POST', body: fd }).then(r => r.json());
+        }
+
+        window.scraperStart = async function () {
+            const type        = document.getElementById('scraperType').value;
+            const mode        = document.getElementById('scraperMode').value;
+            const enrichLimit = document.getElementById('scraperEnrichLimit').value;
+            const refresh     = document.getElementById('scraperRefresh').checked ? '1' : '';
+
+            const params = { action: 'start', type, enrich_limit: enrichLimit };
+            if (refresh)           params.refresh      = '1';
+            if (mode === 'enrich_only') params.enrich_only = '1';
+            if (mode === 'insert_only') params.insert_only = '1';
+
+            document.getElementById('scraperStartBtn').disabled = true;
+            document.getElementById('scraperStatusBadge').textContent = 'Starting…';
+
+            try {
+                const res = await scraperApiFetch(params);
+                if (!res.success) {
+                    document.getElementById('scraperStatusBadge').textContent = res.error || 'Failed to start';
+                    document.getElementById('scraperStartBtn').disabled = false;
+                    // If already running show its progress
+                    if (res.job_id) { currentJobId = res.job_id; scraperStartPolling(); }
+                    return;
+                }
+                currentJobId = res.job_id;
+                document.getElementById('scraperProgressPanel').style.display = 'block';
+                document.getElementById('scraperResults').style.display       = 'none';
+                document.getElementById('scraperStopBtn').style.display       = 'inline-flex';
+                document.getElementById('scraperLog').textContent             = '';
+                scraperResetPhases();
+                scraperStartPolling();
+            } catch(e) {
+                document.getElementById('scraperStatusBadge').textContent = 'Network error';
+                document.getElementById('scraperStartBtn').disabled = false;
+            }
+        };
+
+        window.scraperStop = async function () {
+            if (!currentJobId) return;
+            document.getElementById('scraperStopBtn').disabled = true;
+            document.getElementById('scraperStopBtn').textContent = 'Stopping…';
+            await scraperApiFetch({ action: 'stop', job_id: currentJobId });
+        };
+
+        function scraperStartPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(scraperPoll, 2500);
+            scraperPoll();
+        }
+
+        async function scraperPoll() {
+            if (!currentJobId) return;
+            try {
+                const res = await fetch(API + '?action=status&job_id=' + encodeURIComponent(currentJobId));
+                const data = await res.json();
+                if (!data.success) return;
+                scraperRender(data.job);
+            } catch(e) {}
+        }
+
+        function scraperRender(job) {
+            // Phase indicators
+            scraperSetPhase(job.phase || 0, job.status);
+
+            // Status badge
+            const statusColors = { running: '#00c853', done: '#2196f3', error: '#f44336', stopped: '#ff9800', starting: '#888' };
+            document.getElementById('scraperStatusBadge').innerHTML =
+                `<span style="color:${statusColors[job.status]||'#666'};font-weight:600;">${job.phase_label || job.status}</span>` +
+                (job.updated_at ? ` <small style="color:#aaa;"> · ${job.updated_at.slice(11,19)}</small>` : '');
+
+            // Counters
+            document.getElementById('scraperCntInserted').textContent = job.inserted  || 0;
+            document.getElementById('scraperCntEnriched').textContent = job.enriched  || 0;
+            document.getElementById('scraperCntSkipped').textContent  = job.skipped   || 0;
+            document.getElementById('scraperCntLogos').textContent    = job.with_logo || 0;
+
+            // Discovery bars
+            const d = job.discovery || {};
+            scraperSetBar('Dealer', d.dealer?.found  || 0, d.dealer?.target  || 500);
+            scraperSetBar('Garage', d.garage?.found  || 0, d.garage?.target  || 400);
+            scraperSetBar('Hire',   d.car_hire?.found || 0, d.car_hire?.target || 300);
+
+            // Log tail
+            if (job.log_tail && job.log_tail.length) {
+                const logEl = document.getElementById('scraperLog');
+                logEl.textContent = job.log_tail.join('\n');
+                if (document.getElementById('scraperAutoScroll').checked) {
+                    logEl.scrollTop = logEl.scrollHeight;
+                }
+            }
+
+            // Terminal states
+            if (job.status === 'done' || job.status === 'error' || job.status === 'stopped') {
+                clearInterval(pollTimer);
+                document.getElementById('scraperStartBtn').disabled    = false;
+                document.getElementById('scraperStopBtn').style.display = 'none';
+                if (job.status === 'done' && job.before && job.summary) {
+                    scraperShowResults(job.before, job.summary);
+                }
+                scraperLoadHistory();
+            }
+        }
+
+        function scraperSetBar(key, found, target) {
+            const pct = Math.min(100, Math.round((found / target) * 100));
+            document.getElementById(`scraper${key}Bar`).style.width = pct + '%';
+            document.getElementById(`scraper${key}Pct`).textContent = `${found} / ${target}`;
+        }
+
+        function scraperSetPhase(phase, status) {
+            const phases = [0,1,2,3,4];
+            phases.forEach(p => {
+                const el = document.getElementById(`sphase${p}`);
+                if (!el) return;
+                if (status === 'error') {
+                    el.style.background = p === phase ? '#ffebee' : '#f8f9fa';
+                    el.style.color      = p === phase ? '#f44336' : '#ccc';
+                } else if (status === 'done') {
+                    el.style.background = '#e8f5e9';
+                    el.style.color      = '#00c853';
+                } else if (p < phase) {
+                    el.style.background = '#e8f5e9';
+                    el.style.color      = '#00c853';
+                } else if (p === phase) {
+                    el.style.background = '#e3f2fd';
+                    el.style.color      = '#1565c0';
+                } else {
+                    el.style.background = '#f8f9fa';
+                    el.style.color      = '#bbb';
+                }
+            });
+        }
+
+        function scraperResetPhases() {
+            for (let i=0;i<=4;i++) {
+                const el = document.getElementById(`sphase${i}`);
+                if (el) { el.style.background='#f8f9fa'; el.style.color='#999'; }
+            }
+        }
+
+        function scraperShowResults(before, after) {
+            const wrap = document.getElementById('scraperResults');
+            const tbl  = document.getElementById('scraperResultsTable');
+            const tables = ['car_dealers','garages','car_hire_companies'];
+            const labels = { car_dealers:'Dealers', garages:'Garages', car_hire_companies:'Car Hire' };
+            const fields = ['active','phone','website','facebook','instagram','whatsapp','logo'];
+            const fLabels = { active:'Active', phone:'Phone', website:'Website', facebook:'Facebook', instagram:'Instagram', whatsapp:'WhatsApp', logo:'Logo' };
+
+            let html = '<div style="overflow-x:auto;"><table class="table" style="font-size:12px;min-width:600px;">';
+            html += '<thead><tr><th>Table</th>';
+            fields.forEach(f => html += `<th>${fLabels[f]}<br><small style="color:#aaa;">Before → After</small></th>`);
+            html += '</tr></thead><tbody>';
+
+            tables.forEach(t => {
+                html += `<tr><td><strong>${labels[t]}</strong></td>`;
+                fields.forEach(f => {
+                    const b = (before[t]||{})[f] || 0;
+                    const a = (after[t] ||{})[f] || 0;
+                    const diff = a - b;
+                    const col  = diff > 0 ? '#00c853' : diff < 0 ? '#f44336' : '#888';
+                    const sign = diff > 0 ? '+' : '';
+                    html += `<td>${b} → <strong>${a}</strong> <span style="color:${col};font-size:10px;">(${sign}${diff})</span></td>`;
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table></div>';
+            tbl.innerHTML = html;
+            wrap.style.display = 'block';
+        }
+
+        window.scraperLoadHistory = async function () {
+            try {
+                const res  = await fetch(API + '?action=list');
+                const data = await res.json();
+                if (!data.success) return;
+
+                const body = document.getElementById('scraperHistoryBody');
+                if (!data.jobs.length) { body.innerHTML = '<tr><td colspan="7" class="text-center">No past jobs</td></tr>'; }
+                else {
+                    const statusIcon = { running:'<span style="color:#00c853">● Running</span>', done:'<span style="color:#2196f3">✓ Done</span>', error:'<span style="color:#f44336">✗ Error</span>', stopped:'<span style="color:#ff9800">■ Stopped</span>', starting:'<span style="color:#888">◌ Starting</span>' };
+                    body.innerHTML = data.jobs.map(j => `
+                        <tr>
+                            <td><small style="font-family:monospace;">${j.job_id}</small></td>
+                            <td>${j.type}</td>
+                            <td><small>${j.started_at || ''}</small></td>
+                            <td>${statusIcon[j.status] || j.status}</td>
+                            <td>${j.inserted}</td>
+                            <td>${j.enriched}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline" onclick="scraperViewJob('${j.job_id}')"><i class="fas fa-eye"></i></button>
+                            </td>
+                        </tr>`).join('');
+                }
+                document.getElementById('scraperHistory').style.display = 'block';
+            } catch(e) {}
+        };
+
+        window.scraperViewJob = async function (jid) {
+            try {
+                const res  = await fetch(API + '?action=status&job_id=' + encodeURIComponent(jid));
+                const data = await res.json();
+                if (!data.success || !data.job) return;
+                currentJobId = jid;
+                document.getElementById('scraperProgressPanel').style.display = 'block';
+                scraperRender(data.job);
+            } catch(e) {}
+        };
+
+        // Load DB counts when section is entered
+        const origShow = window.AdminDashboard
+            ? null  // handled below via nav click observer
+            : null;
+
+        document.querySelector('[data-section="scraper"]')?.addEventListener('click', async () => {
+            // Snapshot current DB state for comparison
+            try {
+                const res = await fetch(API + '?action=db_counts');
+                const data = await res.json();
+                if (data.success) {
+                    beforeCounts = data.counts;
+                    const bar = document.getElementById('scraperDbBar');
+                    const tables = ['car_dealers','garages','car_hire_companies'];
+                    const labels = { car_dealers:'Dealers', garages:'Garages', car_hire_companies:'Car Hire' };
+                    bar.innerHTML = `<div style="display:flex;gap:12px;flex-wrap:wrap;background:#f5f5f5;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;">
+                        ${tables.map(t => `<span><strong>${labels[t]}:</strong> ${data.counts[t]?.active||0} active, ${data.counts[t]?.phone||0} with phone, ${data.counts[t]?.facebook||0} with Facebook</span>`).join(' &nbsp;·&nbsp; ')}
+                    </div>`;
+                    bar.style.display = 'block';
+                }
+            } catch(e) {}
+
+            // Resume polling if there's a running job
+            try {
+                const res  = await fetch(API + '?action=list');
+                const data = await res.json();
+                if (data.success && data.jobs.length) {
+                    const running = data.jobs.find(j => j.status === 'running' || j.status === 'starting');
+                    if (running && !pollTimer) {
+                        currentJobId = running.job_id;
+                        document.getElementById('scraperProgressPanel').style.display = 'block';
+                        document.getElementById('scraperStopBtn').style.display = 'inline-flex';
+                        scraperStartPolling();
+                    }
+                    scraperLoadHistory();
+                }
+            } catch(e) {}
+        });
+    })();
+    </script>
 </body>
 </html>
