@@ -414,6 +414,18 @@ function setupFilters() {
                 }
             });
         }
+
+        // Live search — debounced so it doesn't fire on every keystroke
+        const searchInput = document.getElementById('garageSearchInput');
+        if (searchInput) {
+            let searchDebounce;
+            searchInput.addEventListener('input', function() {
+                clearTimeout(searchDebounce);
+                searchDebounce = setTimeout(function() {
+                    if (!window.syncingFromMobileTray) loadGarages();
+                }, 350);
+            });
+        }
     }
 }
 

@@ -21,7 +21,9 @@
         /Could not establish connection\. Receiving end does not exist/i,
         /Unchecked runtime\.lastError/i,
         /Extension context invalidated/i,
-        /chrome-extension:/i
+        /chrome-extension:/i,
+        /AbortError.*Transition was skipped/i,
+        /Transition was skipped/i
     ];
 
     // Check if a message matches any suppress pattern

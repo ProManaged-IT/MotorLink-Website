@@ -1,10 +1,14 @@
 <?php
-// Copy this file to admin-secrets.local.php and fill in your real credentials.
-// This file is safe to commit; admin-secrets.local.php is ignored.
+// Bootstrap DB credentials for the live server.
+// admin-secrets.local.php (gitignored) takes priority — create it for local dev.
+// On the live server this file provides the fallback credentials.
+//
+// Live server uses localhost (MySQL on same host as Apache).
+// Local dev: copy to admin-secrets.local.php and change host to promanaged-it.com.
 
 return [
-    'MOTORLINK_DB_HOST' => 'promanaged-it.com',
-    'MOTORLINK_DB_USER' => 'your_db_user',
-    'MOTORLINK_DB_PASS' => 'your_db_password',
-    'MOTORLINK_DB_NAME' => 'your_db_name'
+    'MOTORLINK_DB_HOST' => 'localhost',
+    'MOTORLINK_DB_USER' => 'p601229',
+    'MOTORLINK_DB_PASS' => '2:p2WpmX[0YTs7',
+    'MOTORLINK_DB_NAME' => 'p601229_motorlinkmalawi_db'
 ];

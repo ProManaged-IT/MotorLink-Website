@@ -162,14 +162,34 @@ function initMobileMenu() {
     };
 
     // Ensure tablet account toggle exists on pages that have user menu but no explicit button.
+    // Helper: sync the tablet toggle label to auth state
+    function syncTabletToggleLabel(btn) {
+        if (!btn) return;
+        const loggedIn = localStorage.getItem('motorlink_authenticated') === 'true';
+        let userData = null;
+        try { userData = JSON.parse(localStorage.getItem('motorlink_user') || 'null'); } catch(e) {}
+
+        if (loggedIn && userData) {
+            const name = userData.full_name || userData.name || (userData.email || '').split('@')[0] || 'User';
+            const parts = name.trim().split(/\s+/).filter(n => n.length > 0);
+            const initials = parts.length >= 2
+                ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+                : name.substring(0, 2).toUpperCase();
+            btn.innerHTML = `<i class="fas fa-user-circle"></i> ${initials}`;
+            btn.setAttribute('aria-label', 'Account menu – ' + name);
+        } else {
+            btn.innerHTML = `<i class="fas fa-user-circle"></i> Account`;
+            btn.setAttribute('aria-label', 'Sign in or create account');
+        }
+    }
+
     if (!tabletUserMenuToggle && userMenu) {
         const headerContainer = userMenu.closest('.header-container');
         if (headerContainer) {
             tabletUserMenuToggle = document.createElement('button');
             tabletUserMenuToggle.className = 'tablet-user-menu-toggle';
             tabletUserMenuToggle.id = 'tabletUserMenuToggle';
-            tabletUserMenuToggle.setAttribute('aria-label', 'Toggle account menu');
-            tabletUserMenuToggle.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
+            syncTabletToggleLabel(tabletUserMenuToggle);
 
             if (toggle && toggle.parentNode === headerContainer) {
                 headerContainer.insertBefore(tabletUserMenuToggle, toggle);
@@ -177,6 +197,8 @@ function initMobileMenu() {
                 headerContainer.appendChild(tabletUserMenuToggle);
             }
         }
+    } else if (tabletUserMenuToggle) {
+        syncTabletToggleLabel(tabletUserMenuToggle);
     }
 
     const cleanupTransientOverlayState = () => {

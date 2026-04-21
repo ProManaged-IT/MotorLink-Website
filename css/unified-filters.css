@@ -102,6 +102,18 @@
     .dealers-filters {
         grid-template-columns: repeat(5, 1fr) auto !important;
     }
+
+    /* Car-hire has 9+ filters — cap at 4 columns to keep rows balanced */
+    .filter-section .filter-bar {
+        grid-template-columns: repeat(4, 1fr) !important;
+    }
+}
+
+@media (min-width: 1400px) {
+    /* Allow 5 columns on very wide screens */
+    .filter-section .filter-bar {
+        grid-template-columns: repeat(5, 1fr) !important;
+    }
 }
 
 /* ========================================

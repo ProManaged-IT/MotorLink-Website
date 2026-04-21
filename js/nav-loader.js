@@ -59,8 +59,8 @@
                     '</div>' +
                 '</div>' +
 
-                '<button class="tablet-user-menu-toggle" id="tabletUserMenuToggle" aria-label="Toggle account menu">' +
-                    '<i class="fas fa-ellipsis-v"></i>' +
+                '<button class="tablet-user-menu-toggle" id="tabletUserMenuToggle" aria-label="Account menu">' +
+                    '<i class="fas fa-user-circle"></i> Account' +
                 '</button>' +
 
                 '<button class="mobile-menu-toggle" id="mobileToggle" aria-label="Toggle mobile menu">' +
