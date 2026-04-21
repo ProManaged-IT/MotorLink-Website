@@ -27,5 +27,14 @@ uploads/**
 
 # Demo seeder credential output (sensitive)
 scripts/_seed_credentials.csv
-
 scripts/_real_business_credentials.csv
+
+# Scraper runtime artifacts (caches, CSV exports, job logs)
+scripts/_*_cache.json
+scripts/_scrape_credentials.csv
+scripts/_scrape_v2_credentials.csv
+scripts/scrape_jobs/
+
+# Admin / app log files
+admin/admin_errors.log
+logs/
