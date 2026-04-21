@@ -24,13 +24,16 @@ $isProduction = !$isLocalhost && !empty($serverHost);
 $defaultDbHost = $isProduction ? 'localhost' : 'promanaged-it.com';
 
 $adminLocalSecrets = [];
-$adminLocalSecretsPath = __DIR__ . '/admin-secrets.local.php';
-if (file_exists($adminLocalSecretsPath)) {
-    $loadedSecrets = require $adminLocalSecretsPath;
-    if (is_array($loadedSecrets)) {
-        $adminLocalSecrets = $loadedSecrets;
+foreach ([__DIR__ . '/admin-secrets.local.php', __DIR__ . '/admin-secrets.example.php'] as $__adminSecretPath) {
+    if (file_exists($__adminSecretPath)) {
+        $__loadedSecrets = require $__adminSecretPath;
+        if (is_array($__loadedSecrets)) {
+            $adminLocalSecrets = $__loadedSecrets;
+            break;
+        }
     }
 }
+unset($__adminSecretPath, $__loadedSecrets);
 
 function getAdminBootstrapDbConfig($defaultHost) {
     $local = $GLOBALS['adminLocalSecrets'] ?? [];
