@@ -2802,13 +2802,20 @@ function sendWhatsAppMessage($settings, string $toNumber, string $messageBody): 
         'text'              => ['preview_url' => false, 'body' => $messageBody],
     ]);
 
+    $_waHost      = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+    $_waLocalhost = in_array($_waHost, ['localhost', '127.0.0.1', '::1'], true)
+                 || strpos($_waHost, 'localhost:') === 0
+                 || strpos($_waHost, '127.0.0.1:') === 0
+                 || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $_waHost);
     $ch = curl_init($url);
     curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $payload,
-        CURLOPT_TIMEOUT        => 15,
-        CURLOPT_HTTPHEADER     => [
+        CURLOPT_RETURNTRANSFER  => true,
+        CURLOPT_POST            => true,
+        CURLOPT_POSTFIELDS      => $payload,
+        CURLOPT_TIMEOUT         => 15,
+        CURLOPT_SSL_VERIFYPEER  => !$_waLocalhost,
+        CURLOPT_SSL_VERIFYHOST  => $_waLocalhost ? 0 : 2,
+        CURLOPT_HTTPHEADER      => [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $settings['api_token'],
         ],

@@ -1694,6 +1694,195 @@ body {
     font-weight: 600;
 }
 
+/* ============================================================================
+   SETTINGS PAGE — cards, rows, helper text
+============================================================================ */
+
+.settings-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid var(--border-color);
+    margin-bottom: 24px;
+}
+
+.settings-card > h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-card > h3 > i {
+    color: var(--primary-color);
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+@media (max-width: 600px) {
+    .form-row { grid-template-columns: 1fr; }
+}
+
+.form-text {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+/* ── WhatsApp settings card sub-panels ── */
+.wa-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.wa-card-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.wa-card-header .wa-icon { color: #25d366; }
+
+.wa-status-badge {
+    font-size: 0.75rem;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #f0f0f0;
+    color: #666;
+    white-space: nowrap;
+}
+
+.wa-intro {
+    margin-bottom: 18px;
+}
+
+.wa-sub-panel {
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+}
+
+.wa-sub-panel h4 {
+    margin: 0 0 14px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.wa-sub-panel--credentials {
+    background: #f8fffe;
+    border: 1px solid #d4f0dc;
+}
+
+.wa-sub-panel--credentials h4 { color: #128c49; }
+
+.wa-sub-panel--test {
+    background: #fff9f0;
+    border: 1px solid #fde8c8;
+}
+
+.wa-sub-panel--test h4 { color: #c06000; }
+
+.wa-sub-panel--test h4 .wa-test-desc { margin-bottom: 12px; }
+
+.wa-sub-panel--stats {
+    background: #f5f5f5;
+}
+
+.wa-sub-panel--stats h4 {
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+    color: #333;
+}
+
+.wa-token-field {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.wa-token-field input {
+    flex: 1;
+    font-family: monospace;
+    font-size: 0.82rem;
+}
+
+.wa-token-field .btn {
+    white-space: nowrap;
+    padding: 0 14px;
+}
+
+.wa-lead-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.badge-new {
+    font-size: 0.72rem;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1e40af;
+    font-weight: 600;
+}
+
+.wa-test-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.wa-test-row > div {
+    flex: 1;
+    min-width: 200px;
+}
+
+.wa-test-row .btn {
+    white-space: nowrap;
+}
+
+.wa-test-result {
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.84rem;
+}
+
+.wa-stats-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 0.83rem;
+}
+
+.wa-stat-pending  { color: #c08000; }
+.wa-stat-confirmed { color: #128c49; }
+.wa-stat-declined  { color: #b91c1c; }
+.wa-stat-api       { color: #1d4ed8; }
+
 /* Form Grid Improvements */
 .form-grid {
     display: grid;

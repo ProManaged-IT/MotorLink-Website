@@ -8516,13 +8516,20 @@ function handleTestWhatsAppMessage($db) {
         ],
     ]);
 
+    $_waHost      = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+    $_waLocalhost = in_array($_waHost, ['localhost', '127.0.0.1', '::1'], true)
+                 || strpos($_waHost, 'localhost:') === 0
+                 || strpos($_waHost, '127.0.0.1:') === 0
+                 || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $_waHost);
     $ch = curl_init($url);
     curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $body,
-        CURLOPT_TIMEOUT        => 15,
-        CURLOPT_HTTPHEADER     => [
+        CURLOPT_RETURNTRANSFER  => true,
+        CURLOPT_POST            => true,
+        CURLOPT_POSTFIELDS      => $body,
+        CURLOPT_TIMEOUT         => 15,
+        CURLOPT_SSL_VERIFYPEER  => !$_waLocalhost,
+        CURLOPT_SSL_VERIFYHOST  => $_waLocalhost ? 0 : 2,
+        CURLOPT_HTTPHEADER      => [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $token,
         ],
@@ -8542,13 +8549,22 @@ function handleTestWhatsAppMessage($db) {
     $decoded = json_decode($response, true);
     $wamid   = $decoded['messages'][0]['id'] ?? null;
 
+    // Detect if using Meta's free test number (not a real business number)
+    // Test numbers are typically in the format 1065XXXXXXXXX or similar short IDs
+    $usingTestNumber = (strlen($phoneNumId) < 16);
+
     if ($httpCode === 200 && $wamid) {
         logActivity($db, 'whatsapp_test_sent',
             'WhatsApp test message sent',
             "To: {$toNumber}, wamid: {$wamid}", $_SESSION['admin_id'] ?? null);
+
+        $note = $usingTestNumber
+            ? "API accepted the message (wamid issued). If you did NOT receive it: the Meta test number can only deliver to verified recipients. Go to Meta → WhatsApp → API Setup → \"To\" dropdown → Add phone number → verify +{$toNumber} with OTP."
+            : "Message delivered to +{$toNumber}.";
+
         echo json_encode([
             'success'    => true,
-            'message'    => "Test message delivered to +{$toNumber}",
+            'message'    => $note,
             'wamid'      => $wamid,
             'http_code'  => $httpCode,
         ]);
