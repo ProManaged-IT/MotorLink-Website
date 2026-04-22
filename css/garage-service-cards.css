@@ -203,6 +203,16 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.garage-info-row.clickable .value .address-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 
 
@@ -822,8 +832,9 @@
 @media (max-width: 480px) {
   /* Even more compact for small screens */
   .garage-service-card {
-    padding: 10px;
-    gap: 6px;
+    padding: 8px;
+    gap: 4px;
+    min-height: unset;
     border-width: 1.5px;
     border-color: #c7d2de;
     box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);

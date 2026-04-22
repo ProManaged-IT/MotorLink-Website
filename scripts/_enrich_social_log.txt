@@ -1,0 +1,7 @@
+11:57:21 API key loaded.
+11:57:21 === PHASE 3: ENRICH EXISTING RECORDS ===
+11:57:21     (limit: 1000 rows per table)
+11:57:21 
+  car_dealers: 227 rows need enrichment
+11:58:43     ~ Stansfield Motors                | ph:y web:y fb:y ig:- tw:- wa:y
+12:04:37     ~ Chrispine chimbiya               | ph:y web:y fb:y ig:- tw:- wa:y

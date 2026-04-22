@@ -310,7 +310,7 @@ function renderCompanies(data) {
             <div class="company-card ${isFeatured ? 'featured-company' : ''}">
                 <div class="company-card-header">
                     <div class="company-header-left" style="display:flex;align-items:center;gap:10px;">
-                        ${company.logo_url ? `<div style="width:44px;height:44px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#f5f5f5;border:1px solid #e0e0e0;"><img src="${company.logo_url}" alt="${escapeHtml(company.business_name)} logo" style="width:100%;height:100%;object-fit:contain;" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-key\\' style=\\'font-size:20px;color:#ccc;display:flex;align-items:center;justify-content:center;height:100%;\\' />';"></div>` : ''}
+                        ${company.logo_url ? `<div style="width:56px;height:56px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#f5f5f5;border:1px solid #e0e0e0;"><img src="${company.logo_url}" alt="${escapeHtml(company.business_name)} logo" style="width:100%;height:100%;object-fit:contain;" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-key\\' style=\\'font-size:20px;color:#ccc;display:flex;align-items:center;justify-content:center;height:100%;\\' />';"></div>` : ''}
                         <h3 class="company-business-name">${escapeHtml(company.business_name)}</h3>
                     </div>
                     ${badges.length > 0 ? `

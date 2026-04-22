@@ -1372,8 +1372,8 @@ function createGarageCard(garage) {
     
     // Left side: Logo (if available) + Name and meta info
     html += `<div class="garage-header-left">`;
-    if (!isFromGoogle && garage.logo_url) {
-        html += `<div class="garage-card-logo" style="width:42px;height:42px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#f5f5f5;border:1px solid #e0e0e0;margin-bottom:6px;">
+    if (garage.logo_url) {
+        html += `<div class="garage-card-logo" style="width:56px;height:56px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#f5f5f5;border:1px solid #e0e0e0;margin-bottom:6px;">
             <img src="${garage.logo_url}" alt="${escapeHtml(garage.name)} logo" style="width:100%;height:100%;object-fit:contain;" onerror="this.parentElement.style.display='none';">
         </div>`;
     }
@@ -1521,7 +1521,7 @@ function createGarageCard(garage) {
         hasData: hasAddress,
         icon: 'fas fa-map-marker-alt',
         label: 'Address',
-        value: hasAddress ? `${escapeHtml(garage.address)} <i class="fas fa-external-link-alt" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.7;"></i>` : '',
+        value: hasAddress ? `<span class="address-text">${escapeHtml(garage.address)}</span><i class="fas fa-external-link-alt" style="font-size: 0.75rem; margin-left: 4px; opacity: 0.7; flex-shrink: 0;"></i>` : '',
         rowClass: hasAddress ? 'garage-address-link' : '',
         clickable: hasAddress,
         dataAddress: fullAddress || '',

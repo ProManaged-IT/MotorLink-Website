@@ -2811,7 +2811,8 @@ class DealersManager {
             <a href="showroom.html?id=${dealer.id}" class="dealer-business-card-link">
                 <div class="dealer-business-card ${isFeatured ? 'featured-dealer' : ''}" data-dealer-id="${dealer.id}">
                     <div class="dealer-card-header">
-                        <div class="dealer-header-left">
+                        <div class="dealer-header-left" style="display:flex;flex-direction:row;align-items:center;gap:10px;">
+                            ${dealer.logo_url ? `<div style="width:56px;height:56px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#f5f5f5;border:1px solid #e0e0e0;"><img src="${dealer.logo_url}" alt="${this.escapeHtml(dealer.business_name)} logo" style="width:100%;height:100%;object-fit:contain;" onerror="this.parentElement.style.display='none';"></div>` : ''}
                             <h3 class="dealer-business-name">${this.escapeHtml(dealer.business_name)}</h3>
                         </div>
                         <div class="dealer-header-right">

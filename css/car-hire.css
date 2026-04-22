@@ -664,6 +664,14 @@
 @media (max-width: 480px) {
   .company-card {
     padding: 10px;
+    gap: 8px;
+    min-height: unset;
+  }
+
+  .company-card .company-card-body {
+    min-height: unset;
+    padding: 8px 0;
+    gap: 6px;
   }
 
   .company-card .company-business-name {

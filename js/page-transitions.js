@@ -491,3 +491,29 @@ if (document.readyState === 'loading') {
 // Export for use in other scripts
 window.PageTransitionManager = PageTransitionManager;
 
+// ── BACK TO TOP BUTTON ───────────────────────────────────────────────────────
+// Injects the button on pages that don't include script.js (which also does this).
+// The guard prevents duplication.
+(function initBackToTop() {
+    function setup() {
+        if (document.querySelector('.back-to-top')) return;
+        const btn = document.createElement('button');
+        btn.className = 'back-to-top';
+        btn.innerHTML = '<i class="fas fa-chevron-up"></i>';
+        btn.setAttribute('aria-label', 'Back to top');
+        btn.title = 'Back to top';
+        document.body.appendChild(btn);
+        window.addEventListener('scroll', function() {
+            btn.classList.toggle('visible', window.pageYOffset > 300);
+        }, { passive: true });
+        btn.addEventListener('click', function() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setup);
+    } else {
+        setup();
+    }
+})();
+

@@ -471,8 +471,9 @@
   /* 🎨 PREMIUM CARD STYLING - Neumorphic Design */
   .dealer-business-card,
   .dealer-business-card.featured-dealer {
-    padding: 18px;
-    min-height: 240px;
+    padding: 12px;
+    gap: 8px;
+    min-height: unset;
     border-radius: 20px;
     background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
     border: none;
@@ -559,9 +560,9 @@
 
   /* Tighter card body */
   .dealer-business-card .dealer-card-body {
-    min-height: 95px;
-    gap: 8px;
-    padding: 10px 0;
+    min-height: unset;
+    gap: 6px;
+    padding: 8px 0;
   }
 
   .dealer-business-card .dealer-rating-display {
