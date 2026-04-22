@@ -128,23 +128,45 @@ async function loadStats() {
         }
     } catch (error) {
         // Set default values if API fails
-        document.getElementById('totalCompanies').textContent = '0';
-        document.getElementById('availableVehicles').textContent = '0';
-        document.getElementById('totalCities').textContent = '0';
-        document.getElementById('featuredCompanies').textContent = '0';
+        ['totalCompanies','mobileAvailableVehicles','mobileTotalCompanies'].forEach(id => {
+            const el = document.getElementById(id); if (el) el.textContent = '0';
+        });
+        ['availableVehicles','totalCities','featuredCompanies',
+         'mobileTotalCities','mobileFeaturedCompanies'].forEach(id => {
+            const el = document.getElementById(id); if (el) el.textContent = '0';
+        });
     }
 }
 
 function updateStatsDisplay() {
-    const companiesElement = document.getElementById('totalCompanies');
-    const vehiclesElement = document.getElementById('availableVehicles');
-    const citiesElement = document.getElementById('totalCities');
-    const featuredElement = document.getElementById('featuredCompanies');
+    const available    = stats.available_vehicles || 0;
+    const companies    = stats.total_companies    || 0;
+    const cities       = stats.total_cities       || 0;
+    const featured     = stats.featured_companies || 0;
 
-    if (companiesElement) companiesElement.textContent = (stats.total_companies || 0) + '+';
-    if (vehiclesElement) vehiclesElement.textContent = (stats.available_vehicles || 0) + '+';
-    if (citiesElement) citiesElement.textContent = stats.total_cities || 0;
-    if (featuredElement) featuredElement.textContent = stats.featured_companies || 0;
+    // Hero stats (desktop)
+    const companiesElement = document.getElementById('totalCompanies');
+    const vehiclesElement  = document.getElementById('availableVehicles');
+    const citiesElement    = document.getElementById('totalCities');
+    const featuredElement  = document.getElementById('featuredCompanies');
+    if (companiesElement) companiesElement.textContent = companies + '+';
+    if (vehiclesElement)  vehiclesElement.textContent  = available + '+';
+    if (citiesElement)    citiesElement.textContent    = cities;
+    if (featuredElement)  featuredElement.textContent  = featured;
+
+    // Mobile stats strip
+    const mAvailable  = document.getElementById('mobileAvailableVehicles');
+    const mCompanies  = document.getElementById('mobileTotalCompanies');
+    const mCities     = document.getElementById('mobileTotalCities');
+    const mFeatured   = document.getElementById('mobileFeaturedCompanies');
+    if (mAvailable) mAvailable.textContent = available + '+';
+    if (mCompanies) mCompanies.textContent = companies + '+';
+    if (mCities)    mCities.textContent    = cities;
+    if (mFeatured)  mFeatured.textContent  = featured;
+
+    // Show/hide mobile strip based on data
+    const strip = document.getElementById('chMobileStats');
+    if (strip) strip.classList.toggle('ch-ms-loaded', companies > 0);
 }
 
 // Load locations that actually have car hire companies

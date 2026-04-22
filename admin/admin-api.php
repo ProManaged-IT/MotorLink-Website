@@ -456,6 +456,18 @@ try {
             handleUpdateListingReportStatus($db);
             break;
 
+        case 'get_business_reviews':
+            handleGetBusinessReviews($db);
+            break;
+
+        case 'update_review_status':
+            handleUpdateBusinessReviewStatus($db);
+            break;
+
+        case 'delete_review':
+            handleDeleteBusinessReview($db);
+            break;
+
         case 'get_ai_chat_settings':
             handleGetAIChatSettings($db);
             break;
@@ -8505,4 +8517,148 @@ function handleClearAllCaches($db) {
         'cache_bust_token' => $cacheBustToken
     ]);
     exit();
+}
+
+// ============================================================================
+// BUSINESS REVIEWS ADMIN
+// ============================================================================
+
+/**
+ * List reviews with filters, joins to users + business names.
+ * GET ?action=get_business_reviews&business_type=&status=&search=&limit=
+ */
+function handleGetBusinessReviews($db) {
+    requireAdmin();
+
+    try {
+        $where = ["1=1"];
+        $params = [];
+
+        if (!empty($_GET['business_type'])) {
+            $where[] = "br.business_type = ?";
+            $params[] = $_GET['business_type'];
+        }
+
+        if (!empty($_GET['status'])) {
+            $where[] = "br.status = ?";
+            $params[] = $_GET['status'];
+        }
+
+        if (!empty($_GET['search'])) {
+            $where[] = "(u.full_name LIKE ? OR br.review_text LIKE ?)";
+            $term = '%' . $_GET['search'] . '%';
+            $params[] = $term;
+            $params[] = $term;
+        }
+
+        $limit = isset($_GET['limit']) ? max(1, min(500, (int)$_GET['limit'])) : 200;
+        $whereClause = implode(' AND ', $where);
+
+        $sql = "SELECT br.id, br.business_type, br.business_id, br.rating,
+                       br.review_text, br.status, br.created_at, br.updated_at,
+                       u.full_name AS reviewer_name, u.email AS reviewer_email,
+                       COALESCE(
+                           (SELECT cd.business_name FROM car_dealers cd WHERE cd.id = br.business_id AND br.business_type = 'dealer' LIMIT 1),
+                           (SELECT g.name FROM garages g WHERE g.id = br.business_id AND br.business_type = 'garage' LIMIT 1),
+                           (SELECT ch.business_name FROM car_hire_companies ch WHERE ch.id = br.business_id AND br.business_type = 'car_hire' LIMIT 1)
+                       ) AS business_name
+                FROM business_reviews br
+                INNER JOIN users u ON br.user_id = u.id
+                WHERE {$whereClause}
+                ORDER BY CASE WHEN br.status = 'active' THEN 0 ELSE 1 END, br.created_at DESC
+                LIMIT ?";
+
+        $params[] = $limit;
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $reviews = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Aggregate counts
+        $stmtCounts = $db->query("SELECT status, COUNT(*) as cnt FROM business_reviews GROUP BY status");
+        $counts = ['active' => 0, 'hidden' => 0];
+        foreach ($stmtCounts->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $key = $row['status'];
+            if (isset($counts[$key])) $counts[$key] = (int)$row['cnt'];
+        }
+
+        echo json_encode(['success' => true, 'reviews' => $reviews, 'stats' => $counts]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleGetBusinessReviews error: ' . $e->getMessage());
+        sendAdminError('Failed to load reviews', 'REVIEWS_LOAD_FAILED', 500);
+    }
+}
+
+/**
+ * Update review status: active or hidden.
+ * POST ?action=update_review_status  body: { review_id, status }
+ */
+function handleUpdateBusinessReviewStatus($db) {
+    requireAdmin();
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST method required', 'INVALID_METHOD', 405);
+    }
+
+    try {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $reviewId = (int)($input['review_id'] ?? 0);
+        $status   = trim((string)($input['status'] ?? ''));
+
+        if ($reviewId <= 0) sendAdminError('review_id required', 'REVIEW_ID_REQUIRED', 400);
+        if (!in_array($status, ['active', 'hidden'], true)) sendAdminError('Invalid status', 'INVALID_STATUS', 400);
+
+        $adminId = $_SESSION['admin_id'] ?? null;
+        $stmt = $db->prepare("UPDATE business_reviews SET status = ?, updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$status, $reviewId]);
+
+        if ($stmt->rowCount() === 0) {
+            sendAdminError('Review not found or unchanged', 'REVIEW_NOT_FOUND', 404);
+        }
+
+        logActivity($db, 'review_status_updated',
+            'Business review status updated',
+            "Review ID: {$reviewId}, Status: {$status}", $adminId);
+
+        echo json_encode(['success' => true, 'message' => 'Review status updated']);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleUpdateBusinessReviewStatus error: ' . $e->getMessage());
+        sendAdminError('Failed to update review status', 'REVIEW_UPDATE_FAILED', 500);
+    }
+}
+
+/**
+ * Hard-delete a review (permanent).
+ * POST ?action=delete_review  body: { review_id }
+ */
+function handleDeleteBusinessReview($db) {
+    requireAdmin();
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST method required', 'INVALID_METHOD', 405);
+    }
+
+    try {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $reviewId = (int)($input['review_id'] ?? 0);
+
+        if ($reviewId <= 0) sendAdminError('review_id required', 'REVIEW_ID_REQUIRED', 400);
+
+        $adminId = $_SESSION['admin_id'] ?? null;
+        $stmt = $db->prepare("DELETE FROM business_reviews WHERE id = ?");
+        $stmt->execute([$reviewId]);
+
+        if ($stmt->rowCount() === 0) {
+            sendAdminError('Review not found', 'REVIEW_NOT_FOUND', 404);
+        }
+
+        logActivity($db, 'review_deleted',
+            'Business review deleted',
+            "Review ID: {$reviewId}", $adminId);
+
+        echo json_encode(['success' => true, 'message' => 'Review deleted']);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleDeleteBusinessReview error: ' . $e->getMessage());
+        sendAdminError('Failed to delete review', 'REVIEW_DELETE_FAILED', 500);
+    }
 }

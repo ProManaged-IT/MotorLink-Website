@@ -401,6 +401,7 @@ class AdminDashboard {
             'dashboard': 'Dashboard',
             'cars': 'Car Listings',
             'reports': 'Listing Reports',
+            'reviews': 'Business Reviews',
             'pending-cars': 'Pending Cars',
             'guest-listings': 'Guest Listings',
             'rejected-cars': 'Rejected Cars',
@@ -785,6 +786,8 @@ class AdminDashboard {
                 return this.loadCars();
             case 'reports':
                 return this.loadListingReports();
+            case 'reviews':
+                return this.loadBusinessReviews();
             case 'pending-cars':
                 return this.loadPendingCars();
             case 'guest-listings':
@@ -5222,6 +5225,134 @@ async filterMakesModels() {
     formatIssueText(message, code) {
         if (!code) return message;
         return `${message} (${code})`;
+    }
+
+    // ----------------------------------------------------------------
+    // BUSINESS REVIEWS AUDIT
+    // ----------------------------------------------------------------
+
+    async loadBusinessReviews() {
+        const tbody = document.getElementById('businessReviewsTableBody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="text-center">Loading…</td></tr>';
+
+        try {
+            const filters = {};
+            const type   = document.getElementById('reviewsTypeFilter')?.value;
+            const status = document.getElementById('reviewsStatusFilter')?.value;
+            const search = document.getElementById('reviewsSearch')?.value?.trim();
+
+            if (type)   filters.business_type = type;
+            if (status) filters.status = status;
+            if (search) filters.search = search;
+
+            const response = await this.apiCall('get_business_reviews', 'GET', filters);
+
+            if (response.success) {
+                // Update summary counters
+                const stats = response.stats || {};
+                const activeEl  = document.getElementById('reviewsActiveCount');
+                const hiddenEl  = document.getElementById('reviewsHiddenCount');
+                const badgeEl   = document.getElementById('reviewsHiddenBadge');
+                if (activeEl)  activeEl.textContent  = stats.active  ?? 0;
+                if (hiddenEl)  hiddenEl.textContent  = stats.hidden  ?? 0;
+                if (badgeEl)   badgeEl.textContent   = stats.hidden  ?? 0;
+                if (badgeEl)   badgeEl.style.display = (stats.hidden ?? 0) > 0 ? '' : 'none';
+
+                this.displayBusinessReviews(response.reviews || []);
+            } else {
+                throw new Error(response.message || 'Failed to load reviews');
+            }
+        } catch (error) {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger">${this.escapeHtml(error.message)}</td></tr>`;
+            this.showAlert('error', error.message || 'Failed to load reviews');
+        }
+    }
+
+    displayBusinessReviews(reviews) {
+        const tbody = document.getElementById('businessReviewsTableBody');
+        if (!tbody) return;
+
+        if (!reviews.length) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No reviews found</td></tr>';
+            return;
+        }
+
+        const typeLabels = { dealer: 'Dealer', garage: 'Garage', car_hire: 'Car Hire' };
+        const stars = (n) => '★'.repeat(Math.max(0, Math.min(5, n))) + '☆'.repeat(5 - Math.max(0, Math.min(5, n)));
+
+        tbody.innerHTML = reviews.map(r => {
+            const isActive = r.status === 'active';
+            const typeLabel = this.escapeHtml(typeLabels[r.business_type] || r.business_type);
+            const businessBadge = r.business_type === 'dealer'   ? 'badge-primary' :
+                                  r.business_type === 'garage'   ? 'badge-info'    : 'badge-warning';
+            const reviewSnippet = r.review_text
+                ? this.escapeHtml(r.review_text.length > 120 ? r.review_text.slice(0, 120) + '…' : r.review_text)
+                : '<em class="text-muted">No text</em>';
+
+            return `
+                <tr>
+                    <td>#${r.id}</td>
+                    <td>
+                        <div class="fw-bold">${this.escapeHtml(r.business_name || '—')}</div>
+                        <div class="small text-muted">ID ${r.business_id}</div>
+                    </td>
+                    <td><span class="badge ${businessBadge}">${typeLabel}</span></td>
+                    <td>
+                        <span style="color:#f5c518;font-size:1rem;letter-spacing:1px;">${stars(r.rating)}</span>
+                        <span class="small text-muted"> ${r.rating}/5</span>
+                    </td>
+                    <td>
+                        <div>${this.escapeHtml(r.reviewer_name || 'Unknown')}</div>
+                        <div class="small text-muted">${this.escapeHtml(r.reviewer_email || '')}</div>
+                    </td>
+                    <td class="small">${reviewSnippet}</td>
+                    <td>
+                        <span class="badge badge-${isActive ? 'success' : 'secondary'}">
+                            ${isActive ? 'Active' : 'Hidden'}
+                        </span>
+                    </td>
+                    <td class="small">${this.formatDate(r.created_at)}</td>
+                    <td>
+                        ${isActive
+                            ? `<button class="btn btn-sm btn-outline" onclick="admin.setReviewStatus(${r.id}, 'hidden')" title="Hide this review"><i class="fas fa-eye-slash"></i> Hide</button>`
+                            : `<button class="btn btn-sm btn-success" onclick="admin.setReviewStatus(${r.id}, 'active')" title="Make visible"><i class="fas fa-eye"></i> Show</button>`
+                        }
+                        <button class="btn btn-sm btn-danger" onclick="admin.deleteReview(${r.id})" title="Delete permanently"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+        }).join('');
+    }
+
+    async setReviewStatus(reviewId, status) {
+        try {
+            const response = await this.apiCall('update_review_status', 'POST', {
+                review_id: reviewId,
+                status
+            });
+            if (response.success) {
+                this.showAlert('success', response.message || 'Review updated');
+                await this.loadBusinessReviews();
+            } else {
+                throw new Error(response.message || 'Failed to update review');
+            }
+        } catch (error) {
+            this.showAlert('error', error.message || 'Failed to update review status');
+        }
+    }
+
+    async deleteReview(reviewId) {
+        if (!confirm('Permanently delete this review? This cannot be undone.')) return;
+        try {
+            const response = await this.apiCall('delete_review', 'POST', { review_id: reviewId });
+            if (response.success) {
+                this.showAlert('success', 'Review deleted');
+                await this.loadBusinessReviews();
+            } else {
+                throw new Error(response.message || 'Failed to delete review');
+            }
+        } catch (error) {
+            this.showAlert('error', error.message || 'Failed to delete review');
+        }
     }
 
     async loadActivityLogs() {
