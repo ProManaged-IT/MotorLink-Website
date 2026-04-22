@@ -302,7 +302,7 @@ function renderCompanies(data) {
                 parseFloat(company.longitude)
             );
             const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${userLocation.lat},${userLocation.lng}&destination=${company.latitude},${company.longitude}&travelmode=driving`;
-            distanceInfo = `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="loc-chip distance-info clickable-chip" onclick="event.stopPropagation();" title="Get directions to ${escapeHtml(company.business_name || '')}"><i class="fas fa-location-arrow"></i> ${distance.toFixed(1)} km away</a>`;
+            distanceInfo = `<button type="button" class="loc-chip distance-info clickable-chip" onclick="event.stopPropagation(); window.open('${mapsUrl}', '_blank', 'noopener,noreferrer');" title="Get directions to ${escapeHtml(company.business_name || '')}"><i class="fas fa-location-arrow"></i> ${distance.toFixed(1)} km away</button>`;
         }
 
         return `
@@ -334,6 +334,12 @@ function renderCompanies(data) {
                     <div class="company-address">
                         <i class="fas fa-building"></i>
                         <span>${escapeHtml(company.address)}</span>
+                    </div>
+                ` : ''}
+                ${company.phone ? `
+                    <div class="company-address">
+                        <i class="fas fa-phone"></i>
+                        <span>${escapeHtml(company.phone)}</span>
                     </div>
                 ` : ''}
 

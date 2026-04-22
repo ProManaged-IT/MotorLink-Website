@@ -2801,7 +2801,7 @@ class DealersManager {
                 const q = encodeURIComponent(`${dealer.business_name || ''} ${dealer.address || dealer.location_name || ''}`.trim());
                 mapsUrl = `https://www.google.com/maps/search/?api=1&query=${q}`;
             }
-            distanceInfo = `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="loc-chip distance-info clickable-chip" onclick="event.stopPropagation();" title="Get directions to ${this.escapeHtml(dealer.business_name || '')}"><i class="fas fa-location-arrow"></i> ${dealer.distance.toFixed(1)} km away</a>`;
+            distanceInfo = `<button type="button" class="loc-chip distance-info clickable-chip" onclick="event.stopPropagation(); window.open('${mapsUrl}', '_blank', 'noopener,noreferrer');" title="Get directions to ${this.escapeHtml(dealer.business_name || '')}"><i class="fas fa-location-arrow"></i> ${dealer.distance.toFixed(1)} km away</button>`;
         }
 
         // Generate star rating
