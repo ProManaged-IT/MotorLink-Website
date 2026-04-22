@@ -8378,7 +8378,7 @@ function handleSaveFooterSupportSettings($db) {
 function handleGetWhatsAppSettings($db) {
     requireSuperAdmin($db);
     try {
-        $keys = ['wa_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_api_version', 'wa_lead_notifications'];
+        $keys = ['wa_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_business_account_id', 'wa_api_version', 'wa_lead_notifications'];
         $placeholders = implode(',', array_fill(0, count($keys), '?'));
         $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
         $stmt->execute($keys);
@@ -8391,6 +8391,7 @@ function handleGetWhatsAppSettings($db) {
                 'wa_enabled'              => $rows['wa_enabled']              ?? '0',
                 'wa_api_token'            => $token !== '' ? '••••••••' . substr($token, -4) : '',
                 'wa_phone_number_id'      => $rows['wa_phone_number_id']      ?? '',
+                'wa_business_account_id'  => $rows['wa_business_account_id']  ?? '',
                 'wa_api_version'          => $rows['wa_api_version']          ?? 'v19.0',
                 'wa_lead_notifications'   => $rows['wa_lead_notifications']   ?? '0',
                 'token_configured'        => $token !== '',
@@ -8423,6 +8424,7 @@ function handleSaveWhatsAppSettings($db) {
     $leadNotifs   = isset($input['wa_lead_notifications']) && $input['wa_lead_notifications'] ? '1' : '0';
     $token        = trim((string)($input['wa_api_token'] ?? ''));
     $phoneNumId   = trim(preg_replace('/[^0-9]/', '', (string)($input['wa_phone_number_id'] ?? '')));
+    $wabaId       = trim(preg_replace('/[^0-9]/', '', (string)($input['wa_business_account_id'] ?? '')));
     $apiVersion   = trim((string)($input['wa_api_version'] ?? 'v19.0'));
 
     // Reject placeholder value — don't overwrite existing token with mask
@@ -8449,6 +8451,7 @@ function handleSaveWhatsAppSettings($db) {
             $upsert->execute(['wa_api_token', $token, 'Meta WhatsApp Cloud API bearer token']);
         }
         $upsert->execute(['wa_phone_number_id', $phoneNumId, 'Meta WhatsApp Phone Number ID']);
+        $upsert->execute(['wa_business_account_id', $wabaId, 'Meta WhatsApp Business Account ID (WABA ID)']);
         $upsert->execute(['wa_api_version', $apiVersion, 'Meta Graph API version']);
 
         $db->commit();

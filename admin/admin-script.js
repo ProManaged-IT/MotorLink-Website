@@ -6703,6 +6703,9 @@ async function loadWhatsAppSettings() {
         const leadEl = document.getElementById('wa-lead-notifications');
         if (leadEl) leadEl.checked = s.wa_lead_notifications === '1';
 
+        const wabaEl = document.getElementById('wa-business-account-id');
+        if (wabaEl) wabaEl.value = s.wa_business_account_id || '';
+
         const numEl = document.getElementById('wa-phone-number-id');
         if (numEl) numEl.value = s.wa_phone_number_id || '';
 
@@ -6736,6 +6739,7 @@ async function saveWhatsAppSettings() {
         wa_lead_notifications:   document.getElementById('wa-lead-notifications')?.checked ? '1' : '0',
         wa_api_token:            document.getElementById('wa-api-token')?.value || '',
         wa_phone_number_id:      document.getElementById('wa-phone-number-id')?.value?.trim() || '',
+        wa_business_account_id:  document.getElementById('wa-business-account-id')?.value?.trim() || '',
         wa_api_version:          document.getElementById('wa-api-version')?.value?.trim() || 'v19.0',
     };
 
