@@ -1,0 +1,340 @@
+
+=== DEALER (122 rows, 122 suspect) ===
+[?] #  12                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  13                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  14                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  31                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  35                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  38                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  40                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  42                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  44                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  56  GBX Malawi                                Lilongwe         0999 22 74 48    no-auto-keyword; short-generic-name
+[?] #  59  DCS Malawi                                Lilongwe         0997 89 89 89    no-auto-keyword; short-generic-name
+[?] #  65  Beforward Malawi                          Blantyre         01 875 422       no-auto-keyword; short-generic-name
+[?] #  67  Korevia Investments                       Lilongwe         0997 74 10 08    no-auto-keyword; short-generic-name
+[?] #  77  HTD                                       Lilongwe                          no-auto-keyword; short-generic-name
+[?] #  80  Big Machinery                             Lilongwe         0993 06 54 70    no-auto-keyword; short-generic-name
+[?] #  81  Wheel masters                             Lilongwe         0999 55 14 97    no-auto-keyword; short-generic-name
+[?] #  85  Avis Lilongwe                             Lilongwe         01 756 105       no-auto-keyword; short-generic-name
+[?] # 101  Speedy's Limited                          Blantyre         01 841 624       no-auto-keyword; short-generic-name
+[?] # 102  ISanctuary                                Blantyre         0995 44 07 11    no-auto-keyword; short-generic-name
+[?] # 131  Motorvilla Malawi                         Lilongwe         0888 89 95 92    off-topic: villa 
+[?] # 137  Atuwa Imports                             Blantyre                          no-auto-keyword; short-generic-name
+[?] # 138  PICK-A-PART                               Blantyre         0888 33 28 28    no-auto-keyword; short-generic-name
+[?] # 139  Arif Wholesale                            Blantyre         0212 821 907     no-auto-keyword; short-generic-name
+[?] # 146  Kingsrides Limited                        Mzuzu            0992 66 86 36    no-auto-keyword; short-generic-name
+[?] # 167  Blessings Mwandira                        Mzuzu            0884 01 02 02    no-auto-keyword; short-generic-name
+[?] # 169  Mzuzu Bus Depot                           Mzuzu            0886 29 81 12    area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 173  Stars Travel-Mzuzu                        Mzuzu            0994 64 39 17    no-auto-keyword; short-generic-name
+[?] # 179  NTASA's ABODE                             Zomba            0999 16 11 16    no-auto-keyword; short-generic-name
+[?] # 180  Zomba                                     Zomba                             no-auto-keyword; short-generic-name
+[?] # 181  Annie's Lodge Zomba                       Zomba            0999 95 76 08    off-topic: lodge; no-auto-keyword
+[?] # 183  Hospital Car Park                         Zomba                             off-topic: hospital
+[?] # 187  Road Traffic                              Zomba            01 524 955       no-auto-keyword; short-generic-name
+[?] # 189  Moto Mw                                   Zomba            0991 93 33 99    no-auto-keyword; short-generic-name
+[?] # 191  Khama Driving School                      Zomba                             off-topic: school; no-auto-keyword
+[?] # 192  Zomba City Council, Civic Offices         Zomba            01 524 004       off-topic: council; no-auto-keyword
+[?] # 194  Maulidi's driving school                  Zomba            0999 91 64 87    off-topic: school; no-auto-keyword
+[?] # 196  Maya                                      Zomba                             no-auto-keyword; short-generic-name
+[?] # 198  KayLinks-Malawi                           Kasungu          01 254 482       no-auto-keyword; short-generic-name
+[?] # 201  Kapalasa Trading                          Kasungu          0884 61 11 99    no-auto-keyword; short-generic-name
+[?] # 202  Kasungu                                   Kasungu                           no-auto-keyword; short-generic-name
+[?] # 205  Maplot                                    Kasungu          0999 01 56 06    no-auto-keyword; short-generic-name
+[?] # 208  National Bank Of Malawi (KASUNGU SERVICE  Kasungu          01 253 308       off-topic: bank
+[?] # 210  Municipal Council                         Kasungu                           off-topic: council; no-auto-keyword; short-generic-name
+[?] # 211  Mangochi Bus Depot                        Mangochi                          area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 218  Transport malawi                          Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 227  Southern timbers                          Blantyre         0991 35 75 91    no-auto-keyword; short-generic-name
+[?] # 231  Ndirande Market                           Blantyre         0995 94 94 88    area-marker: /\bmarket\b/i; no-auto-keyword; short-generic-name
+[?] # 232  Food LoverΓÇÖs Market                     Blantyre         0996 11 22 33    area-marker: /\bmarket\b/i; no-auto-keyword
+[?] # 267  Okay Consumer                             Salima           0999 31 57 15    no-auto-keyword; short-generic-name
+[?] # 268  SALIMA shop                               Salima           06 50 38 27 01   no-auto-keyword; short-generic-name
+[?] # 269  Big market                                Salima                            area-marker: /\bmarket\b/i; no-auto-keyword; short-generic-name
+[?] # 271  Petroda Filling Station                   Salima                            off-topic: filling station; no-auto-keyword
+[?] # 273  Kaolemayani                               Salima                            no-auto-keyword; short-generic-name
+[?] # 275  Salima                                    Salima                            no-auto-keyword; short-generic-name
+[?] # 277  Joma Adventure Lodge                      Salima           0992 92 02 44    off-topic: lodge; no-auto-keyword
+[?] # 280  Dedza Pottery and Lodge                   Lilongwe         0888 85 34 25    off-topic: lodge; no-auto-keyword
+[?] # 282  Dedza                                     Dedza                             no-auto-keyword; short-generic-name
+[?] # 285  HEAZ TAXIS                                Lilongwe         0888 37 80 51    no-auto-keyword; short-generic-name
+[?] # 288  Dedza Mountain View Lodge                 Dedza            0888 62 89 00    off-topic: lodge; no-auto-keyword
+[?] # 294  Standard Bank Dedza                       Dedza                             off-topic: bank; no-auto-keyword
+[?] # 295  Metu auto parts and hardware              Dedza                             off-topic: hardware
+[?] # 297  VBM                                       Lilongwe         0994 40 61 24    no-auto-keyword; short-generic-name
+[?] # 300  Chrispine chimbiya                        Lilongwe         0997 50 68 66    no-auto-keyword; short-generic-name
+[?] # 301  Mchinji                                   Mchinji                           no-auto-keyword; short-generic-name
+[?] # 307  Zingalume Grage                           Mchinji          0999 00 02 90    no-auto-keyword; short-generic-name
+[?] # 313  Mchinji road                              Lilongwe         0996 09 80 40    no-auto-keyword; short-generic-name
+[?] # 318  Brantley                                  Lilongwe         0881 78 89 99    no-auto-keyword; short-generic-name
+[?] # 325  Nkhotakota bus depot                      Nkhotakota                        area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 327  Nkhotakota Pottery Lodge                  Nkhotakota       0884 58 10 98    off-topic: lodge; no-auto-keyword
+[?] # 329  Nkhotakota                                Nkhotakota                        no-auto-keyword; short-generic-name
+[?] # 330  Meru Nkhotakhota filling station          Nkhotakota       0996 17 68 18    off-topic: filling station; no-auto-keyword
+[?] # 331  Sitima Inn                                Nkhotakota                        no-auto-keyword; short-generic-name
+[?] # 332  Livingstone tree                          Nkhotakota                        no-auto-keyword; short-generic-name
+[?] # 334  Ntchisi Forest Lodge                      Ntchisi          0991 65 69 29    off-topic: lodge; no-auto-keyword
+[?] # 335  Meru Ntchisi filling station              Ntchisi                           off-topic: filling station; no-auto-keyword
+[?] # 338  Nanah                                     Dowa                              no-auto-keyword; short-generic-name
+[?] # 340  Dowa                                      Dowa             020 8965 0585    no-auto-keyword; short-generic-name
+[?] # 342  Dowa District Council                     Dowa                              off-topic: council; no-auto-keyword
+[?] # 344  Ntcheu kips                               Ntcheu           0981 21 33 02    no-auto-keyword; short-generic-name
+[?] # 346  Daytona Limited                           Lilongwe         0997 89 89 89    no-auto-keyword; short-generic-name
+[?] # 347  FINCA                                     Ntcheu                            no-auto-keyword; short-generic-name
+[?] # 348  Rock of Ages Hardware                     Ntcheu           0993 97 68 30    off-topic: hardware; no-auto-keyword
+[?] # 349  Ntcheu Bus Depot                          Ntcheu                            area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 350  Ntcheu                                    Ntcheu                            no-auto-keyword; short-generic-name
+[?] # 351  Ntcheu market                             Ntcheu                            area-marker: /\bmarket\b/i; no-auto-keyword; short-generic-name
+[?] # 354  Engen Filling Station                     Ntcheu                            off-topic: filling station; no-auto-keyword
+[?] # 355  Ntcheu Police Station                     Ntcheu                            off-topic: police; no-auto-keyword
+[?] # 358  Balaka                                    Balaka                            no-auto-keyword; short-generic-name
+[?] # 359  balaka                                    Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 362  Ngwangwa Meru filling station             Balaka                            off-topic: filling station; no-auto-keyword
+[?] # 363  FUEL TANK                                 Balaka           (057) 933 3908   no-auto-keyword; short-generic-name
+[?] # 369  NM Maintenance                            Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 372  Autoclinic                                Lilongwe         0989 29 24 91    off-topic: clinic
+[?] # 373  Kanengo                                   Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 374  Kamkango logistics                        Lilongwe         0997 30 68 21    no-auto-keyword; short-generic-name
+[?] # 386  AMCS Limited                              Lilongwe         0882 98 79 87    no-auto-keyword; short-generic-name
+[?] # 387  FES lilongwe                              Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 392  iFleet                                    Lilongwe         0995 13 32 81    no-auto-keyword; short-generic-name
+[?] # 399  Ghosy                                     Lilongwe         0997 72 32 54    no-auto-keyword; short-generic-name
+[?] # 400  Area 25 C Market (Pambuzi)                Lilongwe                          area-marker: /^area\s+\d+/i; area-marker: /\bmarket\b/i; no-auto-keyword
+[?] # 401  fiify6                                    Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 402  Nanjiri Market                            Lilongwe         0990 65 47 68    area-marker: /\bmarket\b/i; no-auto-keyword; short-generic-name
+[?] # 411  Area 47                                   Lilongwe                          area-marker: /^area\s+\d+/i; no-auto-keyword; short-generic-name
+[?] # 414  Area 47 Sector 3 Trading Centre           Lilongwe         0991 33 25 36    area-marker: /^area\s+\d+/i; area-marker: /\btrading\s+centre\b/i; no-auto-keyword
+[?] # 416  Area 47 sector 3                          Lilongwe                          area-marker: /^area\s+\d+/i; no-auto-keyword
+[?] # 419  Waheguru travels                          Lilongwe         0997 72 22 27    no-auto-keyword; short-generic-name
+[?] # 421  Area 47/1 Police Station                  Lilongwe                          off-topic: police; area-marker: /^area\s+\d+/i; no-auto-keyword
+[?] # 425  City Mall                                 Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 430  Malangalanga Business Market Center       Lilongwe                          area-marker: /\bmarket\b/i; no-auto-keyword
+[?] # 431  UNIQUE CAR CLINIC                         Lilongwe         0996 96 03 28    off-topic: clinic
+[?] # 432  Biwi Market                               Lilongwe         0888 60 07 04    area-marker: /\bmarket\b/i; no-auto-keyword; short-generic-name
+[?] # 433  Biwi                                      Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 442  Kawale                                    Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 443  Kawale Filling Station                    Lilongwe         0993 10 07 84    off-topic: filling station; no-auto-keyword
+[?] # 448  djthiya1@                                 Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 453  Roads Authority                           Lilongwe         0888 14 70 84    no-auto-keyword; short-generic-name
+[?] # 454  Lilongwe Technical College                Lilongwe         0994 49 74 78    off-topic: college; no-auto-keyword
+[?] # 455  Almeida Transport                         Lilongwe         0888 82 37 11    no-auto-keyword; short-generic-name
+[?] # 457  Lilongwe Police Station                   Lilongwe         0887 39 36 67    off-topic: police; no-auto-keyword
+[?] # 458  Crossroads Hotel                          Lilongwe         0888 75 04 44    off-topic: hotel; no-auto-keyword; short-generic-name
+[?] # 461  Crossroad Gym                             Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 464  cross roads                               Lilongwe         0888 75 04 44    no-auto-keyword; short-generic-name
+
+=== GARAGE (108 rows, 108 suspect) ===
+[?] #  10                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  11                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  12                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  13                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  21                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  23                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  24                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  26                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  28                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  30                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  50  CM Recovery                               Lilongwe         0995 48 14 60    no-auto-keyword; short-generic-name
+[?] #  59  Presidential Way Total Filling Station    Lilongwe         0999 83 89 66    off-topic: filling station; no-auto-keyword
+[?] # 108  NKHAMUL TRADING                           Lilongwe         0888 35 71 26    no-auto-keyword; short-generic-name
+[?] # 110  HELIOS                                    Lilongwe         0995 32 16 16    no-auto-keyword; short-generic-name
+[?] # 117  Kwik-Fit KTC                              Lilongwe         +265 995703935   no-auto-keyword; short-generic-name
+[?] # 118  Baro Traders                              Lilongwe         0994 04 76 20    no-auto-keyword; short-generic-name
+[?] # 120  Treadmasters                              Lilongwe         0993 75 76 45    no-auto-keyword; short-generic-name
+[?] # 121  Fast wheels                               Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 124  Nu-Tread Limited                          Lilongwe         01 751 061       no-auto-keyword; short-generic-name
+[?] # 127  Top Gear                                  Lilongwe         0999 36 94 49    no-auto-keyword; short-generic-name
+[?] # 139  M1 Road                                   Lilongwe         0999 49 33 94    no-auto-keyword; short-generic-name
+[?] # 148  Mascon                                    Lilongwe         0997 11 92 22    no-auto-keyword; short-generic-name
+[?] # 155  MPS HQ                                    Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 168  Best Oil Filling Station Area 49          Lilongwe         0988 11 62 45    off-topic: filling station; no-auto-keyword
+[?] # 179  Kwik-Fit                                  Lilongwe         0897 54 12 83    no-auto-keyword; short-generic-name
+[?] # 186  iFix                                      Lilongwe         0996 23 77 35    no-auto-keyword; short-generic-name
+[?] # 187  Glass fit                                 Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 191  GLASSCO Malawi                            Lilongwe         0999 22 25 05    no-auto-keyword; short-generic-name
+[?] # 196  Electronics 4U                            Lilongwe         0993 14 25 61    no-auto-keyword; short-generic-name
+[?] # 198  Sky Electronics                           Lilongwe         0993 09 92 98    no-auto-keyword; short-generic-name
+[?] # 200  A2Z Electronics                           Lilongwe         0996 28 40 31    no-auto-keyword; short-generic-name
+[?] # 202  BenΓÇÖs battery                           Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 205  Proair Engineering                        Lilongwe         0999 86 25 43    no-auto-keyword; short-generic-name
+[?] # 206  BICCO International                       Lilongwe         01 759 411       no-auto-keyword; short-generic-name
+[?] # 208  Wayne Plug                                Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 209  Maranet Trading                           Lilongwe         0985 77 99 57    no-auto-keyword; short-generic-name
+[?] # 213  Kwik-Fit Malawi                           Blantyre         01 835 808       no-auto-keyword; short-generic-name
+[?] # 242  Millie Distributors                       Blantyre         0999 92 57 96    no-auto-keyword; short-generic-name
+[?] # 253  SALVAGE2000                               Blantyre         0996 14 56 52    no-auto-keyword; short-generic-name
+[?] # 261  Electrade Distributors                    Blantyre         0888 87 79 47    no-auto-keyword; short-generic-name
+[?] # 280  Engineeringmind Malawi                    Blantyre         0999 41 58 44    no-auto-keyword; short-generic-name
+[?] # 286  Kwik-Fit Chitawira                        Blantyre                          no-auto-keyword; short-generic-name
+[?] # 289  Windscreen Masters                        Blantyre         0999 46 00 82    no-auto-keyword; short-generic-name
+[?] # 295  Urban Industry                            Lilongwe         0888 92 40 75    no-auto-keyword; short-generic-name
+[?] # 296  Battery Xpress                            Blantyre                          no-auto-keyword; short-generic-name
+[?] # 298  Creative Mind                             Blantyre                          no-auto-keyword; short-generic-name
+[?] # 299  Σ╕¡σ¢╜Θçìµ▒╜(SINOTRUK)                    Blantyre         0990 29 61 64    no-auto-keyword; short-generic-name
+[?] # 304  Associated Suppliers                      Blantyre         0212 840 555     no-auto-keyword; short-generic-name
+[?] # 310  Brother's                                 Mzuzu                             no-auto-keyword; short-generic-name
+[?] # 315  TotalEnergies Mzuzu Market Service Stati  Mzuzu            0999 18 88 85    area-marker: /\bmarket\b/i; no-auto-keyword
+[?] # 325  CHEMBE                                    Mzuzu            0995 01 71 41    no-auto-keyword; short-generic-name
+[?] # 329  Yazenga                                   Mzuzu                             no-auto-keyword; short-generic-name
+[?] # 331  Accessory Plug                            Mzuzu            0992 70 23 16    no-auto-keyword; short-generic-name
+[?] # 333  Nu Madina Superette & Butchery Mzuzu      Mzuzu            0994 86 65 00    off-topic: butchery; no-auto-keyword
+[?] # 343  Kangawa construction                      Mzuzu            0888 87 48 40    no-auto-keyword; short-generic-name
+[?] # 344  Exide Express                             Mzuzu                             no-auto-keyword; short-generic-name
+[?] # 346  Sprint printers                           Mzuzu            0888 20 88 48    no-auto-keyword; short-generic-name
+[?] # 347  Mzuzu Malawi                              Mzuzu                             no-auto-keyword; short-generic-name
+[?] # 348  Best Oil                                  Mzuzu                             no-auto-keyword; short-generic-name
+[?] # 349  Amazing finishing                         Mzuzu            0888 71 37 97    no-auto-keyword; short-generic-name
+[?] # 351  Police College Garage                     Zomba                             off-topic: college; off-topic: police
+[?] # 354  A&D Engineers                             Zomba            0888 82 22 35    no-auto-keyword; short-generic-name
+[?] # 355  R.MATCHOWA                                Zomba                             no-auto-keyword; short-generic-name
+[?] # 357  EXIDE EXPRESS                             Zomba            0888 87 43 29    no-auto-keyword; short-generic-name
+[?] # 358  SPECTA ELECTRONICS                        Zomba            0881 54 38 91    no-auto-keyword; short-generic-name
+[?] # 361  City Electronics                          Zomba            0992 95 39 63    no-auto-keyword; short-generic-name
+[?] # 362  Chinamwali                                Zomba            0884 47 48 19    no-auto-keyword; short-generic-name
+[?] # 365  Engen                                     Zomba                             no-auto-keyword; short-generic-name
+[?] # 366  National Bank of Malawi                   Zomba            01 524 788       off-topic: bank; no-auto-keyword
+[?] # 367  Mt. Meru                                  Zomba                             no-auto-keyword; short-generic-name
+[?] # 368  Petrol Pump                               Zomba            0999 25 09 99    no-auto-keyword; short-generic-name
+[?] # 370  Scavenger pride hardware and Auto Parts   Lilongwe         0888 76 66 61    off-topic: hardware
+[?] # 377  DAYSONS DISTRIBUTORS                      Lilongwe         0995 33 05 81    no-auto-keyword; short-generic-name
+[?] # 380  TJs Spa Beauty Salon and Barbershop       Zomba            0991 08 23 40    off-topic: salon; off-topic: barber; no-auto-keyword
+[?] # 381  4FOX TECH                                 Zomba            0882 57 44 18    no-auto-keyword; short-generic-name
+[?] # 388  PEP Zomba                                 Zomba            01 525 960       no-auto-keyword; short-generic-name
+[?] # 390  3 Miles market                            Zomba            0999 50 00 20    area-marker: /\bmarket\b/i; no-auto-keyword
+[?] # 401  Mdoni center hardware                     Kasungu          0995 72 28 22    off-topic: hardware; no-auto-keyword
+[?] # 403  NS GYM                                    Kasungu          0881 47 34 99    no-auto-keyword; short-generic-name
+[?] # 404  Andho Hardware                            Kasungu          0999 30 22 05    off-topic: hardware; no-auto-keyword; short-generic-name
+[?] # 406  KAS Engineering                           Lilongwe         0993 07 03 73    no-auto-keyword; short-generic-name
+[?] # 407  Sana kasungu                              Kasungu          0993 35 08 65    no-auto-keyword; short-generic-name
+[?] # 408  PEP Kasungu                               Kasungu          01 844 032       no-auto-keyword; short-generic-name
+[?] # 409  All in One hardware                       Kasungu                           off-topic: hardware; no-auto-keyword
+[?] # 411  Meru                                      Kasungu                           no-auto-keyword; short-generic-name
+[?] # 413  AimTech Solutions                         Kasungu          0993 80 01 67    no-auto-keyword; short-generic-name
+[?] # 415  SM GLASS                                  Lilongwe         0899 71 02 38    no-auto-keyword; short-generic-name
+[?] # 418  AL-BADEE ELECTRONICS                      Kasungu          0991 56 02 70    no-auto-keyword; short-generic-name
+[?] # 419  Bema Stationery                           Kasungu                           no-auto-keyword; short-generic-name
+[?] # 423  365 shop                                  Kasungu                           no-auto-keyword; short-generic-name
+[?] # 424  chingala electronics                      Kasungu          0991 44 54 40    no-auto-keyword; short-generic-name
+[?] # 425  Mukuru                                    Kasungu          0884 14 06 98    no-auto-keyword; short-generic-name
+[?] # 428  NBS BANK                                  Kasungu          01 253 797       off-topic: bank; no-auto-keyword; short-generic-name
+[?] # 431  Kasungu Police Station                    Kasungu                           off-topic: police; no-auto-keyword
+[?] # 441  Generator repair                          Salima           0994 35 85 69    no-auto-keyword; short-generic-name
+[?] # 442  Smartphone solutions                      Salima           0991 50 08 00    no-auto-keyword; short-generic-name
+[?] # 445  TORRES shop                               Salima                            no-auto-keyword; short-generic-name
+[?] # 447  Mwakwenda Hardware                        Salima                            off-topic: hardware; no-auto-keyword; short-generic-name
+[?] # 448  Salima Islamic Center LIMO                Lilongwe                          off-topic: islamic; no-auto-keyword
+[?] # 451  Filling Station                           Salima           0999 43 58 82    off-topic: filling station; no-auto-keyword; short-generic-name
+[?] # 452  Filling Station                           Salima           (057) 936 0579   off-topic: filling station; no-auto-keyword; short-generic-name
+[?] # 457  VISCOCITY SALIMA                          Salima                            no-auto-keyword; short-generic-name
+[?] # 465  Mt Meru Filling Station                   Dedza                             off-topic: filling station; no-auto-keyword
+[?] # 481  Meru Filling Station                      Mchinji                           off-topic: filling station; no-auto-keyword
+[?] # 482  BP Filling Station                        Mchinji                           off-topic: filling station; no-auto-keyword
+[?] # 486  LNB Electronics                           Mchinji          0992 01 66 77    no-auto-keyword; short-generic-name
+[?] # 487  Bigger stationery                         Lilongwe         0991 94 43 33    no-auto-keyword; short-generic-name
+[?] # 488  Mkanda                                    Mchinji                           no-auto-keyword; short-generic-name
+
+=== CAR_HIRE (104 rows, 104 suspect) ===
+[?] #  26                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  27                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  28                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  29                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  37                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  39                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  40                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  42                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  44                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  46                                            Blantyre                          no-auto-keyword; short-generic-name
+[?] #  60  Avis Malawi                               Lilongwe         0888 86 87 00    no-auto-keyword; short-generic-name
+[?] #  61  Mobile Mobility                           Lilongwe         0999 26 32 07    no-auto-keyword; short-generic-name
+[?] #  92  Ngara ADMARC                              Karonga                           no-auto-keyword; short-generic-name
+[?] # 104  Weafrica Ride                             Lilongwe         0899 92 02 00    no-auto-keyword; short-generic-name
+[?] # 123  Emmac                                     Lilongwe         0999 78 27 06    no-auto-keyword; short-generic-name
+[?] # 131  Taxify Malawi                             Blantyre         0888 67 72 44    no-auto-keyword; short-generic-name
+[?] # 134  Ecoride                                   Blantyre                          no-auto-keyword; short-generic-name
+[?] # 135  Wil transport                             Blantyre         0882 19 23 27    no-auto-keyword; short-generic-name
+[?] # 140  Sososo Coaches                            Blantyre         0888 33 71 72    no-auto-keyword; short-generic-name
+[?] # 142  ULEMU COACHES                             Blantyre         0999 93 83 14    no-auto-keyword; short-generic-name
+[?] # 143  Kwezy Buses                               Blantyre         0886 78 03 56    no-auto-keyword; short-generic-name
+[?] # 146  Sangano Logistics                         Blantyre         0988 47 96 69    no-auto-keyword; short-generic-name
+[?] # 152  Elisha Taxi Rank                          Mzuzu            0996 37 49 94    area-marker: /\btaxi\s+rank\b/i; no-auto-keyword
+[?] # 153  Sososo Coach                              Mzuzu            0888 33 71 72    no-auto-keyword; short-generic-name
+[?] # 156  Mzuzu Airport                             Mzuzu                             no-auto-keyword; short-generic-name
+[?] # 157  Nugs Logistics                            Mzuzu            0999 62 03 03    no-auto-keyword; short-generic-name
+[?] # 160  Bus Station                               Mzuzu                             no-auto-keyword; short-generic-name
+[?] # 162  Signature                                 Zomba            0983 84 22 14    no-auto-keyword; short-generic-name
+[?] # 163  Zero tech                                 Zomba            0996 56 38 00    no-auto-keyword; short-generic-name
+[?] # 166  Chimwemwe                                 Zomba                             no-auto-keyword; short-generic-name
+[?] # 167  G4S Zomba                                 Zomba            0888 84 47 89    no-auto-keyword; short-generic-name
+[?] # 169  Zomba Airport                             Zomba            0992 29 31 03    no-auto-keyword; short-generic-name
+[?] # 170  T & D GUESTHOUSE                          Zomba            0999 50 70 79    off-topic: guesthouse; no-auto-keyword
+[?] # 172  Bluegum Avenue Lodge                      Zomba            0983 15 23 64    off-topic: lodge; no-auto-keyword
+[?] # 173  Zomba Bus Depot                           Zomba                             area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 174  Aeroportul Kasungu                        Kasungu                           no-auto-keyword; short-generic-name
+[?] # 176  StaffTransport.lk                         Lilongwe         077 299 2328     no-auto-keyword; short-generic-name
+[?] # 179  Floodgates Tours                          Zomba            0998 37 71 63    no-auto-keyword; short-generic-name
+[?] # 186  BLESSINGS TAXI                            Lilongwe         0999 46 63 15    no-auto-keyword; short-generic-name
+[?] # 187  Mawaso Taxi                               Lilongwe         0888 86 92 41    no-auto-keyword; short-generic-name
+[?] # 190  Mchinji Airport                           Mchinji                           no-auto-keyword; short-generic-name
+[?] # 191  Old Airport                               Nkhotakota                        no-auto-keyword; short-generic-name
+[?] # 194  Siku Transport                            Lilongwe         84 338 1891      no-auto-keyword; short-generic-name
+[?] # 195  Chinseu                                   Blantyre                          no-auto-keyword; short-generic-name
+[?] # 196  Aeroportul Ntchisi                        Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 198  Supersink filling station -Dowa           Dowa             0997 90 16 12    off-topic: filling station; no-auto-keyword
+[?] # 199  Dear Mama Executive Lodge                 Ntcheu           0996 40 28 22    off-topic: lodge; no-auto-keyword
+[?] # 201  Kwezybuses Ntcheu Bus Stop                Ntcheu                            area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 202  Kwezybuses Ntcheu Bus stop                Ntcheu                            area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 210  UrbanWheelsLogistics                      Lilongwe         0993 89 90 79    no-auto-keyword; short-generic-name
+[?] # 214  Touchline Services                        Lilongwe         0999 27 78 28    no-auto-keyword; short-generic-name
+[?] # 215  Sole proprietorship                       Lilongwe         0988 07 28 63    no-auto-keyword; short-generic-name
+[?] # 216  Meraki Bridal                             Lilongwe         0995 07 78 38    no-auto-keyword; short-generic-name
+[?] # 219  Mangochi district Hospital maternity win  Mangochi                          off-topic: hospital; no-auto-keyword
+[?] # 221  Nanchengwa Lodge                          Lilongwe         0888 47 40 79    off-topic: lodge; no-auto-keyword; short-generic-name
+[?] # 222  Stachys Travel                            Mangochi         0981 94 11 50    no-auto-keyword; short-generic-name
+[?] # 225  Liwonde Taxi                              Lilongwe         0995 44 66 37    no-auto-keyword; short-generic-name
+[?] # 227  Liwonde Bus Depot                         Lilongwe         0999 44 16 55    area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 228  dalani fosten                             Thyolo                            no-auto-keyword; short-generic-name
+[?] # 229  Chikalimba properties                     Thyolo                            no-auto-keyword; short-generic-name
+[?] # 233  Mulanje Adventures                        Mulanje          0884 13 75 33    no-auto-keyword; short-generic-name
+[?] # 235  Mulanje Guides                            Lilongwe         0885 71 50 49    no-auto-keyword; short-generic-name
+[?] # 244  Chididi turn-off                          Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 245  Aeroportul Nsanje                         Nsanje                            no-auto-keyword; short-generic-name
+[?] # 246  Chingazi                                  Phalombe                          no-auto-keyword; short-generic-name
+[?] # 248  Monkey Bay                                Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 252  Tapuwa Enterprise                         Blantyre         0884 82 30 08    no-auto-keyword; short-generic-name
+[?] # 255  Siku Transport                            Blantyre         84 338 1891      no-auto-keyword; short-generic-name
+[?] # 256  CM Bus Stage                              Blantyre         0994 66 79 26    area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 260  Kamanjinga                                Blantyre         0997 37 61 04    no-auto-keyword; short-generic-name
+[?] # 262  Tint Mafia                                Blantyre         0992 92 86 09    no-auto-keyword; short-generic-name
+[?] # 263  Neyac Classic Lodge and Car Hire          Blantyre         01 700 223       off-topic: lodge
+[?] # 264  Sunnyside Inn                             Blantyre                          no-auto-keyword; short-generic-name
+[?] # 266  Baobab Lodge and Spa Malawi               Blantyre         0888 11 74 56    off-topic: lodge; no-auto-keyword
+[?] # 267  Kenya Airways                             Blantyre         01 824 524       no-auto-keyword; short-generic-name
+[?] # 268  Chilomoni Nthukwa                         Blantyre         0889 79 02 96    no-auto-keyword; short-generic-name
+[?] # 269  Safariway Travel                          Blantyre         0999 78 45 51    no-auto-keyword; short-generic-name
+[?] # 270  Kabula Lodge                              Blantyre         0991 39 15 01    off-topic: lodge; no-auto-keyword; short-generic-name
+[?] # 272  Chirimba bus stop                         Blantyre         0888 56 16 48    area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 273  Simso chirimba                            Blantyre                          no-auto-keyword; short-generic-name
+[?] # 275  Blanytre                                  Lilongwe         0881 12 40 64    no-auto-keyword; short-generic-name
+[?] # 277  Karonga bus stop                          Karonga          0996 82 12 78    area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 279  Karonga Airport                           Karonga          0995 59 28 00    no-auto-keyword; short-generic-name
+[?] # 282  Issah                                     Karonga                           no-auto-keyword; short-generic-name
+[?] # 284  Butterfly Space Non Profit Eco Lodge      Nkhata Bay       0999 15 63 35    off-topic: lodge; no-auto-keyword
+[?] # 285  Soul Rebel Lodge & Backpackers            Nkhata Bay       0989 18 57 07    off-topic: lodge; no-auto-keyword
+[?] # 292  Θâæσ╖₧Θú₧σ╜╝Φ╛╛τºæµèÇµ£ëΘÖÉσà¼σÅ╕         Chitipa          136 3344 8664    no-auto-keyword; short-generic-name
+[?] # 293  Aeroportul Chitipa                        Chitipa                           no-auto-keyword; short-generic-name
+[?] # 296  Mzimba                                    Mzimba                            no-auto-keyword; short-generic-name
+[?] # 297  Malaga                                    Mzimba           648 01 15 55     no-auto-keyword; short-generic-name
+[?] # 300  Ekwendeni Rank                            Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 301  Four ways                                 Lilongwe         0886 02 49 72    no-auto-keyword; short-generic-name
+[?] # 303  Ekwendeni                                 Lilongwe                          no-auto-keyword; short-generic-name
+[?] # 306  Bicycle repair                            Mzuzu            0996 33 27 48    no-auto-keyword; short-generic-name
+[?] # 307  Main Stream Beach Villa (Salima)          Lilongwe         0993 32 22 14    off-topic: villa ; no-auto-keyword
+[?] # 308  Kutchire Lodge                            Lilongwe         0999 72 90 36    off-topic: lodge
+[?] # 310  URBANLINK TAXI                            Lilongwe         0888 73 16 31    no-auto-keyword; short-generic-name
+[?] # 311  Top Lodge                                 Lilongwe         0888 87 18 72    off-topic: lodge; no-auto-keyword; short-generic-name
+[?] # 312  Rumphi Bus Depot                          Lilongwe                          area-marker: /\bbus\s+(depot|stop|stage)\b/i; no-auto-keyword
+[?] # 313  Puma filling station                      Chitipa                           off-topic: filling station; no-auto-keyword
+[?] # 314  Mount Meru                                Chitipa                           no-auto-keyword; short-generic-name
+[?] # 316  Martin blocks                             Chitipa                           no-auto-keyword; short-generic-name
+[?] # 317  Mzimba                                    Mzimba           0894 90 80 53    no-auto-keyword; short-generic-name
+[?] # 320  Meru mzimba Filling Station               Mzimba           0993 70 03 04    off-topic: filling station; no-auto-keyword

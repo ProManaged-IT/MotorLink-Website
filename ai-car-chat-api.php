@@ -2292,12 +2292,13 @@ function buildAIChatListingsRetrievalSnippet($db, $message, $runtimeSiteUrl) {
     return implode("\n", $lines);
 }
 
-function buildAIChatDealerRetrievalSnippet($db, $message, $runtimeSiteUrl) {
+function buildAIChatDealerRetrievalSnippet($db, $message, $runtimeSiteUrl, $userLocation = null) {
     if (!detectDealerQuery($message)) {
         return '';
     }
 
-    $dealers = searchDealers($db, extractDealerSearchParams($db, $message), null);
+    $searchParams = applyAIChatBusinessQueryHints($db, $message, extractDealerSearchParams($db, $message));
+    $dealers = searchDealers($db, $searchParams, $userLocation);
     if (empty($dealers)) {
         return '';
     }
@@ -2309,6 +2310,10 @@ function buildAIChatDealerRetrievalSnippet($db, $message, $runtimeSiteUrl) {
         if (!empty($dealer['location_name'])) {
             $line .= ' - ' . $dealer['location_name'];
         }
+        $distanceLabel = formatAIChatDistanceLabel($dealer);
+        if ($distanceLabel !== '') {
+            $line .= ' - ' . $distanceLabel;
+        }
         if (!empty($dealer['phone'])) {
             $line .= ' - ' . $dealer['phone'];
         }
@@ -2319,12 +2324,13 @@ function buildAIChatDealerRetrievalSnippet($db, $message, $runtimeSiteUrl) {
     return implode("\n", $lines);
 }
 
-function buildAIChatGarageRetrievalSnippet($db, $message, $runtimeSiteUrl) {
+function buildAIChatGarageRetrievalSnippet($db, $message, $runtimeSiteUrl, $userLocation = null) {
     if (!detectGarageQuery($message)) {
         return '';
     }
 
-    $garages = searchGarages($db, extractGarageSearchParams($message), null);
+    $searchParams = applyAIChatBusinessQueryHints($db, $message, extractGarageSearchParams($message, $db));
+    $garages = searchGarages($db, $searchParams, $userLocation);
     if (empty($garages)) {
         return '';
     }
@@ -2336,6 +2342,10 @@ function buildAIChatGarageRetrievalSnippet($db, $message, $runtimeSiteUrl) {
         if (!empty($garage['location_name'])) {
             $line .= ' - ' . $garage['location_name'];
         }
+        $distanceLabel = formatAIChatDistanceLabel($garage);
+        if ($distanceLabel !== '') {
+            $line .= ' - ' . $distanceLabel;
+        }
         if (!empty($garage['phone'])) {
             $line .= ' - ' . $garage['phone'];
         }
@@ -2346,12 +2356,13 @@ function buildAIChatGarageRetrievalSnippet($db, $message, $runtimeSiteUrl) {
     return implode("\n", $lines);
 }
 
-function buildAIChatCarHireRetrievalSnippet($db, $message, $runtimeSiteUrl) {
+function buildAIChatCarHireRetrievalSnippet($db, $message, $runtimeSiteUrl, $userLocation = null) {
     if (!detectCarHireQuery($message)) {
         return '';
     }
 
-    $results = searchCarHire($db, extractCarHireSearchParams($message), null);
+    $searchParams = applyAIChatBusinessQueryHints($db, $message, extractCarHireSearchParams($message, $db));
+    $results = searchCarHire($db, $searchParams, $userLocation);
     if (empty($results['companies'])) {
         return '';
     }
@@ -2362,6 +2373,10 @@ function buildAIChatCarHireRetrievalSnippet($db, $message, $runtimeSiteUrl) {
         $line = '- ' . trim((string)($company['business_name'] ?? 'Car hire company'));
         if (!empty($company['location_name'])) {
             $line .= ' - ' . $company['location_name'];
+        }
+        $distanceLabel = formatAIChatDistanceLabel($company);
+        if ($distanceLabel !== '') {
+            $line .= ' - ' . $distanceLabel;
         }
         if (!empty($company['daily_rate_from'])) {
             $line .= ' - from ' . getChatCurrencyCode($db) . ' ' . number_format((float)$company['daily_rate_from']) . '/day';
@@ -2404,7 +2419,7 @@ function buildAIChatFuelRetrievalSnippet($db) {
     }
 }
 
-function buildAIChatStructuredRetrievalContext($db, $message, $conversationHistory, $runtimeSiteUrl, $userContext) {
+function buildAIChatStructuredRetrievalContext($db, $message, $conversationHistory, $runtimeSiteUrl, $userContext, $userLocation = null) {
     $sections = [];
 
     $locationSnippet = buildAIChatLocationRetrievalSnippet($db, $message);
@@ -2417,17 +2432,17 @@ function buildAIChatStructuredRetrievalContext($db, $message, $conversationHisto
         $sections[] = $listingSnippet;
     }
 
-    $dealerSnippet = buildAIChatDealerRetrievalSnippet($db, $message, $runtimeSiteUrl);
+    $dealerSnippet = buildAIChatDealerRetrievalSnippet($db, $message, $runtimeSiteUrl, $userLocation);
     if ($dealerSnippet !== '') {
         $sections[] = $dealerSnippet;
     }
 
-    $garageSnippet = buildAIChatGarageRetrievalSnippet($db, $message, $runtimeSiteUrl);
+    $garageSnippet = buildAIChatGarageRetrievalSnippet($db, $message, $runtimeSiteUrl, $userLocation);
     if ($garageSnippet !== '') {
         $sections[] = $garageSnippet;
     }
 
-    $carHireSnippet = buildAIChatCarHireRetrievalSnippet($db, $message, $runtimeSiteUrl);
+    $carHireSnippet = buildAIChatCarHireRetrievalSnippet($db, $message, $runtimeSiteUrl, $userLocation);
     if ($carHireSnippet !== '') {
         $sections[] = $carHireSnippet;
     }
@@ -2480,6 +2495,7 @@ function handleAICarChat($db) {
         }
 
         $message = trim($input['message']);
+        $clientLocationContext = sanitizeAIChatLocationContextPayload($input['location_context'] ?? null);
         $conversationHistory = sanitizeAIChatConversationHistory($input['conversation_history'] ?? [], 10);
         $originalMessage = $message;
 
@@ -2974,27 +2990,21 @@ function handleAICarChat($db) {
         $marketContextLabel = $countryName !== '' ? $countryName : 'the current market';
         $runtimeSiteUrl = rtrim((string)($siteConfig['site_url'] ?? $baseUrl), '/') . '/';
         
-        // Get user location if available
-        $userLocation = null;
-        $userCity = null;
-        try {
-            $locationStmt = $db->prepare("
-                SELECT u.city, u.address, loc.name as location_name, loc.region, loc.district
-                FROM users u
-                LEFT JOIN locations loc ON u.city = loc.name OR u.city LIKE CONCAT('%', loc.name, '%')
-                WHERE u.id = ?
-                LIMIT 1
-            ");
-            $locationStmt->execute([$user['id']]);
-            $userLocation = $locationStmt->fetch(PDO::FETCH_ASSOC);
-            if ($userLocation) {
-                $userCity = $userLocation['location_name'] ?? $userLocation['city'] ?? null;
-            }
-        } catch (Exception $e) {
-            error_log("Error fetching user location: " . $e->getMessage());
+        $userLocation = resolveAIChatBusinessUserLocation($db, $user, $clientLocationContext);
+        $userCity = $userLocation['location_name'] ?? ($userLocation['city'] ?? null);
+        if ($userLocation) {
+            updateAIChatPersistenceContext(['resolved_user_location' => $userLocation]);
         }
-        
-        $locationContext = $userCity ? "\nUSER LOCATION: {$userCity}" : "";
+
+        $locationContext = '';
+        if (!empty($userCity)) {
+            $locationContext = "\nUSER LOCATION: {$userCity}";
+        } elseif (!empty($userLocation['latitude']) && !empty($userLocation['longitude'])) {
+            $locationContext = "\nUSER LOCATION COORDINATES: "
+                . round((float)$userLocation['latitude'], 4)
+                . ', '
+                . round((float)$userLocation['longitude'], 4);
+        }
         $longTermMemoryContext = $userMemorySummary !== ''
             ? "\nUSER LONG-TERM MEMORY (treat as preference hints; if current request conflicts, follow the current request):\n{$userMemorySummary}\n"
             : '';
@@ -3005,7 +3015,7 @@ function handleAICarChat($db) {
         $recentEntityPromptContext = $recentEntityContext !== ''
             ? "\nRECENT MARKETPLACE ENTITIES (latest results first; use these to resolve references like first/second/that one/their contact):\n{$recentEntityContext}\n"
             : '';
-        $retrievalContext = buildAIChatStructuredRetrievalContext($db, $message, $conversationHistory, $runtimeSiteUrl, $userContext);
+        $retrievalContext = buildAIChatStructuredRetrievalContext($db, $message, $conversationHistory, $runtimeSiteUrl, $userContext, $userLocation);
 
         // NOTE: The verbose system prompt block previously built here was deprecated
         // in favor of the compact fast-response prompt below. Keeping the compact
@@ -4733,6 +4743,319 @@ function extractLocationMentionFromText($db, $text) {
     }
 
     return null;
+}
+
+function sanitizeAIChatLocationContextPayload($payload) {
+    if (!is_array($payload)) {
+        return null;
+    }
+
+    $latitude = isset($payload['latitude']) && is_numeric($payload['latitude'])
+        ? (float)$payload['latitude']
+        : null;
+    $longitude = isset($payload['longitude']) && is_numeric($payload['longitude'])
+        ? (float)$payload['longitude']
+        : null;
+    $locationName = trim((string)($payload['location_name'] ?? $payload['city'] ?? ''));
+    $accuracyMeters = isset($payload['accuracy_meters']) && is_numeric($payload['accuracy_meters'])
+        ? (float)$payload['accuracy_meters']
+        : null;
+
+    if ($latitude !== null && ($latitude < -90 || $latitude > 90)) {
+        $latitude = null;
+    }
+    if ($longitude !== null && ($longitude < -180 || $longitude > 180)) {
+        $longitude = null;
+    }
+
+    if ($latitude === null && $longitude === null && $locationName === '') {
+        return null;
+    }
+
+    return [
+        'latitude' => $latitude,
+        'longitude' => $longitude,
+        'location_name' => $locationName !== '' ? $locationName : null,
+        'accuracy_meters' => $accuracyMeters,
+        'source' => 'client'
+    ];
+}
+
+function loadAIChatLocationRowByName($db, $locationName) {
+    $locationName = trim((string)$locationName);
+    if ($locationName === '') {
+        return null;
+    }
+
+    $canonicalName = extractLocationMentionFromText($db, $locationName);
+    if ($canonicalName === null) {
+        $canonicalName = resolveClosestLocationName($db, $locationName);
+    }
+    if ($canonicalName === null) {
+        $canonicalName = $locationName;
+    }
+
+    try {
+        $stmt = $db->prepare(
+            "SELECT id, name AS location_name, district, region, latitude, longitude
+             FROM locations
+             WHERE LOWER(name) = LOWER(?)
+             LIMIT 1"
+        );
+        $stmt->execute([$canonicalName]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        $row['location_id'] = !empty($row['id']) ? (int)$row['id'] : null;
+        $row['latitude'] = isset($row['latitude']) && is_numeric($row['latitude']) ? (float)$row['latitude'] : null;
+        $row['longitude'] = isset($row['longitude']) && is_numeric($row['longitude']) ? (float)$row['longitude'] : null;
+        unset($row['id']);
+
+        return $row;
+    } catch (Exception $e) {
+        error_log('loadAIChatLocationRowByName error: ' . $e->getMessage());
+        return null;
+    }
+}
+
+function loadAIChatProfileLocationContext($db, $userId) {
+    $userId = (int)$userId;
+    if ($userId <= 0) {
+        return null;
+    }
+
+    try {
+        $stmt = $db->prepare(
+            "SELECT u.city, u.address,
+                    loc.id AS location_id,
+                    loc.name AS location_name,
+                    loc.region,
+                    loc.district,
+                    loc.latitude,
+                    loc.longitude
+             FROM users u
+             LEFT JOIN locations loc
+               ON LOWER(u.city) = LOWER(loc.name)
+               OR LOWER(u.city) LIKE CONCAT('%', LOWER(loc.name), '%')
+             WHERE u.id = ?
+             LIMIT 1"
+        );
+        $stmt->execute([$userId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        $row['location_id'] = !empty($row['location_id']) ? (int)$row['location_id'] : null;
+        $row['latitude'] = isset($row['latitude']) && is_numeric($row['latitude']) ? (float)$row['latitude'] : null;
+        $row['longitude'] = isset($row['longitude']) && is_numeric($row['longitude']) ? (float)$row['longitude'] : null;
+        $row['source'] = 'profile';
+
+        return $row;
+    } catch (Exception $e) {
+        error_log('loadAIChatProfileLocationContext error: ' . $e->getMessage());
+        return null;
+    }
+}
+
+function resolveAIChatBusinessUserLocation($db, $user, $clientLocationContext = null) {
+    $clientLocation = sanitizeAIChatLocationContextPayload($clientLocationContext);
+    $profileLocation = null;
+
+    if (!empty($user['id'])) {
+        $profileLocation = loadAIChatProfileLocationContext($db, $user['id']);
+    }
+
+    if ($clientLocation) {
+        if (!empty($clientLocation['location_name'])) {
+            $locationRow = loadAIChatLocationRowByName($db, $clientLocation['location_name']);
+            if ($locationRow) {
+                $clientLocation = array_merge($locationRow, $clientLocation);
+            }
+        }
+
+        if ($clientLocation['latitude'] !== null && $clientLocation['longitude'] !== null) {
+            if (empty($clientLocation['location_name']) && !empty($profileLocation['location_name'])) {
+                $clientLocation['location_name'] = $profileLocation['location_name'];
+                $clientLocation['region'] = $profileLocation['region'] ?? null;
+                $clientLocation['district'] = $profileLocation['district'] ?? null;
+            }
+            return $clientLocation;
+        }
+    }
+
+    if ($profileLocation) {
+        return $profileLocation;
+    }
+
+    return $clientLocation ?: null;
+}
+
+function getAIChatResolvedUserLocationFromContext() {
+    $context = getAIChatPersistenceContext();
+    $location = $context['resolved_user_location'] ?? null;
+    return is_array($location) ? $location : null;
+}
+
+function parseAIChatBusinessDistanceLimitKm($message) {
+    $message = trim((string)$message);
+    if ($message === '') {
+        return null;
+    }
+
+    $patterns = [
+        '/\bwithin\s+(\d+(?:\.\d+)?)\s*(km|kms|kilometer|kilometers|kilometre|kilometres|mi|mile|miles)\b/i',
+        '/\b(\d+(?:\.\d+)?)\s*(km|kms|kilometer|kilometers|kilometre|kilometres|mi|mile|miles)\s*(?:radius|away|from me|from my location)\b/i',
+        '/\b(?:radius of|up to)\s+(\d+(?:\.\d+)?)\s*(km|kms|kilometer|kilometers|kilometre|kilometres|mi|mile|miles)\b/i'
+    ];
+
+    foreach ($patterns as $pattern) {
+        if (!preg_match($pattern, $message, $matches)) {
+            continue;
+        }
+
+        $distance = (float)$matches[1];
+        $unit = strtolower((string)$matches[2]);
+        if ($distance <= 0) {
+            return null;
+        }
+
+        if (in_array($unit, ['mi', 'mile', 'miles'], true)) {
+            $distance *= 1.60934;
+        }
+
+        return max(1.0, min(250.0, round($distance, 2)));
+    }
+
+    return null;
+}
+
+function applyAIChatBusinessQueryHints($db, $message, array $params) {
+    $message = trim((string)$message);
+    if ($message === '') {
+        return $params;
+    }
+
+    if (!empty($params['location'])) {
+        $resolvedLocation = loadAIChatLocationRowByName($db, (string)$params['location']);
+        if (!empty($resolvedLocation['location_name'])) {
+            $params['location'] = $resolvedLocation['location_name'];
+        }
+    } else {
+        $location = extractLocationMentionFromText($db, $message);
+        if ($location === null) {
+            $rawLocation = inferLocationFromMessage($message);
+            if ($rawLocation !== null) {
+                $location = resolveClosestLocationName($db, $rawLocation) ?: $rawLocation;
+            }
+        }
+
+        if (!empty($location)) {
+            $params['location'] = $location;
+        }
+    }
+
+    $distanceLimitKm = parseAIChatBusinessDistanceLimitKm($message);
+    $mentionsUserProximity = preg_match('/\b(closest|nearest|near me|nearby|close to me|my location|from me|around me)\b/i', $message) === 1;
+
+    if ($distanceLimitKm !== null) {
+        $params['max_distance_km'] = $distanceLimitKm;
+    }
+
+    if ($mentionsUserProximity || ($distanceLimitKm !== null && empty($params['location']))) {
+        $params['distance_from_user'] = true;
+    }
+
+    if (!empty($params['distance_from_user']) || $distanceLimitKm !== null) {
+        $params['proximity'] = true;
+    }
+
+    return $params;
+}
+
+function rankAIChatBusinessResultsByDistance(array $items, array $searchParams = [], $userLocation = null) {
+    if (empty($items)) {
+        return [];
+    }
+
+    $originLat = isset($userLocation['latitude']) && is_numeric($userLocation['latitude'])
+        ? (float)$userLocation['latitude']
+        : null;
+    $originLon = isset($userLocation['longitude']) && is_numeric($userLocation['longitude'])
+        ? (float)$userLocation['longitude']
+        : null;
+    $hasOriginCoords = $originLat !== null && $originLon !== null;
+    $maxDistanceKm = isset($searchParams['max_distance_km']) && is_numeric($searchParams['max_distance_km'])
+        ? (float)$searchParams['max_distance_km']
+        : null;
+    $useUserDistance = $hasOriginCoords && !empty($searchParams['distance_from_user']);
+    $preserveExistingOrder = !empty($searchParams['price_comparison']) || (($searchParams['sort_by'] ?? '') === 'vehicle_count');
+
+    foreach ($items as &$item) {
+        $itemLat = isset($item['latitude']) && is_numeric($item['latitude']) ? (float)$item['latitude'] : null;
+        $itemLon = isset($item['longitude']) && is_numeric($item['longitude']) ? (float)$item['longitude'] : null;
+
+        if ($useUserDistance && $itemLat !== null && $itemLon !== null) {
+            $distanceKm = calculateDistance($originLat, $originLon, $itemLat, $itemLon);
+            if ($distanceKm !== null) {
+                $item['distance'] = $distanceKm;
+                $item['distance_km'] = round($distanceKm, 2);
+            }
+        }
+    }
+    unset($item);
+
+    if ($useUserDistance && $maxDistanceKm !== null) {
+        $items = array_values(array_filter($items, function ($item) use ($maxDistanceKm) {
+            return isset($item['distance']) && is_numeric($item['distance']) && (float)$item['distance'] <= $maxDistanceKm;
+        }));
+    }
+
+    if ($useUserDistance && !$preserveExistingOrder) {
+        usort($items, function ($a, $b) {
+            foreach (['featured', 'verified', 'certified'] as $flag) {
+                $cmp = ((int)($b[$flag] ?? 0) <=> (int)($a[$flag] ?? 0));
+                if ($cmp !== 0) {
+                    return $cmp;
+                }
+            }
+
+            $aDistance = isset($a['distance']) && is_numeric($a['distance']) ? (float)$a['distance'] : null;
+            $bDistance = isset($b['distance']) && is_numeric($b['distance']) ? (float)$b['distance'] : null;
+            if ($aDistance !== null || $bDistance !== null) {
+                if ($aDistance === null) {
+                    return 1;
+                }
+                if ($bDistance === null) {
+                    return -1;
+                }
+                $cmp = $aDistance <=> $bDistance;
+                if ($cmp !== 0) {
+                    return $cmp;
+                }
+            }
+
+            $aName = strtolower(trim((string)($a['business_name'] ?? $a['name'] ?? '')));
+            $bName = strtolower(trim((string)($b['business_name'] ?? $b['name'] ?? '')));
+            return $aName <=> $bName;
+        });
+    }
+
+    return array_values($items);
+}
+
+function formatAIChatDistanceLabel($item) {
+    $distanceKm = isset($item['distance_km']) && is_numeric($item['distance_km'])
+        ? (float)$item['distance_km']
+        : (isset($item['distance']) && is_numeric($item['distance']) ? (float)$item['distance'] : null);
+
+    if ($distanceKm === null) {
+        return '';
+    }
+
+    return round($distanceKm, 1) . ' km away';
 }
 
 /**
@@ -9243,8 +9566,8 @@ function extractDealerSearchParams($db, $message) {
             break;
         }
     }
-    
-    return $params;
+
+    return applyAIChatBusinessQueryHints($db, $message, $params);
 }
 
 /**
@@ -9267,7 +9590,7 @@ function searchDealers($db, $searchParams, $userLocation = null) {
             $params[] = $locationPattern;
             $params[] = $locationPattern;
             $params[] = $locationPattern;
-        } elseif (!empty($searchParams['proximity']) && $userLocation && !empty($userLocation['location_name'])) {
+        } elseif (!empty($searchParams['proximity']) && empty($searchParams['distance_from_user']) && $userLocation && !empty($userLocation['location_name'])) {
             if (!empty($userLocation['location_name'])) {
                 $whereConditions[] = "loc.name LIKE ?";
                 $params[] = '%' . $userLocation['location_name'] . '%';
@@ -9285,7 +9608,7 @@ function searchDealers($db, $searchParams, $userLocation = null) {
         
         // Include location information and business_hours
         $stmt = $db->prepare("
-            SELECT d.*, loc.name as location_name, loc.region, loc.district, d.business_hours,
+                 SELECT d.*, loc.name as location_name, loc.region, loc.district, loc.latitude, loc.longitude, d.business_hours,
                    (SELECT COUNT(*) 
                     FROM car_listings cl 
                     INNER JOIN users u ON cl.user_id = u.id 
@@ -9335,8 +9658,7 @@ function searchDealers($db, $searchParams, $userLocation = null) {
             $dealers = $openDealers;
         }
         
-        // Note: Distance calculation removed as locations table doesn't have latitude/longitude columns
-        // Proximity queries will sort by featured/verified status only
+        $dealers = rankAIChatBusinessResultsByDistance($dealers, (array)$searchParams, $userLocation);
         
         return $dealers;
         
@@ -9352,23 +9674,10 @@ function searchDealers($db, $searchParams, $userLocation = null) {
  */
 function handleDealerQuery($db, $message, $conversationHistory) {
     try {
-        // Get user info for location context
         $user = getCurrentUser(true);
-        $userLocation = null;
-        if ($user) {
-            try {
-                $locationStmt = $db->prepare("
-                    SELECT u.city, u.address, loc.name as location_name, loc.region, loc.district
-                    FROM users u
-                    LEFT JOIN locations loc ON u.city = loc.name OR u.city LIKE CONCAT('%', loc.name, '%')
-                    WHERE u.id = ?
-                    LIMIT 1
-                ");
-                $locationStmt->execute([$user['id']]);
-                $userLocation = $locationStmt->fetch(PDO::FETCH_ASSOC);
-            } catch (Exception $e) {
-                error_log("Error fetching user location in handleDealerQuery: " . $e->getMessage());
-            }
+        $userLocation = getAIChatResolvedUserLocationFromContext();
+        if (!$userLocation && $user) {
+            $userLocation = resolveAIChatBusinessUserLocation($db, $user, null);
         }
         
         // Extract search parameters from message
@@ -9413,8 +9722,9 @@ function handleDealerQuery($db, $message, $conversationHistory) {
                     $response .= " in {$dealer['location_name']}";
                 }
                 
-                if (!empty($dealer['distance'])) {
-                    $response .= " (approximately " . round($dealer['distance'], 1) . " km away)";
+                $distanceLabel = formatAIChatDistanceLabel($dealer);
+                if ($distanceLabel !== '') {
+                    $response .= " (approximately {$distanceLabel})";
                 }
                 
                 $response .= ".\n\n";
@@ -9457,6 +9767,11 @@ function handleDealerQuery($db, $message, $conversationHistory) {
                     if (!empty($dealer['location_name'])) {
                         $response .= "  📍 {$dealer['location_name']}\n";
                     }
+
+                    $distanceLabel = formatAIChatDistanceLabel($dealer);
+                    if ($distanceLabel !== '') {
+                        $response .= "  📏 {$distanceLabel}\n";
+                    }
                     
                     if (!empty($dealer['phone'])) {
                         $response .= "  📞 {$dealer['phone']}\n";
@@ -9477,7 +9792,7 @@ function handleDealerQuery($db, $message, $conversationHistory) {
         
         sendSuccess([
             'response' => $response,
-            'dealers' => array_slice($dealers, 0, 10),
+            'dealers' => array_slice($dealers, 0, 3),
             'total_results' => count($dealers),
             'base_url' => $baseUrl
         ]);
@@ -9494,27 +9809,13 @@ function handleDealerQuery($db, $message, $conversationHistory) {
  */
 function handleGarageQuery($db, $message, $conversationHistory) {
     try {
-        // Get user info for location context
         $user = getCurrentUser(true);
-        $userLocation = null;
-        if ($user) {
-            try {
-                $locationStmt = $db->prepare("
-                    SELECT u.city, u.address, loc.name as location_name, loc.region, loc.district
-                    FROM users u
-                    LEFT JOIN locations loc ON u.city = loc.name OR u.city LIKE CONCAT('%', loc.name, '%')
-                    WHERE u.id = ?
-                    LIMIT 1
-                ");
-                $locationStmt->execute([$user['id']]);
-                $userLocation = $locationStmt->fetch(PDO::FETCH_ASSOC);
-            } catch (Exception $e) {
-                error_log("Error fetching user location in handleGarageQuery: " . $e->getMessage());
-            }
+        $userLocation = getAIChatResolvedUserLocationFromContext();
+        if (!$userLocation && $user) {
+            $userLocation = resolveAIChatBusinessUserLocation($db, $user, null);
         }
-        
-        // Extract search parameters from message
-        $searchParams = extractGarageSearchParams($message);
+
+        $searchParams = extractGarageSearchParams($message, $db);
         
         // If proximity query and user has location, add to search params
         if (!empty($searchParams['proximity']) && $userLocation && !empty($userLocation['location_name'])) {
@@ -9641,8 +9942,9 @@ function handleGarageQuery($db, $message, $conversationHistory) {
                     $response .= " in {$garage['location_name']}";
                 }
                 
-                if (!empty($garage['distance'])) {
-                    $response .= " (approximately " . round($garage['distance'], 1) . " km away)";
+                $distanceLabel = formatAIChatDistanceLabel($garage);
+                if ($distanceLabel !== '') {
+                    $response .= " (approximately {$distanceLabel})";
                 }
                 
                 $response .= ".\n\n";
@@ -9684,7 +9986,7 @@ function handleGarageQuery($db, $message, $conversationHistory) {
             } else {
                 // Regular query - show top 2-3 most relevant results
                 $count = count($garages);
-                $displayCount = min(2, $count); // Show max 2 for better focus
+                $displayCount = min(3, $count);
                 $response = "Here are the {$displayCount} most relevant garage" . ($displayCount > 1 ? 's' : '') . ":\n\n";
                 
                 foreach (array_slice($garages, 0, $displayCount) as $garage) {
@@ -9697,6 +9999,11 @@ function handleGarageQuery($db, $message, $conversationHistory) {
                     
                     if (!empty($garage['phone'])) {
                         $response .= "  📞 {$garage['phone']}\n";
+                    }
+
+                    $distanceLabel = formatAIChatDistanceLabel($garage);
+                    if ($distanceLabel !== '') {
+                        $response .= "  📏 {$distanceLabel}\n";
                     }
                     
                     // Show if open now (if open_now query was made)
@@ -9718,7 +10025,7 @@ function handleGarageQuery($db, $message, $conversationHistory) {
         
         sendSuccess([
             'response' => $response,
-            'garages' => array_slice($garages, 0, 10),
+            'garages' => array_slice($garages, 0, 3),
             'total_results' => count($garages),
             'base_url' => $baseUrl
         ]);
@@ -9733,7 +10040,7 @@ function handleGarageQuery($db, $message, $conversationHistory) {
 /**
  * Extract garage search parameters from user message
  */
-function extractGarageSearchParams($message) {
+function extractGarageSearchParams($message, $db = null) {
     $params = [];
     $messageLower = strtolower($message);
     
@@ -9863,7 +10170,7 @@ function extractGarageSearchParams($message) {
         $params['open_now'] = true;
     }
     
-    return $params;
+    return $db ? applyAIChatBusinessQueryHints($db, $message, $params) : $params;
 }
 
 /**
@@ -9923,7 +10230,7 @@ function searchGarages($db, $searchParams, $userLocation = null) {
         if ($isLocalDev) {
             error_log("Location filter applied: " . $locationSearch . " -> Pattern: " . $locationPattern);
         }
-    } elseif (!empty($searchParams['proximity']) && $userLocation && !empty($userLocation['location_name'])) {
+    } elseif (!empty($searchParams['proximity']) && empty($searchParams['distance_from_user']) && $userLocation && !empty($userLocation['location_name'])) {
         // For proximity queries, prioritize user's location but don't make it mandatory
         // We'll sort by distance later, so we can include all garages if needed
         // Only filter by location if we have a specific location match
@@ -9958,7 +10265,7 @@ function searchGarages($db, $searchParams, $userLocation = null) {
     // This ensures we only get garages with valid locations
     try {
         $stmt = $db->prepare("
-            SELECT g.*, loc.name as location_name, loc.region, loc.district, g.business_hours, g.operating_hours
+            SELECT g.*, loc.name as location_name, loc.region, loc.district, loc.latitude, loc.longitude, g.business_hours, g.operating_hours
             FROM garages g
             INNER JOIN locations loc ON g.location_id = loc.id
             WHERE {$whereClause}
@@ -9985,7 +10292,7 @@ function searchGarages($db, $searchParams, $userLocation = null) {
         throw $e;
     }
     
-    // Note: Distance calculation removed as locations table doesn't have latitude/longitude columns
+    $garages = rankAIChatBusinessResultsByDistance($garages, (array)$searchParams, $userLocation);
     
     // Parse JSON fields safely
     foreach ($garages as &$garage) {
@@ -10187,27 +10494,13 @@ function detectPriceComparativeQuery($message) {
 
 function handleCarHireQuery($db, $message, $conversationHistory) {
     try {
-        // Get user info for location context
         $user = getCurrentUser(true);
-        $userLocation = null;
-        if ($user) {
-            try {
-                $locationStmt = $db->prepare("
-                    SELECT u.city, u.address, loc.name as location_name, loc.region, loc.district
-                    FROM users u
-                    LEFT JOIN locations loc ON u.city = loc.name OR u.city LIKE CONCAT('%', loc.name, '%')
-                    WHERE u.id = ?
-                    LIMIT 1
-                ");
-                $locationStmt->execute([$user['id']]);
-                $userLocation = $locationStmt->fetch(PDO::FETCH_ASSOC);
-            } catch (Exception $e) {
-                error_log("Error fetching user location in handleCarHireQuery: " . $e->getMessage());
-            }
+        $userLocation = getAIChatResolvedUserLocationFromContext();
+        if (!$userLocation && $user) {
+            $userLocation = resolveAIChatBusinessUserLocation($db, $user, null);
         }
-        
-        // Extract search parameters from message
-        $searchParams = extractCarHireSearchParams($message);
+
+        $searchParams = extractCarHireSearchParams($message, $db);
         
         // Detect if this is a "most" query (e.g., "which car hire has most cars")
         $isComparativeQuery = detectComparativeQuery($message);
@@ -10259,8 +10552,9 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
                     $response .= " in {$company['location_name']}";
                 }
                 
-                if (!empty($company['distance'])) {
-                    $response .= " (approximately " . round($company['distance'], 1) . " km away)";
+                $distanceLabel = formatAIChatDistanceLabel($company);
+                if ($distanceLabel !== '') {
+                    $response .= " (approximately {$distanceLabel})";
                 }
                 
                 $response .= ".\n\n";
@@ -10340,6 +10634,11 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
                         $response .= "  📍 {$company['location_name']}\n";
                     }
 
+                    $distanceLabel = formatAIChatDistanceLabel($company);
+                    if ($distanceLabel !== '') {
+                        $response .= "  📏 {$distanceLabel}\n";
+                    }
+
                     if (!empty($company['phone'])) {
                         $response .= "  📞 {$company['phone']}\n";
                     }
@@ -10381,7 +10680,7 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
         
         sendSuccess([
             'response' => $response,
-            'car_hire_companies' => array_slice($results['companies'], 0, 10),
+            'car_hire_companies' => array_slice($results['companies'], 0, 3),
             'total_results' => count($results['companies']),
             'base_url' => $baseUrl
         ]);
@@ -10395,7 +10694,7 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
 /**
  * Extract car hire search parameters from user message
  */
-function extractCarHireSearchParams($message) {
+function extractCarHireSearchParams($message, $db = null) {
     $params = [];
     $messageLower = strtolower($message);
     
@@ -10491,7 +10790,7 @@ function extractCarHireSearchParams($message) {
         $params['price_comparison'] = $priceComparison;
     }
     
-    return $params;
+    return $db ? applyAIChatBusinessQueryHints($db, $message, $params) : $params;
 }
 
 /**
@@ -10509,7 +10808,7 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
         $params[] = $locationPattern;
         $params[] = $locationPattern;
         $params[] = $locationPattern;
-    } elseif (!empty($searchParams['proximity']) && $userLocation && !empty($userLocation['location_name'])) {
+    } elseif (!empty($searchParams['proximity']) && empty($searchParams['distance_from_user']) && $userLocation && !empty($userLocation['location_name'])) {
         // For proximity queries, prioritize user's location but don't make it mandatory
         $locationSearch = strtolower(trim($userLocation['location_name']));
         $whereConditions[] = "(LOWER(loc.name) LIKE ? OR LOWER(loc.district) LIKE ? OR LOWER(loc.region) LIKE ?)";
@@ -10535,7 +10834,7 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
     
     // Get car hire companies with vehicle count and location information
     $stmt = $db->prepare("
-        SELECT ch.*, loc.name as location_name, loc.region, loc.district,
+         SELECT ch.*, loc.name as location_name, loc.region, loc.district, loc.latitude, loc.longitude,
                COUNT(f.id) as vehicle_count
         FROM car_hire_companies ch
         INNER JOIN locations loc ON ch.location_id = loc.id
@@ -10678,6 +10977,8 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
             return $aRate <=> $bRate;
         });
     }
+
+    $companies = rankAIChatBusinessResultsByDistance($companies, (array)$searchParams, $userLocation);
     
     return ['companies' => $companies];
 }

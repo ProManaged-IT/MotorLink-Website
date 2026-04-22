@@ -1,0 +1,234 @@
+== DRY RUN (use --apply to delete) ==
+[DELETE] dealer    #12                                              reason=empty-name  user=autotest_dealer_20260411002039_1@example.com
+[DELETE] dealer    #13                                              reason=empty-name  user=autotest_dealer_20260411002829_1@example.com
+[DELETE] dealer    #14                                              reason=empty-name  user=autotest_dealer_20260411002842_1@example.com
+[DELETE] dealer    #31                                              reason=empty-name  user=autotest_dealer_20260411012146_1@example.com
+[DELETE] dealer    #35                                              reason=empty-name  user=autotest_dealer_20260411012856_1@example.com
+[DELETE] dealer    #38                                              reason=empty-name  user=autotest_dealer_20260411013330_1@example.com
+[DELETE] dealer    #40                                              reason=empty-name  user=autotest_dealer_20260411013700_1@example.com
+[DELETE] dealer    #42                                              reason=empty-name  user=autotest_dealer_20260411014750_1@example.com
+[DELETE] dealer    #44                                              reason=empty-name  user=autotest_dealer_20260411015321_1@example.com
+[DELETE] dealer    #77    HTD                                       reason=garbage-token  user=biz.htd.g8k8EA@motorlink.test
+[DELETE] dealer    #169   Mzuzu Bus Depot                           reason=off-topic: Bus Depot  user=biz.mzuzubusdepot.BCEZoY@motorlink.test
+[DELETE] dealer    #180   Zomba                                     reason=location-only-name: Zomba  user=biz.zomba.cqnFz8@motorlink.test
+[DELETE] dealer    #181   Annie's Lodge Zomba                       reason=off-topic: Lodge  user=biz.annieslodgezomba.53OKiA@motorlink.test
+[DELETE] dealer    #191   Khama Driving School                      reason=off-topic: Driving School  user=biz.khamadrivingschool.6WSt1E@motorlink.test
+[DELETE] dealer    #192   Zomba City Council, Civic Offices         reason=off-topic: Council  user=biz.zombacitycouncilcivi.GvYUJ8@motorlink.test
+[DELETE] dealer    #193   Speed Courier and Logistics Zomba         reason=off-topic: Courier  user=biz.speedcourierandlogis.3Hs5OY@motorlink.test
+[DELETE] dealer    #194   Maulidi's driving school                  reason=off-topic: driving school  user=biz.maulidisdrivingschoo.SUflFc@motorlink.test
+[DELETE] dealer    #196   Maya                                      reason=garbage-token  user=biz.maya.v_6JJw@motorlink.test
+[DELETE] dealer    #202   Kasungu                                   reason=location-only-name: Kasungu  user=biz.kasungu.5k8FTs@motorlink.test
+[DELETE] dealer    #205   Maplot                                    reason=garbage-token  user=biz.maplot.OuOCO0@motorlink.test
+[DELETE] dealer    #210   Municipal Council                         reason=off-topic: Municipal  user=biz.municipalcouncil.DxmLgU@motorlink.test
+[DELETE] dealer    #211   Mangochi Bus Depot                        reason=off-topic: Bus Depot  user=biz.mangochibusdepot.BAZAoU@motorlink.test
+[DELETE] dealer    #213   CC CAFE RIVERSIDE                         reason=off-topic: CAFE  user=biz.cccaferiverside.bbvAD4@motorlink.test
+[DELETE] dealer    #218   Transport malawi                          reason=off-topic: Transport  user=biz.transportmalawi.JYY_Ug@motorlink.test
+[DELETE] dealer    #231   Ndirande Market                           reason=off-topic: Market  user=biz.ndirandemarket.V1CmLE@motorlink.test
+[DELETE] dealer    #232   Food LoverΓÇÖs Market                     reason=off-topic: Food Lover  user=biz.foodloversmarket.4j__D8@motorlink.test
+[DELETE] dealer    #269   Big market                                reason=off-topic: market  user=biz.bigmarket.1uMjes@motorlink.test
+[DELETE] dealer    #271   Petroda Filling Station                   reason=off-topic: Petroda  user=biz.petrodafillingstatio.1VRkC4@motorlink.test
+[DELETE] dealer    #275   Salima                                    reason=location-only-name: Salima  user=biz.salima.7stccs@motorlink.test
+[DELETE] dealer    #277   Joma Adventure Lodge                      reason=off-topic: Lodge  user=biz.jomaadventurelodge.b8qvzI@motorlink.test
+[DELETE] dealer    #280   Dedza Pottery and Lodge                   reason=off-topic: Lodge  user=biz.dedzapotteryandlodge.aasO3Q@motorlink.test
+[DELETE] dealer    #282   Dedza                                     reason=location-only-name: Dedza  user=biz.dedza.X6L9wQ@motorlink.test
+[DELETE] dealer    #288   Dedza Mountain View Lodge                 reason=off-topic: Lodge  user=biz.dedzamountainviewlod.MOQ-do@motorlink.test
+[DELETE] dealer    #289   Puma Energy Malawi Dedza Service Station  reason=off-topic: Puma  user=biz.pumaenergymalawidedz.w3Nx9I@motorlink.test
+[DELETE] dealer    #291   Dedza Mount Meru                          reason=off-topic: Mount Meru  user=biz.dedzamountmeru.Rz0MZo@motorlink.test
+[DELETE] dealer    #294   Standard Bank Dedza                       reason=off-topic: Standard Bank  user=biz.standardbankdedza.piWPnU@motorlink.test
+[DELETE] dealer    #297   VBM                                       reason=garbage-token  user=biz.vbm.C9j_j0@motorlink.test
+[DELETE] dealer    #301   Mchinji                                   reason=location-only-name: Mchinji  user=biz.mchinji.ShJ_c8@motorlink.test
+[DELETE] dealer    #302   Mchinji bus station                       reason=off-topic: bus station  user=biz.mchinjibusstation._BWsTU@motorlink.test
+[DELETE] dealer    #318   Brantley                                  reason=garbage-token  user=biz.brantley.qf1sV8@motorlink.test
+[DELETE] dealer    #325   Nkhotakota bus depot                      reason=off-topic: bus depot  user=biz.nkhotakotabusdepot.kA1tI8@motorlink.test
+[DELETE] dealer    #327   Nkhotakota Pottery Lodge                  reason=off-topic: Lodge  user=biz.nkhotakotapotterylod.TtPgSw@motorlink.test
+[DELETE] dealer    #329   Nkhotakota                                reason=location-only-name: Nkhotakota  user=biz.nkhotakota.TfVCN8@motorlink.test
+[DELETE] dealer    #330   Meru Nkhotakhota filling station          reason=off-topic: filling station  user=biz.merunkhotakhotafilli.ye3ymI@motorlink.test
+[DELETE] dealer    #331   Sitima Inn                                reason=off-topic: Inn  user=biz.sitimainn.KL_-m0@motorlink.test
+[DELETE] dealer    #334   Ntchisi Forest Lodge                      reason=off-topic: Lodge  user=biz.ntchisiforestlodge.YHNCvQ@motorlink.test
+[DELETE] dealer    #335   Meru Ntchisi filling station              reason=off-topic: filling station  user=biz.meruntchisifillingst.UCU8lo@motorlink.test
+[DELETE] dealer    #336   Puma Energy Ntchisi                       reason=off-topic: Puma  user=biz.pumaenergyntchisi.LoUS2c@motorlink.test
+[DELETE] dealer    #338   Nanah                                     reason=garbage-token  user=biz.nanah.-HW7po@motorlink.test
+[DELETE] dealer    #340   Dowa                                      reason=location-only-name: Dowa  user=biz.dowa.dUFAFs@motorlink.test
+[DELETE] dealer    #342   Dowa District Council                     reason=off-topic: District Council  user=biz.dowadistrictcouncil.Ykirgk@motorlink.test
+[DELETE] dealer    #347   FINCA                                     reason=off-topic: FINCA  user=biz.finca.CT-y7Y@motorlink.test
+[DELETE] dealer    #348   Rock of Ages Hardware                     reason=off-topic: Hardware  user=biz.rockofageshardware.zL8nvY@motorlink.test
+[DELETE] dealer    #349   Ntcheu Bus Depot                          reason=off-topic: Bus Depot  user=biz.ntcheubusdepot.aBwCQ4@motorlink.test
+[DELETE] dealer    #350   Ntcheu                                    reason=location-only-name: Ntcheu  user=biz.ntcheu.Ov-E4A@motorlink.test
+[DELETE] dealer    #351   Ntcheu market                             reason=off-topic: market  user=biz.ntcheumarket.yQDE2w@motorlink.test
+[DELETE] dealer    #353   Puma Energy Ntcheu                        reason=off-topic: Puma  user=biz.pumaenergyntcheu.2HU_LM@motorlink.test
+[DELETE] dealer    #354   Engen Filling Station                     reason=off-topic: Engen  user=biz.engenfillingstation.LC8y9Q@motorlink.test
+[DELETE] dealer    #355   Ntcheu Police Station                     reason=off-topic: Police  user=biz.ntcheupolicestation.FdM4P0@motorlink.test
+[DELETE] dealer    #358   Balaka                                    reason=location-only-name: Balaka  user=biz.balaka.YIlGuk@motorlink.test
+[DELETE] dealer    #359   balaka                                    reason=location-only-name: balaka  user=biz.balaka.fGlHPY@motorlink.test
+[DELETE] dealer    #361   Puma Energy Malawi Balaka Service Statio  reason=off-topic: Puma  user=biz.pumaenergymalawibala.LfvAyg@motorlink.test
+[DELETE] dealer    #362   Ngwangwa Meru filling station             reason=off-topic: Meru filling  user=biz.ngwangwamerufillings.4eyayk@motorlink.test
+[DELETE] dealer    #367   Puma Energy Kanengo                       reason=off-topic: Puma  user=biz.pumaenergykanengo.Fnij64@motorlink.test
+[DELETE] dealer    #368   Total Kanengo Depot                       reason=off-topic: Total  user=biz.totalkanengodepot.QbIo4E@motorlink.test
+[DELETE] dealer    #371   Kanengo puma depot                        reason=off-topic: puma  user=biz.kanengopumadepot.wmNgdk@motorlink.test
+[DELETE] dealer    #373   Kanengo                                   reason=location-only-name: Kanengo  user=biz.kanengo.iFcC-Q@motorlink.test
+[DELETE] dealer    #374   Kamkango logistics                        reason=off-topic: logistics  user=biz.kamkangologistics.pjc2K8@motorlink.test
+[DELETE] dealer    #389   Puma Energy Malawi Area 18 Service Stati  reason=off-topic: Puma  user=biz.pumaenergymalawiarea.t6RzKw@motorlink.test
+[DELETE] dealer    #399   Ghosy                                     reason=garbage-token  user=biz.ghosy.I4rzYA@motorlink.test
+[DELETE] dealer    #400   Area 25 C Market (Pambuzi)                reason=off-topic: Market  user=biz.area25cmarketpambuzi.gSnSJU@motorlink.test
+[DELETE] dealer    #401   fiify6                                    reason=garbage-token  user=biz.fiify6.OPN1VA@motorlink.test
+[DELETE] dealer    #402   Nanjiri Market                            reason=off-topic: Market  user=biz.nanjirimarket.Ya1oEY@motorlink.test
+[DELETE] dealer    #411   Area 47                                   reason=location-only-name: Area 47  user=biz.area47.rhStyI@motorlink.test
+[DELETE] dealer    #414   Area 47 Sector 3 Trading Centre           reason=off-topic: Trading Centre  user=biz.area47sector3trading.NuTo3I@motorlink.test
+[DELETE] dealer    #421   Area 47/1 Police Station                  reason=off-topic: Police  user=biz.area471policestation.66mL6k@motorlink.test
+[DELETE] dealer    #425   City Mall                                 reason=off-topic: City Mall  user=biz.citymall.ScUBe4@motorlink.test
+[DELETE] dealer    #430   Malangalanga Business Market Center       reason=off-topic: Market  user=biz.malangalangabusiness.k7M-tM@motorlink.test
+[DELETE] dealer    #432   Biwi Market                               reason=off-topic: Market  user=biz.biwimarket.dAPMJ8@motorlink.test
+[DELETE] dealer    #433   Biwi                                      reason=location-only-name: Biwi  user=biz.biwi.zruvPY@motorlink.test
+[DELETE] dealer    #442   Kawale                                    reason=location-only-name: Kawale  user=biz.kawale.qXVPLE@motorlink.test
+[DELETE] dealer    #443   Kawale Filling Station                    reason=off-topic: Filling Station  user=biz.kawalefillingstation.wzBx14@motorlink.test
+[DELETE] dealer    #448   djthiya1@                                 reason=garbage-token  user=biz.djthiya1.PEYB90@motorlink.test
+[DELETE] dealer    #454   Lilongwe Technical College                reason=off-topic: College  user=biz.lilongwetechnicalcol.KCoYzw@motorlink.test
+[DELETE] dealer    #455   Almeida Transport                         reason=off-topic: Transport  user=biz.almeidatransport.aSJxMY@motorlink.test
+[DELETE] dealer    #457   Lilongwe Police Station                   reason=off-topic: Police  user=biz.lilongwepolicestatio.ec_J7s@motorlink.test
+[DELETE] dealer    #458   Crossroads Hotel                          reason=off-topic: Hotel  user=biz.crossroadshotel._FbJ7g@motorlink.test
+[DELETE] dealer    #461   Crossroad Gym                             reason=off-topic: Gym  user=biz.crossroadgym.HO2hcI@motorlink.test
+[DELETE] garage    #10                                              reason=empty-name  user=autotest_garage_20260411001854_2@example.com
+[DELETE] garage    #11                                              reason=empty-name  user=autotest_garage_20260411002039_2@example.com
+[DELETE] garage    #12                                              reason=empty-name  user=autotest_garage_20260411002829_2@example.com
+[DELETE] garage    #13                                              reason=empty-name  user=autotest_garage_20260411002842_2@example.com
+[DELETE] garage    #21                                              reason=empty-name  user=autotest_garage_20260411012146_2@example.com
+[DELETE] garage    #23                                              reason=empty-name  user=autotest_garage_20260411012856_2@example.com
+[DELETE] garage    #24                                              reason=empty-name  user=autotest_garage_20260411013330_2@example.com
+[DELETE] garage    #26                                              reason=empty-name  user=autotest_garage_20260411013700_2@example.com
+[DELETE] garage    #28                                              reason=empty-name  user=autotest_garage_20260411014750_2@example.com
+[DELETE] garage    #30                                              reason=empty-name  user=autotest_garage_20260411015321_2@example.com
+[DELETE] garage    #35    Carrecon                                  reason=garbage-token  user=biz.carrecon.DYMqAE@motorlink.test
+[DELETE] garage    #42    AUTOTEC                                   reason=garbage-token  user=biz.autotec.8N-7gw@motorlink.test
+[DELETE] garage    #59    Presidential Way Total Filling Station    reason=off-topic: Total  user=biz.presidentialwaytotal.m967S4@motorlink.test
+[DELETE] garage    #110   HELIOS                                    reason=garbage-token  user=biz.helios.lMSyiE@motorlink.test
+[DELETE] garage    #148   Mascon                                    reason=garbage-token  user=biz.mascon.ttHPRk@motorlink.test
+[DELETE] garage    #168   Best Oil Filling Station Area 49          reason=off-topic: Filling Station  user=biz.bestoilfillingstatio.Q0wB3o@motorlink.test
+[DELETE] garage    #170   Puma Energy Malawi City Center Service S  reason=off-topic: Puma  user=biz.pumaenergymalawicity.ZWgzx8@motorlink.test
+[DELETE] garage    #174   Puma Energy Lilongwe Service Station      reason=off-topic: Puma  user=biz.pumaenergylilongwese.e4nkaE@motorlink.test
+[DELETE] garage    #185   Hartford                                  reason=garbage-token  user=biz.hartford.61M3nE@motorlink.test
+[DELETE] garage    #186   iFix                                      reason=garbage-token  user=biz.ifix.8EGndg@motorlink.test
+[DELETE] garage    #196   Electronics 4U                            reason=off-topic: Electronics  user=biz.electronics4u.X2bynE@motorlink.test
+[DELETE] garage    #198   Sky Electronics                           reason=off-topic: Electronics  user=biz.skyelectronics.mciRkY@motorlink.test
+[DELETE] garage    #200   A2Z Electronics                           reason=off-topic: Electronics  user=biz.a2zelectronics.5-FBVY@motorlink.test
+[DELETE] garage    #231   Progressive Panel Beaters & Transport Co  reason=off-topic: Transport  user=biz.progressivepanelbeat.PytIOQ@motorlink.test
+[DELETE] garage    #272   Puma Energy Malawi Soche Service Station  reason=off-topic: Puma  user=biz.pumaenergymalawisoch.9x0YTU@motorlink.test
+[DELETE] garage    #315   TotalEnergies Mzuzu Market Service Stati  reason=off-topic: Market  user=biz.totalenergiesmzuzuma.tOPTa4@motorlink.test
+[DELETE] garage    #325   CHEMBE                                    reason=garbage-token  user=biz.chembe.zTtLew@motorlink.test
+[DELETE] garage    #329   Yazenga                                   reason=garbage-token  user=biz.yazenga.osQUzI@motorlink.test
+[DELETE] garage    #330   M1 Electronics Mzuzu Branch               reason=off-topic: Electronics  user=biz.m1electronicsmzuzubr.Y1xE4A@motorlink.test
+[DELETE] garage    #333   Nu Madina Superette & Butchery Mzuzu      reason=off-topic: Butchery  user=biz.numadinasuperettebut.oGlGbk@motorlink.test
+[DELETE] garage    #335   Puma Energy Mzuzu Main                    reason=off-topic: Puma  user=biz.pumaenergymzuzumain.RKBsDw@motorlink.test
+[DELETE] garage    #337   Puma Energy Malawi Brickwave Service Sta  reason=off-topic: Puma  user=biz.pumaenergymalawibric.bzLP-E@motorlink.test
+[DELETE] garage    #339   Puma Energy Wallie                        reason=off-topic: Puma  user=biz.pumaenergywallie.wBBZ_E@motorlink.test
+[DELETE] garage    #347   Mzuzu Malawi                              reason=location-only-name: Mzuzu Malawi  user=biz.mzuzumalawi.eMYzl8@motorlink.test
+[DELETE] garage    #358   SPECTA ELECTRONICS                        reason=off-topic: ELECTRONICS  user=biz.spectaelectronics.SQsNgY@motorlink.test
+[DELETE] garage    #361   City Electronics                          reason=off-topic: Electronics  user=biz.cityelectronics.rVZHAU@motorlink.test
+[DELETE] garage    #364   Puma Energy Zomba                         reason=off-topic: Puma  user=biz.pumaenergyzomba.vlI6eY@motorlink.test
+[DELETE] garage    #365   Engen                                     reason=off-topic: Engen  user=biz.engen.Acewp8@motorlink.test
+[DELETE] garage    #366   National Bank of Malawi                   reason=off-topic: National Bank  user=biz.nationalbankofmalawi.ly5q9M@motorlink.test
+[DELETE] garage    #367   Mt. Meru                                  reason=location-only-name: Mt. Meru  user=biz.mtmeru.Fag3XE@motorlink.test
+[DELETE] garage    #372   Kazembe Phone Repair                      reason=off-topic: Phone Repair  user=biz.kazembephonerepair.aKgHps@motorlink.test
+[DELETE] garage    #375   Petroda Zomba Fillingstation              reason=off-topic: Petroda  user=biz.petrodazombafillings.Bpj2T8@motorlink.test
+[DELETE] garage    #380   TJs Spa Beauty Salon and Barbershop       reason=off-topic: Spa  user=biz.tjsspabeautysalonand.Y40jdE@motorlink.test
+[DELETE] garage    #390   3 Miles market                            reason=off-topic: market  user=biz.3milesmarket.-35s2c@motorlink.test
+[DELETE] garage    #393   Puma Energy Kasungu                       reason=off-topic: Puma  user=biz.pumaenergykasungu.h54YUI@motorlink.test
+[DELETE] garage    #395   Buy More Electronics                      reason=off-topic: Electronics  user=biz.buymoreelectronics.ayOXKM@motorlink.test
+[DELETE] garage    #401   Mdoni center hardware                     reason=off-topic: hardware  user=biz.mdonicenterhardware.7PhePU@motorlink.test
+[DELETE] garage    #403   NS GYM                                    reason=off-topic: GYM  user=biz.nsgym.zXzvBY@motorlink.test
+[DELETE] garage    #404   Andho Hardware                            reason=off-topic: Hardware  user=biz.andhohardware.eedIpE@motorlink.test
+[DELETE] garage    #409   All in One hardware                       reason=off-topic: hardware  user=biz.allinonehardware.mtXvdg@motorlink.test
+[DELETE] garage    #411   Meru                                      reason=location-only-name: Meru  user=biz.meru.h1-Dsc@motorlink.test
+[DELETE] garage    #417   DHL Service Point (BEST U STATIONERY)     reason=off-topic: STATIONERY  user=biz.dhlservicepointbestu.Ujpbr4@motorlink.test
+[DELETE] garage    #418   AL-BADEE ELECTRONICS                      reason=off-topic: ELECTRONICS  user=biz.albadeeelectronics.OmR8Vc@motorlink.test
+[DELETE] garage    #419   Bema Stationery                           reason=off-topic: Stationery  user=biz.bemastationery.vsT8go@motorlink.test
+[DELETE] garage    #422   Click 40 Electronics                      reason=off-topic: Electronics  user=biz.click40electronics.Sm52MY@motorlink.test
+[DELETE] garage    #424   chingala electronics                      reason=off-topic: electronics  user=biz.chingalaelectronics.jpoRwk@motorlink.test
+[DELETE] garage    #425   Mukuru                                    reason=garbage-token  user=biz.mukuru.EJmB1o@motorlink.test
+[DELETE] garage    #426   Puma Energy New Kasungu                   reason=off-topic: Puma  user=biz.pumaenergynewkasungu.H6cv6c@motorlink.test
+[DELETE] garage    #428   NBS BANK                                  reason=off-topic: NBS BANK  user=biz.nbsbank.rUHI1s@motorlink.test
+[DELETE] garage    #431   Kasungu Police Station                    reason=off-topic: Police  user=biz.kasungupolicestation.8wn2RI@motorlink.test
+[DELETE] garage    #436   Puma Energy Salima                        reason=off-topic: Puma  user=biz.pumaenergysalima.sIjMDI@motorlink.test
+[DELETE] garage    #441   Generator repair                          reason=off-topic: Generator repair  user=biz.generatorrepair.uHrErQ@motorlink.test
+[DELETE] garage    #442   Smartphone solutions                      reason=off-topic: Smartphone  user=biz.smartphonesolutions.l-6JKM@motorlink.test
+[DELETE] garage    #444   Jonathan phone repair                     reason=off-topic: phone repair  user=biz.jonathanphonerepair.6HRB5Y@motorlink.test
+[DELETE] garage    #447   Mwakwenda Hardware                        reason=off-topic: Hardware  user=biz.mwakwendahardware.3McsrY@motorlink.test
+[DELETE] garage    #448   Salima Islamic Center LIMO                reason=off-topic: Islamic  user=biz.salimaislamiccenterl.weeDhM@motorlink.test
+[DELETE] garage    #451   Filling Station                           reason=off-topic: Filling Station  user=biz.fillingstation.Tyb0DQ@motorlink.test
+[DELETE] garage    #452   Filling Station                           reason=off-topic: Filling Station  user=biz.fillingstation.JqmFko@motorlink.test
+[DELETE] garage    #465   Mt Meru Filling Station                   reason=off-topic: Mt Meru  user=biz.mtmerufillingstation.jq7uaA@motorlink.test
+[DELETE] garage    #481   Meru Filling Station                      reason=off-topic: Meru Filling  user=biz.merufillingstation.m9OYk0@motorlink.test
+[DELETE] garage    #482   BP Filling Station                        reason=off-topic: Filling Station  user=biz.bpfillingstation.x-e4QA@motorlink.test
+[DELETE] garage    #485   Wills Electronics Malawi                  reason=off-topic: Electronics  user=biz.willselectronicsmala.EOXRgo@motorlink.test
+[DELETE] garage    #486   LNB Electronics                           reason=off-topic: Electronics  user=biz.lnbelectronics.hudsAM@motorlink.test
+[DELETE] garage    #487   Bigger stationery                         reason=off-topic: stationery  user=biz.biggerstationery.FSpFY8@motorlink.test
+[DELETE] garage    #488   Mkanda                                    reason=garbage-token  user=biz.mkanda.kG2j8Q@motorlink.test
+[DELETE] car_hire  #26                                              reason=empty-name  user=autotest_car_hire_20260411001854_3@example.com
+[DELETE] car_hire  #27                                              reason=empty-name  user=autotest_car_hire_20260411002039_3@example.com
+[DELETE] car_hire  #28                                              reason=empty-name  user=autotest_car_hire_20260411002829_3@example.com
+[DELETE] car_hire  #29                                              reason=empty-name  user=autotest_car_hire_20260411002842_3@example.com
+[DELETE] car_hire  #37                                              reason=empty-name  user=autotest_car_hire_20260411012146_3@example.com
+[DELETE] car_hire  #39                                              reason=empty-name  user=autotest_car_hire_20260411012856_3@example.com
+[DELETE] car_hire  #40                                              reason=empty-name  user=autotest_car_hire_20260411013330_3@example.com
+[DELETE] car_hire  #42                                              reason=empty-name  user=autotest_car_hire_20260411013700_3@example.com
+[DELETE] car_hire  #44                                              reason=empty-name  user=autotest_car_hire_20260411014750_3@example.com
+[DELETE] car_hire  #46                                              reason=empty-name  user=autotest_car_hire_20260411015321_3@example.com
+[DELETE] car_hire  #106   Kamuzu International Airport              reason=off-topic: Airport  user=biz.kamuzuinternationala.7mRjvU@motorlink.test
+[DELETE] car_hire  #133   Chileka international airport             reason=off-topic: airport  user=biz.chilekainternational.Nd1CLw@motorlink.test
+[DELETE] car_hire  #156   Mzuzu Airport                             reason=off-topic: Airport  user=biz.mzuzuairport.ay2-nw@motorlink.test
+[DELETE] car_hire  #160   Bus Station                               reason=location-only-name: Bus Station  user=biz.busstation.mCgJ2M@motorlink.test
+[DELETE] car_hire  #166   Chimwemwe                                 reason=garbage-token  user=biz.chimwemwe.Gaxp9M@motorlink.test
+[DELETE] car_hire  #169   Zomba Airport                             reason=off-topic: Airport  user=biz.zombaairport.um6Zmc@motorlink.test
+[DELETE] car_hire  #170   T & D GUESTHOUSE                          reason=off-topic: GUESTHOUSE  user=biz.tdguesthouse.EUcNtU@motorlink.test
+[DELETE] car_hire  #172   Bluegum Avenue Lodge                      reason=off-topic: Lodge  user=biz.bluegumavenuelodge.j-IkR0@motorlink.test
+[DELETE] car_hire  #174   Aeroportul Kasungu                        reason=off-topic: Aeroportul  user=biz.aeroportulkasungu.HNoFhA@motorlink.test
+[DELETE] car_hire  #178   CTS COURIER MZUZU                         reason=off-topic: COURIER  user=biz.ctscouriermzuzu.WBkhNM@motorlink.test
+[DELETE] car_hire  #190   Mchinji Airport                           reason=off-topic: Airport  user=biz.mchinjiairport.BmUyyQ@motorlink.test
+[DELETE] car_hire  #191   Old Airport                               reason=location-only-name: Old Airport  user=biz.oldairport._rT6fk@motorlink.test
+[DELETE] car_hire  #195   Chinseu                                   reason=garbage-token  user=biz.chinseu.iFkhac@motorlink.test
+[DELETE] car_hire  #196   Aeroportul Ntchisi                        reason=off-topic: Aeroportul  user=biz.aeroportulntchisi.CppCjE@motorlink.test
+[DELETE] car_hire  #198   Supersink filling station -Dowa           reason=off-topic: filling station  user=biz.supersinkfillingstat.SrDfI4@motorlink.test
+[DELETE] car_hire  #199   Dear Mama Executive Lodge                 reason=off-topic: Lodge  user=biz.dearmamaexecutivelod.6xcbKA@motorlink.test
+[DELETE] car_hire  #216   Meraki Bridal                             reason=off-topic: Bridal  user=biz.merakibridal._9ocsM@motorlink.test
+[DELETE] car_hire  #218   Speed Courier Mangochi                    reason=off-topic: Courier  user=biz.speedcouriermangochi.RV6pe0@motorlink.test
+[DELETE] car_hire  #219   Mangochi district Hospital maternity win  reason=off-topic: Hospital  user=biz.mangochidistricthosp.R077SI@motorlink.test
+[DELETE] car_hire  #221   Nanchengwa Lodge                          reason=off-topic: Lodge  user=biz.nanchengwalodge.-iG62Y@motorlink.test
+[DELETE] car_hire  #229   Chikalimba properties                     reason=off-topic: properties  user=biz.chikalimbaproperties.mvvg1g@motorlink.test
+[DELETE] car_hire  #237   Puma Energy Mulanje                       reason=off-topic: Puma  user=biz.pumaenergymulanje.ftmgMw@motorlink.test
+[DELETE] car_hire  #242   Sucoma Airport LZ                         reason=off-topic: Airport  user=biz.sucomaairportlz._xXmeQ@motorlink.test
+[DELETE] car_hire  #243   Saha Bicycle repairing (fourways)         reason=off-topic: Bicycle  user=biz.sahabicyclerepairing.xy8NIs@motorlink.test
+[DELETE] car_hire  #245   Aeroportul Nsanje                         reason=off-topic: Aeroportul  user=biz.aeroportulnsanje.VKnr7Q@motorlink.test
+[DELETE] car_hire  #246   Chingazi                                  reason=garbage-token  user=biz.chingazi.vcIT-c@motorlink.test
+[DELETE] car_hire  #248   Monkey Bay                                reason=location-only-name: Monkey Bay  user=biz.monkeybay.jOFXY0@motorlink.test
+[DELETE] car_hire  #264   Sunnyside Inn                             reason=off-topic: Inn  user=biz.sunnysideinn.LLPtKM@motorlink.test
+[DELETE] car_hire  #266   Baobab Lodge and Spa Malawi               reason=off-topic: Lodge  user=biz.baobablodgeandspamal.HGSA5o@motorlink.test
+[DELETE] car_hire  #270   Kabula Lodge                              reason=off-topic: Lodge  user=biz.kabulalodge.tBOIaw@motorlink.test
+[DELETE] car_hire  #275   Blanytre                                  reason=location-only-name: Blanytre  user=biz.blanytre.ouQvJY@motorlink.test
+[DELETE] car_hire  #279   Karonga Airport                           reason=off-topic: Airport  user=biz.karongaairport.QqEWe4@motorlink.test
+[DELETE] car_hire  #282   Issah                                     reason=garbage-token  user=biz.issah.96wTvM@motorlink.test
+[DELETE] car_hire  #284   Butterfly Space Non Profit Eco Lodge      reason=off-topic: Eco Lodge  user=biz.butterflyspacenonpro.FMDcPU@motorlink.test
+[DELETE] car_hire  #285   Soul Rebel Lodge & Backpackers            reason=off-topic: Lodge  user=biz.soulrebellodgebackpa.OPLebY@motorlink.test
+[DELETE] car_hire  #291   Puma Energy Rumphi                        reason=off-topic: Puma  user=biz.pumaenergyrumphi.LPQc1k@motorlink.test
+[DELETE] car_hire  #292   Θâæσ╖₧Θú₧σ╜╝Φ╛╛τºæµèÇµ£ëΘÖÉσà¼σÅ╕         reason=non-latin-garbage  user=biz..d1mtMc@motorlink.test
+[DELETE] car_hire  #293   Aeroportul Chitipa                        reason=off-topic: Aeroportul  user=biz.aeroportulchitipa.3ga9TE@motorlink.test
+[DELETE] car_hire  #296   Mzimba                                    reason=location-only-name: Mzimba  user=biz.mzimba.qBCCl8@motorlink.test
+[DELETE] car_hire  #297   Malaga                                    reason=garbage-token  user=biz.malaga.a2kGOw@motorlink.test
+[DELETE] car_hire  #298   Puma Energy Mzimba                        reason=off-topic: Puma  user=biz.pumaenergymzimba.2yUUPk@motorlink.test
+[DELETE] car_hire  #301   Four ways                                 reason=location-only-name: Four ways  user=biz.fourways.CNcaOw@motorlink.test
+[DELETE] car_hire  #303   Ekwendeni                                 reason=location-only-name: Ekwendeni  user=biz.ekwendeni.V5_3HA@motorlink.test
+[DELETE] car_hire  #306   Bicycle repair                            reason=off-topic: Bicycle  user=biz.bicyclerepair.X57yl4@motorlink.test
+[DELETE] car_hire  #307   Main Stream Beach Villa (Salima)          reason=off-topic: Villa  user=biz.mainstreambeachvilla.MHzCMg@motorlink.test
+[DELETE] car_hire  #308   Kutchire Lodge                            reason=off-topic: Lodge  user=biz.kutchirelodge.-875nE@motorlink.test
+[DELETE] car_hire  #309   JEMEC ENGEN GAS STATION                   reason=off-topic: ENGEN  user=biz.jemecengengasstation.44ipq4@motorlink.test
+[DELETE] car_hire  #311   Top Lodge                                 reason=off-topic: Lodge  user=biz.toplodge.Kgnlg0@motorlink.test
+[DELETE] car_hire  #313   Puma filling station                      reason=off-topic: Puma  user=biz.pumafillingstation.CdjVsA@motorlink.test
+[DELETE] car_hire  #314   Mount Meru                                reason=location-only-name: Mount Meru  user=biz.mountmeru.8cmHQ8@motorlink.test
+[DELETE] car_hire  #317   Mzimba                                    reason=location-only-name: Mzimba  user=biz.mzimba.cfOOik@motorlink.test
+[DELETE] car_hire  #320   Meru mzimba Filling Station               reason=off-topic: Filling Station  user=biz.merumzimbafillingsta.74E5iA@motorlink.test
+
+== SUMMARY ==
+  dealer    scanned=461   deleted=88    kept=373 
+  garage    scanned=486   deleted=75    kept=411 
+  car_hire  scanned=298   deleted=62    kept=236 
+  TOTAL      scanned=1245  deleted=225  kept=1020  skipped_protected=0
+
+(no changes made ΓÇö re-run with --apply)
