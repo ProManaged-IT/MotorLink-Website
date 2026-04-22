@@ -2840,21 +2840,17 @@ class DealersManager {
                     ` : ''}
 
                     <div class="dealer-card-body">
-                        <div class="dealer-specializations-display" style="min-height: 32px;">
-                            ${dealer.specialization ? `
-                                ${(() => {
-                                    try {
-                                        const specs = JSON.parse(dealer.specialization);
-                                        if (Array.isArray(specs) && specs.length > 0) {
-                                            return '<div class="dealer-specializations-list">' + specs.slice(0, 6).map(s => `<span class="dealer-spec-tag">${this.escapeHtml(s)}</span>`).join('') + (specs.length > 6 ? `<span class="dealer-spec-tag more-specs">+${specs.length - 6}</span>` : '') + '</div>';
-                                        }
-                                    } catch (e) {
-                                        return '<span style="opacity: 0.5; font-size: 0.85rem;">General dealer</span>';
+                        ${dealer.specialization ? `
+                            ${(() => {
+                                try {
+                                    const specs = JSON.parse(dealer.specialization);
+                                    if (Array.isArray(specs) && specs.length > 0) {
+                                        return '<div class="dealer-specializations-display"><div class="dealer-specializations-list">' + specs.slice(0, 6).map(s => `<span class="dealer-spec-tag">${this.escapeHtml(s)}</span>`).join('') + (specs.length > 6 ? `<span class="dealer-spec-tag more-specs">+${specs.length - 6}</span>` : '') + '</div></div>';
                                     }
-                                    return '<span style="opacity: 0.5; font-size: 0.85rem;">General dealer</span>';
-                                })()}
-                            ` : '<span style="opacity: 0.5; font-size: 0.85rem;">General dealer</span>'}
-                        </div>
+                                } catch (e) {}
+                                return '';
+                            })()}
+                        ` : ''}
                     </div>
 
                     <div class="dealer-card-actions">

@@ -139,7 +139,6 @@
   flex-direction: column;
   gap: 12px;
   height: 100%;
-  min-height: 280px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   position: relative;
   overflow: hidden;
@@ -367,7 +366,6 @@
   border-top: 1px solid #e5e7eb;
   border-bottom: 1px solid #e5e7eb;
   flex: 1;
-  min-height: 140px;
   align-content: flex-start;
 }
 
@@ -404,7 +402,6 @@
   font-size: 0.85rem;
   color: #4b5563;
   font-weight: 500;
-  min-height: 40px;
 }
 
 .company-card .stat-item-inline {
@@ -593,7 +590,6 @@
 @media (max-width: 768px) {
   .company-card {
     padding: 12px;
-    min-height: 220px;
   }
 
   .company-card .company-card-header {
@@ -621,7 +617,6 @@
   }
 
   .company-card .company-card-body {
-    min-height: 120px;
     gap: 8px;
     padding: 10px 0;
   }

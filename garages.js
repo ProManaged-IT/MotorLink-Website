@@ -1372,13 +1372,13 @@ function createGarageCard(garage) {
     
     // Left side: Logo (if available) + Name and meta info
     html += `<div class="garage-header-left">`;
+    html += `<div class="garage-logo-name-row">`;
     if (garage.logo_url) {
-        html += `<div class="garage-card-logo" style="width:56px;height:56px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#f5f5f5;border:1px solid #e0e0e0;margin-bottom:6px;">
-            <img src="${garage.logo_url}" alt="${escapeHtml(garage.name)} logo" style="width:100%;height:100%;object-fit:contain;" onerror="this.parentElement.style.display='none';">
-        </div>`;
+        html += `<div class="garage-card-logo"><img src="${garage.logo_url}" alt="${escapeHtml(garage.name)} logo" style="width:100%;height:100%;object-fit:contain;" onerror="this.parentElement.style.display='none';"></div>`;
     }
     html += `<h3 class="garage-service-name">${escapeHtml(garage.name)}</h3>`;
-    
+    html += `</div>`;
+
     // Location meta — only if there's data to show
     if (displayDistrict || hasDistance) {
         html += `<div class="loc-panel"><div class="loc-chips">`;
@@ -1413,14 +1413,12 @@ function createGarageCard(garage) {
     // === BODY SECTION ===
     html += `<div class="garage-card-body">`;
     
-    // Operating status (keep row height consistent when missing)
+    // Operating status — only shown when known
     if (isOpen !== null) {
         html += `<div class="garage-status-indicator ${isOpen ? 'open' : 'closed'}">
             <i class="fas fa-circle"></i>
             ${isOpen ? 'Open Now' : 'Closed Now'}
         </div>`;
-    } else {
-        html += `<div class="garage-status-indicator status-spacer" aria-hidden="true">Status</div>`;
     }
 
     const buildGarageInfoRow = (options) => {
@@ -1436,15 +1434,7 @@ function createGarageCard(garage) {
             title = ''
         } = options;
 
-        if (!hasData) {
-            return `<div class="garage-info-row placeholder" aria-hidden="true">
-                <div class="icon"></div>
-                <div class="content">
-                    <span class="label">&nbsp;</span>
-                    <span class="value">&nbsp;</span>
-                </div>
-            </div>`;
-        }
+        if (!hasData) return '';
 
         const classes = ['garage-info-row'];
         if (rowClass) classes.push(rowClass);
@@ -1504,13 +1494,6 @@ function createGarageCard(garage) {
             icon: 'fas fa-globe',
             label: 'Website',
             value: `<a href="${garage.website}" target="_blank" rel="noopener">${displayUrl}</a>`
-        });
-    } else {
-        html += buildGarageInfoRow({
-            hasData: false,
-            icon: 'fas fa-globe',
-            label: 'Website',
-            value: ''
         });
     }
 

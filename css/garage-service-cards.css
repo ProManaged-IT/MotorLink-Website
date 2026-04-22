@@ -5,18 +5,16 @@
 
 .garage-service-card {
   background: white;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
   border: 1px solid #e5e7eb;
-  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  gap: 12px;
-  min-height: 280px;
+  padding: 14px;
+  gap: 10px;
 }
 
 .garage-service-card:hover {
@@ -37,29 +35,48 @@
 
 /* ===== HEADER SECTION ===== */
 .garage-card-header {
-  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 10px;
-  min-height: 70px;
-  margin-bottom: 6px;
+  gap: 8px;
 }
 
-/* Left side container for name and meta */
+/* Left side: logo+name row + location meta below */
 .garage-header-left {
   flex: 1;
-  min-width: 0; /* Allow shrinking */
-  padding-right: 110px; /* Space for badges on the right */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Logo and name side-by-side */
+.garage-logo-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.garage-logo-name-row .garage-card-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
 }
 
 .garage-service-name {
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 700;
   color: #1f2937;
-  margin: 0 0 6px 0;
+  margin: 0;
   line-height: 1.25;
   letter-spacing: -0.02em;
+  flex: 1;
+  min-width: 0;
 }
 
 /* Panel styles moved to css/location-panel.css */
@@ -77,44 +94,31 @@
   color: #9ca3af;
 }
 
-/* Corner Ribbon Badges - Elegant Watermark Style */
+/* Compact pill badges — right column in header */
 .garage-status-badges {
-  position: absolute;
-  top: 0;
-  right: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  z-index: 5;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .garage-badge {
-  position: relative;
-  padding: 6px 14px 6px 10px;
-  font-size: 0.65rem;
+  padding: 3px 10px;
+  font-size: 0.6rem;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 10px 100%);
-  box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.15);
-  min-width: 90px;
-  backdrop-filter: blur(10px);
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
-/* Folded corner effect */
+/* Remove the folded-corner pseudo-element */
 .garage-badge::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: -5px;
-  width: 10px;
-  height: 5px;
-  background: inherit;
-  filter: brightness(0.6);
-  clip-path: polygon(0 0, 100% 0, 0 100%);
+  display: none;
 }
 
 .garage-badge.verified {
@@ -149,9 +153,7 @@
 }
 
 .garage-status-indicator.status-spacer {
-  visibility: hidden;
-  border-color: transparent;
-  background: transparent;
+  display: none;
 }
 
 /* Info Row Template - Minimal */
@@ -168,8 +170,7 @@
 }
 
 .garage-info-row.placeholder {
-  visibility: hidden;
-  pointer-events: none;
+  display: none;
 }
 
 .garage-info-row:hover {
@@ -459,12 +460,13 @@
 
 /* ===== ACTIONS FOOTER - COMPACT ===== */
 .garage-card-actions {
-  padding: 8px 12px;
-  background: #fafafa;
-  border-top: 1px solid #e8e8e8;
+  padding: 8px 0 0;
+  background: transparent;
+  border-top: 1px solid #f0f0f0;
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  margin-top: auto;
 }
 
 .garage-action-btn {
@@ -585,50 +587,25 @@
   /* Compact header */
   .garage-card-header {
     padding: 0;
-    background: white;
-    min-height: 52px;
   }
 
   .garage-header-left {
-    padding-right: 55px; /* Less space needed on mobile */
+    gap: 3px;
   }
 
-  .garage-service-name {
-    font-size: 0.9rem;
-    font-weight: 700;
-    margin-bottom: 4px;
-    line-height: 1.2;
-    color: #111827;
-    display: inline-block;
-    padding: 5px 10px 5px 8px;
-    background: linear-gradient(135deg, #f7faf7 0%, #edfdf2 100%);
-    border-left: 3px solid #00c853;
-    border-radius: 0 10px 10px 0;
-    box-shadow: inset 0 0 0 1px rgba(0, 200, 83, 0.08);
-    max-width: calc(100% - 4px);
-  }
-  
-  .garage-meta-item {
-    font-size: 0.65rem;
+  .garage-logo-name-row .garage-card-logo {
+    width: 38px;
+    height: 38px;
   }
 
   .garage-status-badges {
-    top: 2px;
-    right: 2px;
     gap: 4px;
-    align-items: flex-end;
   }
   
-  /* Mobile badges - cleaner pills instead of ribbons */
+  /* Mobile badges - pill style */
   .garage-badge {
-    font-size: 0.6rem;
-    padding: 4px 9px;
-    min-width: auto;
-    border-radius: 999px;
-    clip-path: none;
-    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
-    letter-spacing: 0.25px;
-    backdrop-filter: none;
+    font-size: 0.58rem;
+    padding: 3px 8px;
   }
 
   .garage-badge::after {
@@ -842,11 +819,16 @@
 
   .garage-card-header {
     padding: 0;
-    min-height: 46px;
+  }
+  
+  .garage-logo-name-row .garage-card-logo {
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
   }
   
   .garage-header-left {
-    padding-right: 46px;
+    gap: 2px;
   }
   
   .garage-service-name {
@@ -928,11 +910,7 @@
   }
   
   .garage-card-header {
-    padding: 5px 6px 4px;
-  }
-  
-  .garage-header-left {
-    padding-right: 45px;
+    padding: 0;
   }
   
   .garage-service-name {
@@ -942,7 +920,6 @@
   .garage-badge {
     font-size: 0.55rem;
     padding: 3px 7px;
-    min-width: auto;
   }
   
   .garage-card-body {
@@ -1030,15 +1007,6 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-  }
-
-  .garage-header-left {
-    padding-right: 50px;
-  }
-
-  .garage-badge {
-    font-size: 0.56rem;
-    padding: 3px 7px;
   }
 
   .garage-info-row {

@@ -22,7 +22,6 @@
   flex-direction: column;
   gap: 12px;
   height: 100%;
-  min-height: 280px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   position: relative;
   overflow: hidden;
@@ -171,7 +170,6 @@
   border-top: 1px solid #e5e7eb;
   border-bottom: 1px solid #e5e7eb;
   flex: 1;
-  min-height: 140px; /* Reduced for more compact design */
 }
 
 /* Rating - Enhanced Visibility */
@@ -214,7 +212,6 @@
   font-size: 0.85rem;
   color: #4b5563;
   font-weight: 500;
-  min-height: 40px; /* Reduced for more compact design */
 }
 
 .dealer-business-card .dealer-stats-display i,
@@ -364,11 +361,10 @@
 @media (max-width: 640px) {
   .dealer-business-card {
     padding: 12px;
-    min-height: 220px;
   }
 
   .dealer-business-card .dealer-card-header {
-    min-height: 60px;
+    gap: 8px;
     gap: 8px;
   }
 
@@ -388,7 +384,6 @@
   }
 
   .dealer-business-card .dealer-card-body {
-    min-height: 120px;
     gap: 8px;
     padding: 10px 0;
   }
@@ -415,7 +410,6 @@
   /* Compact stats and specializations */
   .dealer-business-card .dealer-stats-display,
   .dealer-business-card .dealer-specializations-display {
-    min-height: 35px;
     font-size: 0.8rem;
     gap: 6px;
   }
@@ -583,7 +577,6 @@
 
   .dealer-business-card .dealer-stats-display,
   .dealer-business-card .dealer-specializations-display {
-    min-height: 30px;
     font-size: 0.75rem;
   }
 
@@ -632,7 +625,6 @@
   .dealer-business-card.featured-dealer .dealer-card-header {
     padding-bottom: 8px;
     border-bottom: 2px solid #fef3c7;
-    min-height: 50px;
     margin-bottom: 8px;
   }
 
@@ -692,7 +684,6 @@
   /* 📦 MODERN CARD BODY */
   .dealer-business-card .dealer-card-body,
   .dealer-business-card.featured-dealer .dealer-card-body {
-    min-height: 100px;
     gap: 12px;
     padding: 14px 0;
     background: transparent;
@@ -736,7 +727,6 @@
   .dealer-business-card .dealer-specializations-display,
   .dealer-business-card.featured-dealer .dealer-stats-display,
   .dealer-business-card.featured-dealer .dealer-specializations-display {
-    min-height: 36px;
     font-size: 0.75rem;
     background: linear-gradient(135deg, #f1f5f9 0%, #ffffff 100%);
     border: 2px solid #e2e8f0;

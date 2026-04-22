@@ -344,11 +344,9 @@ function renderCompanies(data) {
                 ` : ''}
 
                 <div class="company-card-body">
+                    ${(company.total_vehicles > 0 || company.daily_rate_from || company.weekly_rate_from) ? `
                     <div class="company-stats-display">
-                        <div class="stat-item-inline">
-                            <i class="fas fa-car"></i>
-                            <span>${company.total_vehicles || 0} vehicles</span>
-                        </div>
+                        ${company.total_vehicles > 0 ? `<div class="stat-item-inline"><i class="fas fa-car"></i><span>${company.total_vehicles} vehicles</span></div>` : ''}
                         ${company.daily_rate_from && company.daily_rate_to ? `
                             <div class="stat-item-inline price-item">
                                 <i class="fas fa-calendar-day"></i>
@@ -372,6 +370,7 @@ function renderCompanies(data) {
                             </div>
                         ` : ''}
                     </div>
+                    ` : ''}
 
                     ${vehicleTypes.length > 0 ? `
                         <div class="company-vehicle-types">

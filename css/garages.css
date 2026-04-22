@@ -520,30 +520,30 @@ html {
   width: 100% !important;
 }
 
-/* SPACIOUS GARAGE GRIDS - 2-3 per row */
+/* COMPACT MODERN GARAGE GRIDS */
 .garage-services-grid,
 .garage-section-grid {
   display: grid !important;
   grid-template-columns: 1fr !important;
-  gap: 24px !important;
+  gap: 14px !important;
   margin: var(--space-xl) 0 !important;
   width: 100% !important;
   align-items: stretch;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 480px) {
   .garage-services-grid,
   .garage-section-grid {
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 28px !important;
+    gap: 16px !important;
   }
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 960px) {
   .garage-services-grid,
   .garage-section-grid {
     grid-template-columns: repeat(3, 1fr) !important;
-    gap: 32px !important;
+    gap: 18px !important;
   }
 }
 
@@ -557,44 +557,44 @@ html {
 .garage-section .garage-section-grid {
   display: grid !important;
   grid-template-columns: 1fr !important;
-  gap: 24px !important;
+  gap: 14px !important;
   width: 100% !important;
   align-items: stretch;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 480px) {
   .garage-section .garage-section-grid {
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 28px !important;
+    gap: 16px !important;
   }
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 960px) {
   .garage-section .garage-section-grid {
     grid-template-columns: repeat(3, 1fr) !important;
-    gap: 32px !important;
+    gap: 18px !important;
   }
 }
 
 .garage-section.google-section .garage-section-grid {
   display: grid !important;
   grid-template-columns: 1fr !important;
-  gap: 24px !important;
+  gap: 14px !important;
   width: 100% !important;
   align-items: stretch;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 480px) {
   .garage-section.google-section .garage-section-grid {
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 28px !important;
+    gap: 16px !important;
   }
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 960px) {
   .garage-section.google-section .garage-section-grid {
     grid-template-columns: repeat(3, 1fr) !important;
-    gap: 32px !important;
+    gap: 18px !important;
   }
 }
 

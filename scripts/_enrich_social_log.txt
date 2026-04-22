@@ -5,3 +5,15 @@
   car_dealers: 227 rows need enrichment
 11:58:43     ~ Stansfield Motors                | ph:y web:y fb:y ig:- tw:- wa:y
 12:04:37     ~ Chrispine chimbiya               | ph:y web:y fb:y ig:- tw:- wa:y
+12:08:57 
+  garages: 285 rows need enrichment
+12:17:04     ~ MOTOR POINT                      | ph:y web:y fb:y ig:y tw:y wa:y
+12:26:19 
+  car_hire_companies: 77 rows need enrichment
+12:30:30 
+  Enriched: 3  |  No change / no data found: 586
+12:30:30 === SUMMARY ===
+12:30:30   car_dealers               active:233 | phone:182 | web: 56 | fb: 32 | ig: 14 | wa:176 | logo:143
+12:30:30   garages                   active:290 | phone:232 | web: 56 | fb: 23 | ig: 11 | wa:226 | logo:201
+12:30:30   car_hire_companies        active: 80 | phone: 72 | web: 38 | fb: 16 | ig:  5 | wa: 72 | logo: 54
+12:30:30 Done.
