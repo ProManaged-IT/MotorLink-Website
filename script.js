@@ -3136,12 +3136,16 @@ applyFilters() {
     const sortBy = document.getElementById('sortSelect')?.value || 'featured';
 
     this.filteredDealers = (this.dealers || []).filter(dealer => {
-        // Text search — name, location, description
+        // Text search — name, location, address, phone, description
         if (searchTerm) {
-            const name = (dealer.business_name || '').toLowerCase();
-            const loc  = (dealer.location_name  || '').toLowerCase();
-            const desc = (dealer.description    || '').toLowerCase();
-            if (!name.includes(searchTerm) && !loc.includes(searchTerm) && !desc.includes(searchTerm)) {
+            const name  = (dealer.business_name || '').toLowerCase();
+            const loc   = (dealer.location_name  || '').toLowerCase();
+            const addr  = (dealer.address        || '').toLowerCase();
+            const phone = (dealer.phone          || '').toLowerCase();
+            const desc  = (dealer.description    || '').toLowerCase();
+            if (!name.includes(searchTerm) && !loc.includes(searchTerm) &&
+                !addr.includes(searchTerm) && !phone.includes(searchTerm) &&
+                !desc.includes(searchTerm)) {
                 return false;
             }
         }

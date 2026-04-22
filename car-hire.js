@@ -481,13 +481,17 @@ function applyFilters() {
         });
     }
 
-    // Text search (name, description, location)
+    // Text search (name, description, location, address, phone)
     if (searchTerm) {
         filtered = filtered.filter(c => {
-            const name = (c.business_name || c.company_name || '').toLowerCase();
-            const desc = (c.description || '').toLowerCase();
-            const loc  = (c.location_name || c.location || '').toLowerCase();
-            return name.includes(searchTerm) || desc.includes(searchTerm) || loc.includes(searchTerm);
+            const name  = (c.business_name || c.company_name || '').toLowerCase();
+            const desc  = (c.description   || '').toLowerCase();
+            const loc   = (c.location_name || c.location || '').toLowerCase();
+            const addr  = (c.address       || '').toLowerCase();
+            const phone = (c.phone         || c.contact_phone || '').toLowerCase();
+            return name.includes(searchTerm) || desc.includes(searchTerm) ||
+                   loc.includes(searchTerm)  || addr.includes(searchTerm) ||
+                   phone.includes(searchTerm);
         });
     }
 

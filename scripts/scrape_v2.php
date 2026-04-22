@@ -571,6 +571,133 @@ function buildDescription(string $name, string $city, string $website, array $so
     return $parts ? implode(' ', $parts) : "A $label in Malawi listed on MotorLink.";
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Relevance guard — returns false if the business is clearly NOT automotive
+ * or is outside Malawi (or the configured COUNTRY).
+ *
+ * @param string $name    Business name from Google Places
+ * @param string $address Formatted address from Google Places
+ * @param string $type    'dealer' | 'garage' | 'car_hire'
+ */
+function isRelevantBusiness(string $name, string $address, string $type): bool
+{
+    global $COUNTRY;
+    $country = $COUNTRY ?? 'Malawi';
+
+    // ── 1. Foreign-address check ──────────────────────────────────────────────
+    $foreignCountries = [
+        'Tanzania', 'Zambia', 'Zimbabwe', 'South Africa', 'Mozambique', 'Kenya',
+        'Uganda', 'Namibia', 'Botswana', 'Jamaica', 'Sri Lanka', 'Barbados',
+        'Cameroon', 'Nigeria', 'Ghana', 'Ethiopia', 'Rwanda', 'Senegal',
+        'United Kingdom', 'United States', 'India', 'China',
+        'Dar es Salaam', 'Arusha', 'Lusaka', 'Johannesburg', 'Pretoria',
+        'Cape Town', 'Nairobi', 'Mombasa', 'Maputo', 'London', 'Glasgow',
+        'Harare', 'Gaborone', 'Windhoek', 'Kampala',
+    ];
+    // If COUNTRY is set to e.g. 'Zambia', allow Zambia addresses
+    foreach ($foreignCountries as $fc) {
+        if ($fc === $country) continue;  // Skip if it IS the target country
+        if (stripos($address, $fc) !== false) return false;
+    }
+
+    // Must contain Malawi (or target country) somewhere in the address
+    // (skip this check if address is very short — may be vicinity-only)
+    if (strlen($address) > 40 && stripos($address, $country) === false) {
+        // Secondary heuristic: allow if one of the known Malawi cities appears
+        $malawi_cities = ['Lilongwe', 'Blantyre', 'Mzuzu', 'Zomba', 'Kasungu',
+            'Salima', 'Mangochi', 'Limbe', 'Liwonde', 'Karonga', 'Balaka', 'Dedza'];
+        $found = false;
+        foreach ($malawi_cities as $mc) {
+            if (stripos($address, $mc) !== false) { $found = true; break; }
+        }
+        if (!$found) return false;
+    }
+
+    // ── 2. Name-pattern reject list (non-automotive) ─────────────────────────
+    $rejectPatterns = [
+        // Infrastructure / government
+        'police station', 'police college', 'police post', 'police camp',
+        'district assembly', 'district council', 'municipal council', 'city council',
+        'revenue authority', 'customs', 'immigration',
+        'fire station', 'fire brigade', 'fire service',
+        'hospital', 'health centre', 'clinic', 'medical', 'pharmacy', 'dispensary',
+        'university', 'college of', 'technical college', 'secondary school', 'primary school',
+        // Finance
+        'national bank', 'nbs bank', 'standard bank', 'fincorp', 'first merchant bank',
+        'nico life', 'old mutual', 'real insurance',
+        'microfinance', 'investment loan', 'cash invest', 'mukuru', 'finca',
+        'pinnacle financial', 'forex bureau',
+        // Transport (non-car) infrastructure
+        'bus station', 'bus depot', 'bus stop', 'bus rank', 'bus terminal',
+        'taxi rank', 'minibus rank', 'bicycle hire', 'bicycle repair', 'bicycle shop',
+        'motorcycle courier',
+        // Airports / airstrips
+        'international airport', 'domestic airport', ' airstrip',
+        'aeroportul',  // Romanian Google Maps artifact
+        // Accommodation (not car-related)
+        'backpackers', 'eco lodge', 'safari camp', 'safari lodge',
+        'national park', 'game reserve', 'wildlife reserve',
+        'rest house', 'chalets',
+        // Religion
+        'assemblies of god', 'church of', 'mosque', 'cathedral', 'cathedral',
+        // Retail / Food / Beauty
+        'supermarket', 'superstore', 'cash n carry', 'cash and carry', 'grocery',
+        'hardware store', 'general hardware',
+        'beauty salon', 'spa & salon', 'tjs spa', 'barbershop', 'hair salon',
+        'bridal', 'wedding dress',
+        'restaurant ', 'cafe ', 'bakery', 'eatery', 'fast food',
+        'gym ', ' gym', 'fitness centre', 'crossroad gym', 'ns gym',
+        // Electronics
+        'electronics shop', 'phone shop', 'cellphone repair', 'smartphone solution',
+        'computer repair', 'specta electronics', 'wills electronics',
+        // Printing / Office
+        'sprint printers', 'printing services', 'copy shop',
+        // Agro / other industries
+        'agro dealer', 'agro vet', 'veterinary',
+        'travel agent', 'tours & travel',
+        'security company', 'security services',
+    ];
+
+    $lowerName = strtolower($name);
+    foreach ($rejectPatterns as $p) {
+        if (strpos($lowerName, $p) !== false) return false;
+    }
+
+    // ── 3. Fuel stations are NOT garages or dealers ───────────────────────────
+    //    (They can appear in nearby search due to the word "service station")
+    $fuelPatterns = [
+        'totalenergies', 'total energies', 'puma energy', 'engen ', 'kobil',
+        'petroda', 'jemec engen', 'mt meru filling', 'meru filling',
+        'bp service station', 'shell service station', 'mobil service',
+        'filling station', 'petrol station', 'fuel station', 'service station',
+        'presidential way total', 'supersink filling',
+    ];
+    foreach ($fuelPatterns as $p) {
+        if (strpos($lowerName, $p) !== false) return false;
+    }
+
+    // ── 4. Car hire companies should not land in dealer/garage ───────────────
+    //    (and vice-versa for obvious lodges in car_hire)
+    if ($type !== 'car_hire') {
+        $hireOnlyPatterns = [' car hire', ' car rental', ' rent-a-car', 'rent a car', 'car rentals',
+                             'vehicle hire', 'self drive hire'];
+        foreach ($hireOnlyPatterns as $p) {
+            if (strpos($lowerName, $p) !== false) return false;
+        }
+    }
+
+    // Car wash is NOT a garage (it's a standalone service category)
+    if ($type === 'garage') {
+        $nonGaragePatterns = ['car wash', 'car detailing', 'auto wash', 'car cleaning'];
+        foreach ($nonGaragePatterns as $p) {
+            if (strpos($lowerName, $p) !== false) return false;
+        }
+    }
+
+    return true;
+}
+
 /**
  * Text Search — up to 3 pages (60 results max per query).
  */
@@ -685,6 +812,8 @@ if (!$enrichOnly) {
                     $hits = textSearch($q, $apiKey, $seenPids);
                     foreach ($hits as $h) {
                         if (count($discovered[$type]) >= $target) break;
+                        // Early relevance filter — saves Place Details quota
+                        if (!isRelevantBusiness($h['name'], $h['addr'], $type)) continue;
                         $discovered[$type][] = $h + ['city_hint' => $city];
                     }
                 }
@@ -708,6 +837,7 @@ if (!$enrichOnly) {
                     if ($hits) {
                         foreach ($hits as $h) {
                             if (count($discovered[$type]) >= $target) break;
+                            if (!isRelevantBusiness($h['name'], $h['addr'], $type)) continue;
                             $discovered[$type][] = $h + ['city_hint' => $city];
                         }
                         jlog("    [nearby] [{$city}] +" . count($hits)
@@ -829,6 +959,13 @@ if (!$enrichOnly) {
                 $website  = $r['website'] ?? '';
                 $city     = cityFromAddress($address) ?: $city;
                 if (!empty($r['photos'][0]['photo_reference'])) $photoRef = $r['photos'][0]['photo_reference'];
+            }
+
+            // ── Relevance check — skip non-automotive / foreign businesses ────
+            if (!isRelevantBusiness($name, $address, $type)) {
+                jlog("    [SKIP:relevance] $name — $address");
+                $skipped++;
+                continue;
             }
 
             // Scrape website for social links, WhatsApp, and additional phone
