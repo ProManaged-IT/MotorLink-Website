@@ -42,6 +42,7 @@ class CarDetailManager {
 
             if (data.success && data.listing) {
                 this.renderCarDetail(data.listing);
+                this.updatePageSEO(data.listing);
                 this.checkSavedStatus();
             } else {
                 this.showError(data.message || 'Failed to load car details');
@@ -69,6 +70,83 @@ class CarDetailManager {
             }
         } catch (error) {
             // Silently fail - will use localStorage fallback
+        }
+    }
+
+    updatePageSEO(listing) {
+        const make = listing.make_name || listing.make || '';
+        const model = listing.model_name || listing.model || '';
+        const year = listing.year || '';
+        const price = listing.price ? `${CONFIG.CURRENCY_CODE || 'MWK'} ${parseInt(listing.price).toLocaleString()}` : null;
+        const location = listing.location_name || listing.district || 'Malawi';
+        const pageUrl = window.location.href;
+        const title = listing.title || `${year} ${make} ${model}`.trim() || 'Car for Sale';
+        const pageTitle = `${title} — MotorLink | Buy in ${location}`;
+        const desc = [
+            price ? `${title} for ${price}.` : `${title} for sale.`,
+            listing.mileage ? `${parseInt(listing.mileage).toLocaleString()} km.` : '',
+            listing.transmission ? `${listing.transmission} transmission.` : '',
+            `Listed on MotorLink, Malawi's #1 car marketplace.`
+        ].filter(Boolean).join(' ');
+
+        // First image URL
+        let imgUrl = 'https://promanaged-it.com/motorlink/motorlink-ad-banner.png';
+        if (listing.images && listing.images.length > 0) {
+            imgUrl = `${CONFIG.API_URL}?action=image&id=${listing.images[0].id}`;
+        }
+
+        // Update <title> and meta tags
+        document.title = pageTitle;
+        const setMeta = (sel, attr, val) => { const el = document.querySelector(sel); if (el) el.setAttribute(attr, val); };
+        setMeta('meta[name="description"]', 'content', desc);
+        setMeta('#canonicalTag', 'href', pageUrl);
+        setMeta('#ogUrl', 'content', pageUrl);
+        setMeta('#ogTitle', 'content', pageTitle);
+        setMeta('#ogDescription', 'content', desc);
+        setMeta('#ogImage', 'content', imgUrl);
+        setMeta('#twitterTitle', 'content', pageTitle);
+        setMeta('#twitterDescription', 'content', desc);
+        setMeta('#twitterImage', 'content', imgUrl);
+
+        // Update JSON-LD with Vehicle schema
+        const ldEl = document.getElementById('listingJsonLd');
+        if (ldEl) {
+            const ld = {
+                "@context": "https://schema.org",
+                "@graph": [
+                    {
+                        "@type": "Vehicle",
+                        "name": title,
+                        "url": pageUrl,
+                        "description": desc,
+                        "brand": {"@type": "Brand", "name": make},
+                        "model": model,
+                        "modelDate": year ? String(year) : undefined,
+                        "mileageFromOdometer": listing.mileage ? {"@type": "QuantitativeValue", "value": parseInt(listing.mileage), "unitCode": "KMT"} : undefined,
+                        "vehicleTransmission": listing.transmission || undefined,
+                        "fuelType": listing.fuel_type || undefined,
+                        "image": imgUrl,
+                        "offers": {
+                            "@type": "Offer",
+                            "priceCurrency": CONFIG.CURRENCY_CODE || "MWK",
+                            "price": listing.price ? String(listing.price) : undefined,
+                            "availability": "https://schema.org/InStock",
+                            "seller": {"@type": "Person", "name": listing.seller_name || "Private Seller"},
+                            "areaServed": {"@type": "Country", "name": "Malawi"}
+                        }
+                    },
+                    {
+                        "@type": "BreadcrumbList",
+                        "itemListElement": [
+                            {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://promanaged-it.com/motorlink/"},
+                            {"@type": "ListItem", "position": 2, "name": "Cars for Sale", "item": "https://promanaged-it.com/motorlink/index.html"},
+                            {"@type": "ListItem", "position": 3, "name": title, "item": pageUrl}
+                        ]
+                    }
+                ]
+            };
+            // Remove undefined fields
+            ldEl.textContent = JSON.stringify(ld, (k, v) => v === undefined ? undefined : v, 2);
         }
     }
 

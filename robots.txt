@@ -18,10 +18,17 @@ Allow: /car.html
 Allow: /showroom.html
 Allow: /login.html
 Allow: /register.html
+Allow: /contact.html
+Allow: /help.html
+Allow: /safety.html
+Allow: /terms.html
+Allow: /cookie-policy.html
 Allow: /onboarding/
 Allow: /css/
 Allow: /js/
 Allow: /assets/
+Allow: /manifest.json
+Allow: /motorlink-ad-banner.png
 
 # Block admin and internal pages from search engines
 Disallow: /admin/
@@ -31,6 +38,7 @@ Disallow: /config.js
 Disallow: /logs/
 Disallow: /scripts/
 Disallow: /database/
+Disallow: /core/
 
 # Block user-specific pages (not useful for search)
 Disallow: /profile.html
