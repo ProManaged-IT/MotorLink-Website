@@ -551,6 +551,13 @@ function renderFleet(data) {
                             </div>
                         `}
                     </div>
+
+                    ${isAvailable && companyData?.whatsapp ? `
+                        <button class="fleet-wa-book-btn"
+                            onclick="carHireBooking.open(${vehicle.id}, ${vehicle.company_id}, '${escapeHtml(vehicle.vehicle_name).replace(/'/g, "\\'")}', ${vehicle.daily_rate})">
+                            <i class="fab fa-whatsapp"></i> Book via WhatsApp
+                        </button>
+                    ` : ''}
                 </div>
             </div>
         `;

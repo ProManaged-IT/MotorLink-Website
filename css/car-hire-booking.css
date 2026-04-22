@@ -1,0 +1,457 @@
+/* ============================================================
+   car-hire-booking.css — WhatsApp booking modal styles
+   Follows MotorLink design language (WA green, native-app feel)
+   ============================================================ */
+
+/* ── Body lock when modal is open ───────────────────────────── */
+body.wabk-body-lock {
+    overflow: hidden;
+}
+
+/* ── Overlay ─────────────────────────────────────────────────── */
+.wabk-overlay {
+    display:          none;
+    position:         fixed;
+    inset:            0;
+    background:       rgba(0, 0, 0, 0.55);
+    z-index:          9900;
+    align-items:      flex-end;
+    justify-content:  center;
+    backdrop-filter:  blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+}
+
+.wabk-overlay.wabk-visible {
+    display: flex;
+    animation: wabkFadeIn 0.18s ease;
+}
+
+@keyframes wabkFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* ── Bottom sheet ────────────────────────────────────────────── */
+.wabk-sheet {
+    background:    #fff;
+    width:         100%;
+    max-width:     560px;
+    max-height:    92vh;
+    overflow-y:    auto;
+    border-radius: 18px 18px 0 0;
+    box-shadow:    0 -4px 40px rgba(0,0,0,0.22);
+    animation:     wabkSlideUp 0.28s cubic-bezier(0.4,0,0.2,1);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@keyframes wabkSlideUp {
+    from { transform: translateY(60px); opacity: 0.4; }
+    to   { transform: translateY(0);    opacity: 1;   }
+}
+
+/* Desktop: center as a dialog */
+@media (min-width: 600px) {
+    .wabk-overlay {
+        align-items: center;
+    }
+    .wabk-sheet {
+        border-radius: 16px;
+        max-height: 88vh;
+    }
+}
+
+/* ── Header ──────────────────────────────────────────────────── */
+.wabk-header {
+    display:         flex;
+    align-items:     center;
+    gap:             12px;
+    padding:         18px 20px 14px;
+    border-bottom:   1px solid #f0f0f0;
+    position:        sticky;
+    top:             0;
+    background:      #fff;
+    z-index:         2;
+}
+
+.wabk-header-icon {
+    width:           42px;
+    height:          42px;
+    border-radius:   50%;
+    background:      #25d366;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    flex-shrink:     0;
+}
+
+.wabk-header-icon i {
+    font-size:  22px;
+    color:      #fff;
+}
+
+.wabk-header-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.wabk-header-text h2 {
+    font-size:    1.05rem;
+    font-weight:  700;
+    margin:       0 0 2px;
+    color:        #111;
+}
+
+.wabk-header-text p {
+    font-size: 0.78rem;
+    color:     #666;
+    margin:    0;
+}
+
+.wabk-close {
+    background:   none;
+    border:       none;
+    width:        36px;
+    height:       36px;
+    border-radius: 50%;
+    display:      flex;
+    align-items:  center;
+    justify-content: center;
+    cursor:       pointer;
+    color:        #555;
+    font-size:    16px;
+    flex-shrink:  0;
+    transition:   background 0.15s;
+}
+
+.wabk-close:hover {
+    background: #f0f0f0;
+    color: #111;
+}
+
+/* ── Vehicle banner ──────────────────────────────────────────── */
+.wabk-vehicle-banner {
+    padding:    12px 20px;
+    background: #f7fff8;
+    border-bottom: 1px solid #e0f5e4;
+}
+
+.wabk-vehicle-info {
+    display:         flex;
+    justify-content: space-between;
+    align-items:     center;
+    gap:             8px;
+}
+
+.wabk-vehicle-name {
+    font-size:   0.88rem;
+    font-weight: 700;
+    color:       #1a1a1a;
+    overflow:    hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width:   60%;
+}
+
+.wabk-vehicle-rate {
+    font-size:   0.82rem;
+    font-weight: 600;
+    color:       #25d366;
+    white-space: nowrap;
+}
+
+/* ── Form body ────────────────────────────────────────────────── */
+.wabk-body {
+    padding: 18px 20px 20px;
+}
+
+.wabk-field {
+    margin-bottom: 14px;
+    flex: 1;
+    min-width: 0;
+}
+
+.wabk-field label {
+    display:     block;
+    font-size:   0.78rem;
+    font-weight: 600;
+    color:       #444;
+    margin-bottom: 5px;
+}
+
+.wabk-field label i {
+    margin-right: 4px;
+    color: #888;
+}
+
+.wabk-input {
+    width:        100%;
+    border:       1.5px solid #e0e0e0;
+    border-radius: 10px;
+    padding:      10px 13px;
+    font-size:    0.9rem;
+    outline:      none;
+    transition:   border-color 0.15s, box-shadow 0.15s;
+    background:   #fafafa;
+    color:        #111;
+    box-sizing:   border-box;
+}
+
+.wabk-input:focus {
+    border-color: #25d366;
+    box-shadow:   0 0 0 3px rgba(37,211,102,0.12);
+    background:   #fff;
+}
+
+.wabk-textarea {
+    resize:    vertical;
+    min-height: 62px;
+    font-family: inherit;
+}
+
+.wabk-row {
+    display: flex;
+    gap:     12px;
+}
+
+@media (max-width: 420px) {
+    .wabk-row {
+        flex-direction: column;
+        gap: 0;
+    }
+}
+
+/* ── Cost summary ─────────────────────────────────────────────── */
+.wabk-cost-summary {
+    background:    #f7fff8;
+    border:        1px solid #d4f0dc;
+    border-radius: 10px;
+    padding:       10px 14px;
+    margin-bottom: 14px;
+    display:       flex;
+    flex-direction: column;
+    gap:           6px;
+}
+
+.wabk-cost-row {
+    display:         flex;
+    justify-content: space-between;
+    align-items:     center;
+    font-size:       0.83rem;
+    color:           #555;
+}
+
+.wabk-cost-row span i {
+    margin-right: 5px;
+    color: #25d366;
+}
+
+.wabk-cost-row.total {
+    font-size:   0.9rem;
+    color:       #111;
+    border-top:  1px solid #d4f0dc;
+    padding-top: 6px;
+    margin-top:  2px;
+}
+
+.wabk-cost-row.total strong {
+    color:      #128c49;
+    font-size:  0.95rem;
+}
+
+/* ── Error msg ────────────────────────────────────────────────── */
+.wabk-error {
+    background:    #fff1f1;
+    border:        1px solid #f5c2c2;
+    border-radius: 8px;
+    padding:       10px 14px;
+    font-size:     0.83rem;
+    color:         #c0392b;
+    margin-bottom: 12px;
+}
+
+/* ── Submit button ────────────────────────────────────────────── */
+.wabk-submit {
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    gap:             9px;
+    width:           100%;
+    padding:         14px 20px;
+    border:          none;
+    border-radius:   12px;
+    background:      #25d366;
+    color:           #fff;
+    font-size:       1rem;
+    font-weight:     700;
+    cursor:          pointer;
+    transition:      background 0.2s, transform 0.1s;
+    min-height:      50px;
+}
+
+.wabk-submit i {
+    font-size: 1.15rem;
+}
+
+.wabk-submit:hover:not(:disabled) {
+    background: #1dba59;
+}
+
+.wabk-submit:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.wabk-submit:disabled {
+    background: #a0d8b0;
+    cursor:     not-allowed;
+}
+
+/* ── Success state ────────────────────────────────────────────── */
+.wabk-success {
+    padding:    26px 20px 28px;
+    text-align: center;
+}
+
+.wabk-success-icon {
+    font-size:   3.2rem;
+    color:       #25d366;
+    margin-bottom: 12px;
+    line-height: 1;
+}
+
+.wabk-success h3 {
+    font-size:   1.2rem;
+    font-weight: 700;
+    margin:      0 0 8px;
+    color:       #111;
+}
+
+.wabk-success p {
+    font-size: 0.88rem;
+    color:     #555;
+    margin:    0 0 20px;
+    line-height: 1.5;
+}
+
+.wabk-success-actions {
+    display:        flex;
+    flex-direction: column;
+    gap:            10px;
+    align-items:    center;
+}
+
+.wabk-btn-wa {
+    display:         inline-flex;
+    align-items:     center;
+    gap:             8px;
+    padding:         13px 24px;
+    background:      #25d366;
+    color:           #fff;
+    border-radius:   12px;
+    font-size:       0.95rem;
+    font-weight:     700;
+    text-decoration: none;
+    transition:      background 0.2s;
+    min-height:      48px;
+}
+
+.wabk-btn-wa:hover {
+    background: #1dba59;
+    color: #fff;
+}
+
+.wabk-btn-wa i { font-size: 1.2rem; }
+
+.wabk-btn-secondary {
+    background:    none;
+    border:        1.5px solid #ddd;
+    border-radius: 10px;
+    padding:       10px 22px;
+    font-size:     0.88rem;
+    color:         #555;
+    cursor:        pointer;
+    transition:    background 0.15s;
+}
+
+.wabk-btn-secondary:hover {
+    background: #f5f5f5;
+}
+
+/* ── Bot hint panel ───────────────────────────────────────────── */
+.wabk-bot-hint {
+    margin-top:    20px;
+    background:    #f0f9f3;
+    border:        1px solid #d0eadc;
+    border-radius: 12px;
+    padding:       14px 16px;
+    text-align:    left;
+}
+
+.wabk-bot-hint-label {
+    font-size:   0.78rem;
+    font-weight: 600;
+    color:       #128c49;
+    margin:      0 0 10px;
+}
+
+.wabk-bot-hint-label i {
+    margin-right: 5px;
+}
+
+.wabk-bot-options {
+    display:        flex;
+    flex-direction: column;
+    gap:            7px;
+}
+
+.wabk-bot-option {
+    display:     flex;
+    align-items: center;
+    gap:         10px;
+    font-size:   0.83rem;
+    color:       #333;
+}
+
+.opt-num {
+    display:         inline-flex;
+    align-items:     center;
+    justify-content: center;
+    width:           24px;
+    height:          24px;
+    border-radius:   50%;
+    background:      #25d366;
+    color:           #fff;
+    font-size:       0.72rem;
+    font-weight:     700;
+    flex-shrink:     0;
+}
+
+/* ── Fleet card "Book" button ─────────────────────────────────── */
+.fleet-wa-book-btn {
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    gap:             7px;
+    width:           100%;
+    margin-top:      12px;
+    padding:         11px 16px;
+    border:          none;
+    border-radius:   10px;
+    background:      #25d366;
+    color:           #fff;
+    font-size:       0.88rem;
+    font-weight:     700;
+    cursor:          pointer;
+    transition:      background 0.2s, transform 0.1s;
+    min-height:      44px;
+    text-align:      center;
+}
+
+.fleet-wa-book-btn i { font-size: 1rem; }
+
+.fleet-wa-book-btn:hover {
+    background: #1dba59;
+}
+
+.fleet-wa-book-btn:active {
+    transform: scale(0.97);
+}

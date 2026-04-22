@@ -436,6 +436,26 @@ try {
             handleSaveFooterSupportSettings($db);
             break;
 
+        case 'get_whatsapp_settings':
+            handleGetWhatsAppSettings($db);
+            break;
+
+        case 'save_whatsapp_settings':
+            handleSaveWhatsAppSettings($db);
+            break;
+
+        case 'test_whatsapp_message':
+            handleTestWhatsAppMessage($db);
+            break;
+
+        case 'get_whatsapp_bookings':
+            handleGetWhatsAppBookings($db);
+            break;
+
+        case 'update_whatsapp_booking_status':
+            handleUpdateWhatsAppBookingStatus($db);
+            break;
+
         case 'get_system_info':
             handleGetSystemInfo($db);
             break;
@@ -8344,6 +8364,308 @@ function handleSaveFooterSupportSettings($db) {
         }
         error_log('handleSaveFooterSupportSettings error: ' . $e->getMessage());
         sendAdminError('Failed to save footer support settings', 'FOOTER_SUPPORT_SAVE_FAILED', 500);
+    }
+}
+
+// ============================================================================
+// WHATSAPP INTEGRATION SETTINGS
+// ============================================================================
+
+/**
+ * Return WhatsApp Cloud API settings for admin UI.
+ * The token is masked on read for display security.
+ */
+function handleGetWhatsAppSettings($db) {
+    requireSuperAdmin($db);
+    try {
+        $keys = ['wa_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_api_version', 'wa_lead_notifications'];
+        $placeholders = implode(',', array_fill(0, count($keys), '?'));
+        $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
+        $stmt->execute($keys);
+        $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        $token = $rows['wa_api_token'] ?? '';
+        echo json_encode([
+            'success' => true,
+            'settings' => [
+                'wa_enabled'              => $rows['wa_enabled']              ?? '0',
+                'wa_api_token'            => $token !== '' ? '••••••••' . substr($token, -4) : '',
+                'wa_phone_number_id'      => $rows['wa_phone_number_id']      ?? '',
+                'wa_api_version'          => $rows['wa_api_version']          ?? 'v19.0',
+                'wa_lead_notifications'   => $rows['wa_lead_notifications']   ?? '0',
+                'token_configured'        => $token !== '',
+            ],
+        ]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleGetWhatsAppSettings error: ' . $e->getMessage());
+        sendAdminError('Failed to load WhatsApp settings', 'WA_SETTINGS_LOAD_FAILED', 500);
+    }
+}
+
+/**
+ * Save WhatsApp Cloud API settings.
+ * If wa_api_token is blank or placeholder (all '•'), the existing token is preserved.
+ */
+function handleSaveWhatsAppSettings($db) {
+    requireSuperAdmin($db);
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST method required', 'INVALID_METHOD', 405);
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        sendAdminError('Invalid payload', 'WA_SETTINGS_INVALID_PAYLOAD', 400);
+    }
+
+    $enabled      = isset($input['wa_enabled']) && $input['wa_enabled'] ? '1' : '0';
+    $leadNotifs   = isset($input['wa_lead_notifications']) && $input['wa_lead_notifications'] ? '1' : '0';
+    $token        = trim((string)($input['wa_api_token'] ?? ''));
+    $phoneNumId   = trim(preg_replace('/[^0-9]/', '', (string)($input['wa_phone_number_id'] ?? '')));
+    $apiVersion   = trim((string)($input['wa_api_version'] ?? 'v19.0'));
+
+    // Reject placeholder value — don't overwrite existing token with mask
+    $tokenIsPlaceholder = ($token === '' || preg_match('/^[•\*]+/', $token));
+
+    // Validate api version format
+    if (!preg_match('/^v\d+\.\d+$/', $apiVersion)) {
+        $apiVersion = 'v19.0';
+    }
+
+    try {
+        $db->beginTransaction();
+
+        $upsert = $db->prepare(
+            "INSERT INTO site_settings (setting_key, setting_value, setting_group, setting_type, description, is_public)
+             VALUES (?, ?, 'whatsapp', 'string', ?, 0)
+             ON DUPLICATE KEY UPDATE
+             setting_value = VALUES(setting_value)"
+        );
+
+        $upsert->execute(['wa_enabled', $enabled, 'Enable WhatsApp Cloud API integration']);
+        $upsert->execute(['wa_lead_notifications', $leadNotifs, 'Send WhatsApp notification to dealer on new lead/message']);
+        if (!$tokenIsPlaceholder) {
+            $upsert->execute(['wa_api_token', $token, 'Meta WhatsApp Cloud API bearer token']);
+        }
+        $upsert->execute(['wa_phone_number_id', $phoneNumId, 'Meta WhatsApp Phone Number ID']);
+        $upsert->execute(['wa_api_version', $apiVersion, 'Meta Graph API version']);
+
+        $db->commit();
+
+        echo json_encode([
+            'success'         => true,
+            'message'         => 'WhatsApp settings saved.',
+            'token_updated'   => !$tokenIsPlaceholder,
+        ]);
+        exit();
+    } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        error_log('handleSaveWhatsAppSettings error: ' . $e->getMessage());
+        sendAdminError('Failed to save WhatsApp settings', 'WA_SETTINGS_SAVE_FAILED', 500);
+    }
+}
+
+/**
+ * Send a test WhatsApp text message to a supplied number using the stored API credentials.
+ * POST body: { test_phone: "+265888000000" }
+ */
+function handleTestWhatsAppMessage($db) {
+    requireSuperAdmin($db);
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST method required', 'INVALID_METHOD', 405);
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+    $testPhone = trim(preg_replace('/[^0-9+]/', '', (string)($input['test_phone'] ?? '')));
+
+    if (empty($testPhone)) {
+        sendAdminError('A valid test phone number is required (digits only, including country code)', 'WA_TEST_PHONE_REQUIRED', 400);
+    }
+    // Strip leading + for Graph API
+    $toNumber = preg_replace('/[^0-9]/', '', $testPhone);
+
+    // Load credentials
+    $keys = ['wa_api_token', 'wa_phone_number_id', 'wa_api_version'];
+    $placeholders = implode(',', array_fill(0, count($keys), '?'));
+    $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
+    $stmt->execute($keys);
+    $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    $token       = $rows['wa_api_token']       ?? '';
+    $phoneNumId  = $rows['wa_phone_number_id'] ?? '';
+    $apiVersion  = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v19.0';
+
+    if (empty($token)) {
+        sendAdminError('WhatsApp API token is not configured. Save your settings first.', 'WA_TEST_NO_TOKEN', 400);
+    }
+    if (empty($phoneNumId)) {
+        sendAdminError('WhatsApp Phone Number ID is not configured. Save your settings first.', 'WA_TEST_NO_PHONE_ID', 400);
+    }
+
+    $url = "https://graph.facebook.com/{$apiVersion}/{$phoneNumId}/messages";
+    $body = json_encode([
+        'messaging_product' => 'whatsapp',
+        'recipient_type'    => 'individual',
+        'to'                => $toNumber,
+        'type'              => 'text',
+        'text'              => [
+            'preview_url' => false,
+            'body'        => "✅ MotorLink WhatsApp API test message.\n\nYour WhatsApp integration is working correctly. Booking notifications will be sent via this number.\n\n_Sent from MotorLink Admin Panel_",
+        ],
+    ]);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $token,
+        ],
+    ]);
+
+    $response  = curl_exec($ch);
+    $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlError) {
+        error_log("WA test cURL error: $curlError");
+        echo json_encode(['success' => false, 'error' => "Network error: $curlError", 'http_code' => 0]);
+        exit();
+    }
+
+    $decoded = json_decode($response, true);
+    $wamid   = $decoded['messages'][0]['id'] ?? null;
+
+    if ($httpCode === 200 && $wamid) {
+        logActivity($db, 'whatsapp_test_sent',
+            'WhatsApp test message sent',
+            "To: {$toNumber}, wamid: {$wamid}", $_SESSION['admin_id'] ?? null);
+        echo json_encode([
+            'success'    => true,
+            'message'    => "Test message delivered to +{$toNumber}",
+            'wamid'      => $wamid,
+            'http_code'  => $httpCode,
+        ]);
+    } else {
+        $errMsg  = $decoded['error']['message'] ?? "HTTP {$httpCode}";
+        $errCode = $decoded['error']['code']    ?? null;
+        error_log("WA test failed: $errMsg — response: $response");
+        echo json_encode([
+            'success'    => false,
+            'error'      => $errMsg,
+            'api_code'   => $errCode,
+            'http_code'  => $httpCode,
+        ]);
+    }
+    exit();
+}
+
+/**
+ * List WhatsApp booking requests from car_hire_bookings.
+ * GET ?action=get_whatsapp_bookings&status=&limit=&company_id=
+ */
+function handleGetWhatsAppBookings($db) {
+    requireAdmin();
+
+    try {
+        $where  = ['1=1'];
+        $params = [];
+
+        if (!empty($_GET['status'])) {
+            $where[]  = 'b.status = ?';
+            $params[] = $_GET['status'];
+        }
+        if (!empty($_GET['company_id']) && is_numeric($_GET['company_id'])) {
+            $where[]  = 'b.company_id = ?';
+            $params[] = (int)$_GET['company_id'];
+        }
+        if (!empty($_GET['search'])) {
+            $where[]  = '(b.renter_name LIKE ? OR b.renter_phone LIKE ? OR b.vehicle_name LIKE ?)';
+            $term     = '%' . $_GET['search'] . '%';
+            $params[] = $term;
+            $params[] = $term;
+            $params[] = $term;
+        }
+
+        $limit    = max(1, min(500, (int)($_GET['limit'] ?? 100)));
+        $whereSql = implode(' AND ', $where);
+
+        $sql = "SELECT b.id, b.company_id, b.fleet_id, b.vehicle_name, b.daily_rate,
+                       b.renter_name, b.renter_phone, b.renter_whatsapp,
+                       b.start_date, b.end_date, b.duration_days, b.total_estimate,
+                       b.special_requests, b.status, b.wa_sent, b.wa_message_id,
+                       b.created_at,
+                       c.business_name AS company_name, c.whatsapp AS company_whatsapp
+                FROM car_hire_bookings b
+                LEFT JOIN car_hire_companies c ON c.id = b.company_id
+                WHERE {$whereSql}
+                ORDER BY b.created_at DESC
+                LIMIT ?";
+        $params[] = $limit;
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $bookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Stats
+        $stmtStats = $db->query("SELECT status, COUNT(*) as cnt, SUM(wa_sent) as wa_count FROM car_hire_bookings GROUP BY status");
+        $stats = ['pending' => 0, 'confirmed' => 0, 'declined' => 0, 'cancelled' => 0, 'total' => 0, 'wa_sent' => 0];
+        foreach ($stmtStats->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $stats[$row['status']] = (int)$row['cnt'];
+            $stats['total']       += (int)$row['cnt'];
+            $stats['wa_sent']     += (int)$row['wa_count'];
+        }
+
+        echo json_encode(['success' => true, 'bookings' => $bookings, 'stats' => $stats]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleGetWhatsAppBookings error: ' . $e->getMessage());
+        sendAdminError('Failed to load bookings', 'WA_BOOKINGS_LOAD_FAILED', 500);
+    }
+}
+
+/**
+ * Update a booking status (confirm / decline / cancel).
+ * POST body: { booking_id, status }
+ */
+function handleUpdateWhatsAppBookingStatus($db) {
+    requireAdmin();
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST method required', 'INVALID_METHOD', 405);
+    }
+
+    $input     = json_decode(file_get_contents('php://input'), true) ?? [];
+    $bookingId = (int)($input['booking_id'] ?? 0);
+    $status    = trim((string)($input['status'] ?? ''));
+    $allowed   = ['pending', 'confirmed', 'declined', 'cancelled'];
+
+    if ($bookingId <= 0) sendAdminError('booking_id required', 'BOOKING_ID_REQUIRED', 400);
+    if (!in_array($status, $allowed, true)) sendAdminError('Invalid status', 'INVALID_STATUS', 400);
+
+    try {
+        $stmt = $db->prepare("UPDATE car_hire_bookings SET status = ?, updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$status, $bookingId]);
+
+        if ($stmt->rowCount() === 0) {
+            sendAdminError('Booking not found', 'BOOKING_NOT_FOUND', 404);
+        }
+
+        logActivity($db, 'wa_booking_status_updated',
+            'Car hire booking status updated',
+            "Booking ID: {$bookingId}, Status: {$status}", $_SESSION['admin_id'] ?? null);
+
+        echo json_encode(['success' => true, 'message' => 'Booking updated to ' . $status]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleUpdateWhatsAppBookingStatus error: ' . $e->getMessage());
+        sendAdminError('Failed to update booking', 'BOOKING_UPDATE_FAILED', 500);
     }
 }
 

@@ -819,7 +819,9 @@ class AdminDashboard {
             case 'dealers':
                 return this.loadDealers();
             case 'car-hire':
-                return this.loadCarHire();
+                this.loadCarHire();
+                loadWhatsAppBookings();
+                return;
             case 'makes-models':
                 return this.loadMakesModels();
             case 'locations':
@@ -6659,6 +6661,274 @@ async function saveFooterSupportSettings() {
     }
 }
 
+// ── WhatsApp Integration Settings ───────────────────────────────────────────
+
+function _setWaStatusBadge(enabled, tokenConfigured, phoneIdConfigured) {
+    const badge = document.getElementById('waStatusBadge');
+    if (!badge) return;
+    if (enabled && tokenConfigured && phoneIdConfigured) {
+        badge.textContent = '✅ Active';
+        badge.style.cssText = 'font-size:0.75rem;padding:3px 10px;border-radius:999px;background:#d1fae5;color:#065f46;';
+    } else if (!enabled) {
+        badge.textContent = '⏸ Disabled';
+        badge.style.cssText = 'font-size:0.75rem;padding:3px 10px;border-radius:999px;background:#f3f4f6;color:#6b7280;';
+    } else {
+        badge.textContent = '⚠️ Not Configured';
+        badge.style.cssText = 'font-size:0.75rem;padding:3px 10px;border-radius:999px;background:#fef3c7;color:#92400e;';
+    }
+}
+
+function toggleWaTokenVisibility() {
+    const input = document.getElementById('wa-api-token');
+    const icon  = document.getElementById('waTokenToggleIcon');
+    if (!input) return;
+    if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) { icon.classList.replace('fa-eye', 'fa-eye-slash'); }
+    } else {
+        input.type = 'password';
+        if (icon) { icon.classList.replace('fa-eye-slash', 'fa-eye'); }
+    }
+}
+
+async function loadWhatsAppSettings() {
+    try {
+        const response = await admin.apiCall('get_whatsapp_settings', 'GET', null);
+        if (!response.success || !response.settings) return;
+        const s = response.settings;
+
+        const enabledEl = document.getElementById('wa-enabled');
+        if (enabledEl) enabledEl.checked = s.wa_enabled === '1';
+
+        const leadEl = document.getElementById('wa-lead-notifications');
+        if (leadEl) leadEl.checked = s.wa_lead_notifications === '1';
+
+        const numEl = document.getElementById('wa-phone-number-id');
+        if (numEl) numEl.value = s.wa_phone_number_id || '';
+
+        const verEl = document.getElementById('wa-api-version');
+        if (verEl) verEl.value = s.wa_api_version || 'v19.0';
+
+        const tokenStatusEl = document.getElementById('waTokenStatus');
+        if (tokenStatusEl) {
+            if (s.token_configured) {
+                tokenStatusEl.innerHTML = `<span style="color:#128c49;"><i class="fas fa-check-circle"></i> Token configured (${s.wa_api_token}). Leave blank to keep unchanged.</span>`;
+            } else {
+                tokenStatusEl.innerHTML = `<span style="color:#c06000;"><i class="fas fa-exclamation-triangle"></i> No token saved. Paste your permanent access token above.</span>`;
+            }
+        }
+        const tokenEl = document.getElementById('wa-api-token');
+        if (tokenEl) { tokenEl.value = ''; tokenEl.placeholder = s.token_configured ? 'Leave blank to keep existing token' : 'Paste permanent access token'; }
+
+        _setWaStatusBadge(s.wa_enabled === '1', s.token_configured, !!s.wa_phone_number_id);
+
+        // Load quick stats
+        loadWhatsAppBookingStats();
+    } catch (error) {
+        debugLog('Failed to load WhatsApp settings:', error);
+    }
+}
+
+async function saveWhatsAppSettings() {
+    const btn = document.getElementById('waSaveBtn');
+    const payload = {
+        wa_enabled:              document.getElementById('wa-enabled')?.checked ? '1' : '0',
+        wa_lead_notifications:   document.getElementById('wa-lead-notifications')?.checked ? '1' : '0',
+        wa_api_token:            document.getElementById('wa-api-token')?.value || '',
+        wa_phone_number_id:      document.getElementById('wa-phone-number-id')?.value?.trim() || '',
+        wa_api_version:          document.getElementById('wa-api-version')?.value?.trim() || 'v19.0',
+    };
+
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…'; }
+
+    try {
+        const response = await admin.apiCall('save_whatsapp_settings', 'POST', payload);
+        if (response.success) {
+            admin.showAlert('success', response.message || 'WhatsApp settings saved');
+            await loadWhatsAppSettings();
+        } else {
+            admin.showAlert('error', response.message || 'Failed to save WhatsApp settings');
+        }
+    } catch (error) {
+        admin.showAlert('error', 'Error saving WhatsApp settings: ' + error.message);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Save API Settings'; }
+    }
+}
+
+async function sendWhatsAppTest() {
+    const btn       = document.getElementById('waTestBtn');
+    const resultEl  = document.getElementById('waTestResult');
+    const phoneEl   = document.getElementById('waTestPhone');
+    const phone     = (phoneEl?.value || '').trim().replace(/[^0-9]/g, '');
+
+    if (!phone) {
+        resultEl.style.display = 'block';
+        resultEl.style.cssText = 'display:block;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.84rem;background:#fff1f1;border:1px solid #f5c2c2;color:#c0392b;';
+        resultEl.textContent   = 'Enter a phone number with country code (digits only, no + or spaces).';
+        return;
+    }
+
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…'; }
+    resultEl.style.display = 'none';
+
+    try {
+        const response = await admin.apiCall('test_whatsapp_message', 'POST', { test_phone: phone });
+
+        resultEl.style.display = 'block';
+
+        if (response.success) {
+            resultEl.style.cssText = 'display:block;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.84rem;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;';
+            resultEl.innerHTML     = `<i class="fas fa-check-circle"></i> <strong>Success!</strong> ${response.message || 'Test message sent.'}`
+                                   + (response.wamid ? `<br><small style="opacity:0.7;">wamid: ${response.wamid}</small>` : '');
+        } else {
+            resultEl.style.cssText = 'display:block;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.84rem;background:#fff1f1;border:1px solid #f5c2c2;color:#c0392b;';
+            const errMsg = response.error || response.message || 'API returned an error.';
+            const apiCode = response.api_code ? ` (Code: ${response.api_code})` : '';
+            resultEl.innerHTML = `<i class="fas fa-times-circle"></i> <strong>Failed:</strong> ${errMsg}${apiCode}<br><small style="opacity:0.7;">HTTP ${response.http_code || '—'}</small>`;
+        }
+    } catch (error) {
+        resultEl.style.display = 'block';
+        resultEl.style.cssText = 'display:block;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.84rem;background:#fff1f1;border:1px solid #f5c2c2;color:#c0392b;';
+        resultEl.textContent   = 'Network error: ' + error.message;
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Test'; }
+    }
+}
+
+async function loadWhatsAppBookingStats() {
+    try {
+        const response = await admin.apiCall('get_whatsapp_bookings', 'GET', null);
+        if (!response.success || !response.stats) return;
+        const s = response.stats;
+
+        const strip = document.getElementById('waQuickStats');
+        if (strip) {
+            strip.style.display = 'block';
+            ['total','pending','confirmed','declined'].forEach(k => {
+                const el = document.getElementById(`waStat-${k}`);
+                if (el) el.textContent = s[k] ?? 0;
+            });
+            const waEl = document.getElementById('waStat-wa');
+            if (waEl) waEl.textContent = s.wa_sent ?? 0;
+        }
+    } catch (e) { debugLog('Failed to load WA booking stats', e); }
+}
+
+// ── WhatsApp Bookings Table ──────────────────────────────────────────────────
+
+const _waStatusColors = {
+    pending:   { bg: '#fef3c7', color: '#92400e' },
+    confirmed: { bg: '#d1fae5', color: '#065f46' },
+    declined:  { bg: '#fee2e2', color: '#991b1b' },
+    cancelled: { bg: '#f3f4f6', color: '#374151' },
+};
+
+async function loadWhatsAppBookings() {
+    const tbody    = document.getElementById('waBookingsBody');
+    const status   = document.getElementById('waBookingStatusFilter')?.value || '';
+    const search   = document.getElementById('waBookingSearch')?.value?.trim() || '';
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center">Loading…</td></tr>';
+
+    try {
+        let qs = 'action=get_whatsapp_bookings&limit=200';
+        if (status) qs += '&status=' + encodeURIComponent(status);
+        if (search) qs += '&search=' + encodeURIComponent(search);
+
+        const base = (typeof CONFIG !== 'undefined' && CONFIG.ADMIN_API_URL) ? CONFIG.ADMIN_API_URL : 'admin-api.php';
+        const resp = await fetch(`${base}?${qs}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'include'
+        });
+        const data = await resp.json();
+
+        if (!data.success) {
+            tbody.innerHTML = `<tr><td colspan="10" class="text-center" style="color:#b91c1c;">${data.message || 'Failed to load bookings'}</td></tr>`;
+            return;
+        }
+
+        // Update stats strip
+        const strip = document.getElementById('waBookingStatsStrip');
+        if (strip && data.stats) {
+            const s = data.stats;
+            strip.innerHTML = [
+                `<span style="padding:4px 10px;border-radius:999px;background:#f3f4f6;color:#374151;">Total: <strong>${s.total ?? 0}</strong></span>`,
+                `<span style="padding:4px 10px;border-radius:999px;background:#fef3c7;color:#92400e;">Pending: <strong>${s.pending ?? 0}</strong></span>`,
+                `<span style="padding:4px 10px;border-radius:999px;background:#d1fae5;color:#065f46;">Confirmed: <strong>${s.confirmed ?? 0}</strong></span>`,
+                `<span style="padding:4px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;">Declined: <strong>${s.declined ?? 0}</strong></span>`,
+                `<span style="padding:4px 10px;border-radius:999px;background:#dbeafe;color:#1e40af;"><i class="fab fa-whatsapp"></i> API Sent: <strong>${s.wa_sent ?? 0}</strong></span>`,
+            ].join('');
+        }
+
+        if (!data.bookings || data.bookings.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="color:#6b7280;">No booking requests found.</td></tr>';
+            return;
+        }
+
+        const curr = (typeof CONFIG !== 'undefined' && CONFIG.CURRENCY_CODE) ? CONFIG.CURRENCY_CODE : 'MWK';
+        tbody.innerHTML = data.bookings.map(b => {
+            const refId = String(b.id).padStart(6, '0');
+            const sc    = _waStatusColors[b.status] || _waStatusColors.pending;
+            const waTag = b.wa_sent == 1
+                ? '<span style="color:#25d366;"><i class="fab fa-whatsapp"></i> Yes</span>'
+                : '<span style="color:#9ca3af;">No</span>';
+            const total = b.total_estimate ? `${curr} ${Number(b.total_estimate).toLocaleString()}` : '—';
+            const waLink = b.renter_whatsapp
+                ? `<a href="https://wa.me/${b.renter_whatsapp.replace(/[^0-9]/g,'')}" target="_blank" title="Chat with renter" style="color:#25d366;margin-left:5px;"><i class="fab fa-whatsapp"></i></a>` : '';
+            return `<tr>
+                <td style="font-weight:600;font-size:0.8rem;">#${refId}</td>
+                <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(b.company_name || '—')}</td>
+                <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(b.vehicle_name || '—')}</td>
+                <td>${_escHtml(b.renter_name)}<br><small style="color:#6b7280;">${_escHtml(b.renter_phone)}${waLink}</small></td>
+                <td style="white-space:nowrap;font-size:0.82rem;">${b.start_date}<br>→ ${b.end_date}</td>
+                <td style="text-align:center;">${b.duration_days}</td>
+                <td style="white-space:nowrap;">${total}</td>
+                <td style="text-align:center;">${waTag}</td>
+                <td>
+                    <span style="display:inline-block;padding:3px 8px;border-radius:999px;font-size:0.75rem;font-weight:600;background:${sc.bg};color:${sc.color};">
+                        ${b.status}
+                    </span>
+                </td>
+                <td style="white-space:nowrap;">
+                    ${b.status === 'pending' ? `
+                        <button class="btn btn-xs" style="background:#d1fae5;color:#065f46;border:none;padding:3px 8px;border-radius:6px;cursor:pointer;margin-right:3px;"
+                            onclick="updateWaBookingStatus(${b.id},'confirmed')"><i class="fas fa-check"></i> Confirm</button>
+                        <button class="btn btn-xs" style="background:#fee2e2;color:#991b1b;border:none;padding:3px 8px;border-radius:6px;cursor:pointer;"
+                            onclick="updateWaBookingStatus(${b.id},'declined')"><i class="fas fa-times"></i> Decline</button>
+                    ` : `
+                        <button class="btn btn-xs" style="background:#f3f4f6;color:#374151;border:none;padding:3px 8px;border-radius:6px;cursor:pointer;"
+                            onclick="updateWaBookingStatus(${b.id},'pending')"><i class="fas fa-undo"></i> Reset</button>
+                    `}
+                </td>
+            </tr>`;
+        }).join('');
+    } catch (error) {
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center" style="color:#b91c1c;">Error: ${error.message}</td></tr>`;
+    }
+}
+
+function _escHtml(str) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(str || ''));
+    return d.innerHTML;
+}
+
+async function updateWaBookingStatus(bookingId, status) {
+    try {
+        const response = await admin.apiCall('update_whatsapp_booking_status', 'POST', { booking_id: bookingId, status });
+        if (response.success) {
+            admin.showAlert('success', response.message || 'Booking updated');
+            loadWhatsAppBookings();
+        } else {
+            admin.showAlert('error', response.message || 'Failed to update booking');
+        }
+    } catch (error) {
+        admin.showAlert('error', 'Error: ' + error.message);
+    }
+}
+
 function getAdminDbCredentialsPayload() {
     return {
         host: document.getElementById('admin-db-host')?.value?.trim() || '',
@@ -6959,16 +7229,19 @@ async function loadSettings() {
             // Admin DB credentials are managed separately in site_settings.
             await loadAdminDbCredentials();
             await loadFooterSupportSettings();
+            await loadWhatsAppSettings();
 
         } else {
             debugLog('No settings found or error loading settings');
             await loadAdminDbCredentials();
             await loadFooterSupportSettings();
+            await loadWhatsAppSettings();
         }
     } catch (error) {
         debugLog('Error loading settings:', error);
         await loadAdminDbCredentials();
         await loadFooterSupportSettings();
+        await loadWhatsAppSettings();
     }
 }
 

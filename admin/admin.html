@@ -1084,6 +1084,55 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- WhatsApp Booking Requests -->
+                    <div style="margin-top:32px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                            <h3 style="margin:0;font-size:1rem;">
+                                <i class="fab fa-whatsapp" style="color:#25d366;"></i> WhatsApp Booking Requests
+                            </h3>
+                            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                                <select id="waBookingStatusFilter" class="form-control" style="width:auto;" onchange="loadWhatsAppBookings()">
+                                    <option value="">All Statuses</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="confirmed">Confirmed</option>
+                                    <option value="declined">Declined</option>
+                                    <option value="cancelled">Cancelled</option>
+                                </select>
+                                <input type="text" id="waBookingSearch" class="form-control" placeholder="Search renter, vehicle…"
+                                       style="width:180px;" onkeyup="loadWhatsAppBookings()">
+                                <button class="btn btn-outline" onclick="loadWhatsAppBookings()">
+                                    <i class="fas fa-sync"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Stats strip -->
+                        <div id="waBookingStatsStrip" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;font-size:0.82rem;">
+                        </div>
+
+                        <div class="table-container">
+                            <table class="data-table" id="waBookingsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Ref#</th>
+                                        <th>Company</th>
+                                        <th>Vehicle</th>
+                                        <th>Renter</th>
+                                        <th>Dates</th>
+                                        <th>Days</th>
+                                        <th>Total</th>
+                                        <th>WA Sent</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="waBookingsBody">
+                                    <tr><td colspan="10" class="text-center">Loading bookings…</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Makes & Models Section -->
@@ -1584,6 +1633,106 @@
                             <button class="btn btn-primary" onclick="saveFooterSupportSettings()">
                                 <i class="fas fa-save"></i> Save Footer Support Links
                             </button>
+                        </div>
+
+                        <!-- WhatsApp Integration -->
+                        <div class="settings-card" id="waSettingsCard">
+                            <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+                                <h3 style="margin:0;"><i class="fab fa-whatsapp" style="color:#25d366;"></i> WhatsApp Booking Integration</h3>
+                                <span id="waStatusBadge" class="status-badge" style="font-size:0.75rem;padding:3px 10px;border-radius:999px;background:#f0f0f0;color:#666;">Loading…</span>
+                            </div>
+                            <p class="form-text" style="margin-bottom:18px;">
+                                Configure the <strong>Meta WhatsApp Cloud API</strong> to send automated booking notifications to car hire owners.
+                                Get your credentials from <em>Meta Business Manager → WhatsApp → API Setup</em>.
+                            </p>
+
+                            <!-- ── API Configuration ─────────────────── -->
+                            <div style="background:#f8fffe;border:1px solid #d4f0dc;border-radius:10px;padding:16px 18px;margin-bottom:18px;">
+                                <h4 style="margin:0 0 14px;font-size:0.9rem;color:#128c49;"><i class="fas fa-key"></i> API Credentials</h4>
+
+                                <div class="form-group">
+                                    <label for="wa-enabled">
+                                        <input type="checkbox" id="wa-enabled"> Enable WhatsApp API notifications
+                                    </label>
+                                    <small class="form-text">When enabled, booking requests automatically notify the car hire owner via WhatsApp.</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="wa-lead-notifications" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                        <input type="checkbox" id="wa-lead-notifications">
+                                        <span>Dealer Lead Notifications</span>
+                                        <span style="font-size:0.72rem;padding:2px 7px;border-radius:999px;background:#dbeafe;color:#1e40af;font-weight:600;">NEW</span>
+                                    </label>
+                                    <small class="form-text">When a buyer sends a <strong>first message</strong> about a listing, the seller gets an instant WhatsApp notification on their registered number.</small>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="wa-phone-number-id">Phone Number ID</label>
+                                        <input type="text" id="wa-phone-number-id" class="form-control"
+                                               placeholder="e.g. 123456789012345" inputmode="numeric">
+                                        <small class="form-text">Meta → WhatsApp → API Setup → Phone Number ID</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="wa-api-version">Graph API Version</label>
+                                        <input type="text" id="wa-api-version" class="form-control"
+                                               placeholder="v19.0" value="v19.0" maxlength="10">
+                                        <small class="form-text">Use latest stable, e.g. v19.0</small>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="wa-api-token">Permanent Access Token</label>
+                                    <div style="display:flex;gap:8px;align-items:stretch;">
+                                        <input type="password" id="wa-api-token" class="form-control"
+                                               placeholder="Paste token — leave blank to keep existing" autocomplete="new-password"
+                                               style="flex:1;font-family:monospace;font-size:0.82rem;">
+                                        <button type="button" class="btn btn-outline" id="waTokenToggleBtn"
+                                                onclick="toggleWaTokenVisibility()"
+                                                style="white-space:nowrap;padding:0 14px;" title="Show/hide token">
+                                            <i class="fas fa-eye" id="waTokenToggleIcon"></i>
+                                        </button>
+                                    </div>
+                                    <small class="form-text" id="waTokenStatus">Loading status…</small>
+                                </div>
+
+                                <button class="btn btn-primary" onclick="saveWhatsAppSettings()" id="waSaveBtn">
+                                    <i class="fas fa-save"></i> Save API Settings
+                                </button>
+                            </div>
+
+                            <!-- ── Test Message ──────────────────────── -->
+                            <div style="background:#fff9f0;border:1px solid #fde8c8;border-radius:10px;padding:16px 18px;margin-bottom:18px;">
+                                <h4 style="margin:0 0 12px;font-size:0.9rem;color:#c06000;"><i class="fas fa-paper-plane"></i> Test API Connection</h4>
+                                <p class="form-text" style="margin-bottom:12px;">
+                                    Send a test message to any WhatsApp number to confirm your API credentials work.
+                                    The number must include the country code (e.g. <code>265888000000</code> for Malawi).
+                                </p>
+                                <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+                                    <div style="flex:1;min-width:200px;">
+                                        <input type="tel" id="waTestPhone" class="form-control"
+                                               placeholder="265888000000 (no + or spaces)"
+                                               inputmode="numeric" maxlength="20">
+                                    </div>
+                                    <button class="btn btn-secondary" onclick="sendWhatsAppTest()" id="waTestBtn"
+                                            style="white-space:nowrap;">
+                                        <i class="fas fa-paper-plane"></i> Send Test
+                                    </button>
+                                </div>
+                                <div id="waTestResult" style="display:none;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.84rem;"></div>
+                            </div>
+
+                            <!-- ── Quick Stats ────────────────────────── -->
+                            <div id="waQuickStats" style="display:none;background:#f5f5f5;border-radius:10px;padding:12px 16px;">
+                                <h4 style="margin:0 0 10px;font-size:0.85rem;color:#333;"><i class="fas fa-chart-bar"></i> Booking Requests</h4>
+                                <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.83rem;">
+                                    <span>Total: <strong id="waStat-total">—</strong></span>
+                                    <span style="color:#c08000;">Pending: <strong id="waStat-pending">—</strong></span>
+                                    <span style="color:#128c49;">Confirmed: <strong id="waStat-confirmed">—</strong></span>
+                                    <span style="color:#b91c1c;">Declined: <strong id="waStat-declined">—</strong></span>
+                                    <span style="color:#1d4ed8;">Via API: <strong id="waStat-wa">—</strong></span>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Listing Settings -->
