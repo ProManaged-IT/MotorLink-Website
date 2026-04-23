@@ -1455,7 +1455,12 @@ class AICarChat {
         this.bindMessageInteractions(messageDiv);
         
         if (scroll) {
-            this.scrollToBottom();
+            if (role === 'ai') {
+                // Scroll so the START of the AI response is visible, not the bottom
+                this.scrollToMessage(messageDiv);
+            } else {
+                this.scrollToBottom();
+            }
         }
         if (persist) {
             this.saveConversation();
@@ -1855,6 +1860,21 @@ class AICarChat {
         stickToLatest();
         requestAnimationFrame(stickToLatest);
         setTimeout(stickToLatest, 80);
+    }
+
+    /**
+     * Scroll so the TOP of a specific message element is visible at the top
+     * of the chat messages container, so users read AI responses from the start.
+     */
+    scrollToMessage(el) {
+        const container = document.getElementById('aiChatMessages');
+        if (!container || !el) { this.scrollToBottom(); return; }
+        const scroll = () => {
+            container.scrollTop = el.offsetTop - 8;
+        };
+        scroll();
+        requestAnimationFrame(scroll);
+        setTimeout(scroll, 80);
     }
 
     escapeHtml(text) {

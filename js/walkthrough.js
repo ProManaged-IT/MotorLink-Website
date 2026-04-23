@@ -226,17 +226,42 @@
                 margin-top: 2px; font-weight: 500;
             }
 
-            @media (max-width: 540px) {
+            @media (max-width: 860px) {
                 #ml-wt-card {
-                    width: calc(100vw - 24px);
+                    width: min(calc(100vw - 32px), 380px);
+                    max-width: calc(100vw - 32px);
                     position: fixed !important;
-                    bottom: 16px !important;
-                    left: 12px !important;
+                    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px) !important;
+                    left: 50% !important;
+                    transform: translateX(-50%) !important;
                     top: auto !important;
                     right: auto !important;
                     transition: opacity 0.22s ease, transform 0.22s ease;
                 }
+                #ml-wt-card.wt-show {
+                    opacity: 1;
+                    transform: translateX(-50%) scale(1) !important;
+                }
+                #ml-wt-card.wt-fade {
+                    opacity: 0;
+                    transform: translateX(-50%) scale(0.94) !important;
+                }
                 .wt-arrow { display: none; }
+                #ml-wt-spot {
+                    /* Keep spotlight visible above the bottom-docked card */
+                    max-height: calc(100vh - 220px);
+                }
+                .wt-body {
+                    font-size: 0.88rem;
+                    padding: 12px 16px 14px;
+                    max-height: 120px;
+                    overflow-y: auto;
+                }
+                .wt-btn {
+                    min-height: 40px;
+                    padding: 9px 16px;
+                    font-size: 0.83rem;
+                }
             }
         `;
         document.head.appendChild(s);
@@ -305,6 +330,10 @@
     }
 
     // ── Navigate between steps ───────────────────────────────────────────
+    function isMobileLayout() {
+        return window.innerWidth <= 860;
+    }
+
     function showStep(index, animate) {
         if (index < 0) return;
         if (index >= STEPS.length) { finish(true); return; }
@@ -316,12 +345,15 @@
         step = index;
 
         const rect = target.getBoundingClientRect();
-        const needsScroll = rect.top < 70 || rect.bottom > window.innerHeight - 70;
+        // On mobile the card is docked to bottom (~220px tall), so leave that clearance
+        const bottomReserved = isMobileLayout() ? 230 : 70;
+        const needsScroll = rect.top < 70 || rect.bottom > window.innerHeight - bottomReserved;
 
         if (needsScroll) {
             // Fade card out, scroll, then render at new position
             if (card) card.classList.add('wt-fade');
-            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // On mobile scroll target to upper-third so it's visible above the docked card
+            target.scrollIntoView({ behavior: 'smooth', block: isMobileLayout() ? 'start' : 'center' });
             setTimeout(() => { if (overlay) renderStep(index); }, 520);
         } else {
             renderStep(index, animate);

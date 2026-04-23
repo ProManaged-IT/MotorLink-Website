@@ -683,9 +683,11 @@ class CarDetailManager {
                 <div class="showroom-card" onclick="window.location.href='car.html?id=${listing.id}'">
                     <div class="showroom-card-image">
                         <img src="${imageUrl}" alt="${this.escapeHtml(listing.title || '')}" onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
-                        <span class="listing-badge premium">Recommended</span>
                     </div>
                     <div class="showroom-card-content">
+                        <div class="showroom-badges">
+                            <span class="listing-badge premium">Recommended</span>
+                        </div>
                         <h3 class="showroom-card-title">${this.escapeHtml(listing.title || '')}</h3>
                         <div class="showroom-card-price">${formattedPrice}</div>
                         <div class="showroom-card-details">
@@ -895,11 +897,13 @@ class CarDetailManager {
                     <div class="showroom-card-image">
                         <img src="${imageUrl}" alt="${this.escapeHtml(listing.title)}"
                              onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
-                        ${listing.listing_type === 'featured' || listing.listing_type === 'premium' ? `
-                            <span class="listing-badge ${listing.listing_type}">${this.capitalize(listing.listing_type)}</span>
-                        ` : ''}
                     </div>
                     <div class="showroom-card-content">
+                        ${listing.listing_type === 'featured' || listing.listing_type === 'premium' ? `
+                            <div class="showroom-badges">
+                                <span class="listing-badge ${listing.listing_type}">${this.capitalize(listing.listing_type)}</span>
+                            </div>
+                        ` : ''}
                         <h3 class="showroom-card-title">${this.escapeHtml(listing.title)}</h3>
                         <div class="showroom-card-price">${formattedPrice}</div>
                         <div class="showroom-card-details">
