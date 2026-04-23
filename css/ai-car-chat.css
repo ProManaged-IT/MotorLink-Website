@@ -1028,7 +1028,57 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   12. FEEDBACK
+   12. CONVERSATION OPTIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ai-chat-conversation-options {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(148, 163, 184, 0.5);
+}
+
+.ai-chat-conversation-options-label {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.ai-chat-conversation-options-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ai-chat-conversation-option-btn {
+    appearance: none;
+    border: 1px solid rgba(0, 168, 67, 0.28);
+    background: #f7fff9;
+    color: #0f5132;
+    border-radius: 999px;
+    padding: 8px 12px;
+    min-height: 44px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+.ai-chat-conversation-option-btn:hover {
+    background: #eafff0;
+    border-color: rgba(0, 168, 67, 0.55);
+}
+
+.ai-chat-conversation-option-btn:active {
+    transform: translateY(1px);
+}
+
+.ai-chat-conversation-option-btn:focus-visible {
+    outline: 2px solid #00c853;
+    outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   13. FEEDBACK
    ═══════════════════════════════════════════════════════════════════════════ */
 .ai-chat-feedback {
     margin-top: 8px;
@@ -1063,7 +1113,7 @@
 .ai-chat-feedback-thanks { font-size: 11px; color: #16a34a; margin-left: 8px; font-weight: 600; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   13. INPUT STATUS (Sending...)
+    14. INPUT STATUS (Sending...)
    ═══════════════════════════════════════════════════════════════════════════ */
 .ai-chat-input-status {
     display: flex;

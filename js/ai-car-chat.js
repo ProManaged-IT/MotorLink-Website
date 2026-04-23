@@ -1053,19 +1053,25 @@ class AICarChat {
                 this.retryCount = 0;
                 this.pendingMessage = null;
 
+                const messageOptions = {
+                    conversationOptions: Array.isArray(data.conversation_options)
+                        ? data.conversation_options.slice(0, 6)
+                        : []
+                };
+
                 // Check if this is a search result
                 if (data.search_results && data.search_results.length > 0) {
                     // Car listings search results (for sale)
-                    this.addMessage('ai', data.response, data.search_results, data.total_results);
+                    this.addMessage('ai', data.response, data.search_results, data.total_results, null, null, messageOptions);
                 } else if (data.car_hire_companies && data.car_hire_companies.length > 0) {
                     // Car hire search results
-                    this.addMessage('ai', data.response, null, data.total_results, null, data.car_hire_companies);
+                    this.addMessage('ai', data.response, null, data.total_results, null, data.car_hire_companies, messageOptions);
                 } else if (data.garages && data.garages.length > 0) {
                     // Garage search results
-                    this.addMessage('ai', data.response, null, data.total_results, data.garages);
+                    this.addMessage('ai', data.response, null, data.total_results, data.garages, null, messageOptions);
                 } else {
                     // Regular AI response
-                    this.addMessage('ai', data.response);
+                    this.addMessage('ai', data.response, null, 0, null, null, messageOptions);
                 }
 
                 // Add to conversation history
@@ -1268,6 +1274,7 @@ class AICarChat {
         const persist = options.persist !== false;
         const scroll = options.scroll !== false;
         const includeFeedback = options.includeFeedback !== false;
+        const conversationOptions = Array.isArray(options.conversationOptions) ? options.conversationOptions : [];
 
         // Remove welcome message if present
         const welcome = messagesContainer.querySelector('.ai-chat-welcome');
@@ -1299,6 +1306,10 @@ class AICarChat {
 
         if (searchResults && searchResults.length > 0) {
             formattedContent += this.buildListingsResultsMarkup(searchResults, totalResults);
+        }
+
+        if (role === 'ai' && conversationOptions.length > 0) {
+            formattedContent += this.buildConversationOptionsMarkup(conversationOptions);
         }
 
         const feedbackId = Date.now();
@@ -1482,8 +1493,57 @@ class AICarChat {
         return html;
     }
 
+    buildConversationOptionsMarkup(options = []) {
+        const safeOptions = options
+            .map((opt) => String(opt || '').trim())
+            .filter(Boolean)
+            .slice(0, 4);
+
+        if (safeOptions.length === 0) {
+            return '';
+        }
+
+        let html = '<section class="ai-chat-conversation-options">';
+        html += '<div class="ai-chat-conversation-options-label">Quick follow-ups:</div>';
+        html += '<div class="ai-chat-conversation-options-list">';
+
+        safeOptions.forEach((opt) => {
+            const escaped = this.escapeHtml(opt);
+            html += `<button type="button" class="ai-chat-conversation-option-btn" data-conversation-option="${escaped}">${escaped}</button>`;
+        });
+
+        html += '</div>';
+        html += '</section>';
+        return html;
+    }
+
+    handleConversationOption(optionText) {
+        const text = String(optionText || '').trim();
+        if (!text || this.isSending) {
+            return;
+        }
+
+        const chatInput = document.getElementById('aiChatInput');
+        if (!chatInput) {
+            return;
+        }
+
+        chatInput.value = text;
+        this.autoResizeTextarea(chatInput);
+        this.updateCharCount(chatInput.value.length);
+        this.sendMessage();
+    }
+
     bindMessageInteractions(messageDiv) {
         messageDiv.addEventListener('click', (e) => {
+            const optionBtn = e.target.closest('.ai-chat-conversation-option-btn');
+            if (optionBtn) {
+                e.stopPropagation();
+                const optionText = optionBtn.getAttribute('data-conversation-option') || optionBtn.textContent || '';
+                this.handleConversationOption(optionText);
+                return;
+            }
+
             const actionBtn = e.target.closest('.ai-chat-action-btn');
             if (actionBtn) {
                 e.stopPropagation();

@@ -2813,6 +2813,17 @@ function handleAICarChat($db) {
             return;
         }
 
+        // Resolve short car-hire filter follow-ups like
+        // previous: "Looking for car hire in Lilongwe"
+        // current: "self drive only"
+        $carHireFilterFollowUpMessage = buildCarHireFilterFollowUpMessage($message, $conversationHistory);
+        if ($carHireFilterFollowUpMessage !== false) {
+            updateAIChatPersistenceContext(['resolved_message' => $carHireFilterFollowUpMessage]);
+            $logDeterministicUsage();
+            handleCarHireQuery($db, $carHireFilterFollowUpMessage, $conversationHistory);
+            return;
+        }
+
         // Instant greeting bypass — respond without any AI provider call.
         // Greetings like "hi", "hello", "hey" have no meaningful intent to classify;
         // sending them through the AI intent resolver wastes credits and takes ~18s.
@@ -3551,10 +3562,9 @@ REMEMBER (MANDATORY WORKFLOW):
  * Detect if user message is asking about car hire (rental)
  */
 function detectCarHireQuery($message) {
-    $messageLower = strtolower($message);
-    
-    // FAST CHECK: Most specific patterns first for speed
-    // Check for explicit "car hire" or "rental" patterns (highest priority)
+    $message = (string)$message;
+
+    // FAST CHECK: Most specific patterns first for speed.
     $specificPatterns = [
         '/car\s+hire/i',
         '/car\s+rental/i',
@@ -3566,7 +3576,15 @@ function detectCarHireQuery($message) {
         '/car\s+hire\s+company/i',
         '/rental\s+company/i',
         '/hire\s+service/i',
-        '/rental\s+service/i'
+        '/rental\s+service/i',
+        '/wedding\s+car/i',
+        '/bridal\s+car/i',
+        '/airport\s+(?:pickup|drop[\s-]?off|transfer)/i',
+        '/fleet\s+hire/i',
+        '/(?:minibus|van|bus|truck)\s+hire/i',
+        '/long[\s-]?term\s+rental/i',
+        '/monthly\s+rental/i',
+        '/weekly\s+rental/i'
     ];
     
     foreach ($specificPatterns as $pattern) {
@@ -3575,19 +3593,27 @@ function detectCarHireQuery($message) {
         }
     }
     
-    // Check for "looking for car hire" or "need car hire" patterns
+    // Check for "looking for car hire" or "need car hire" patterns.
     if (preg_match('/(?:looking\s+for|need|want|find|search\s+for|show\s+me).*(?:car\s+hire|rental|to\s+hire|to\s+rent)/i', $message)) {
         return true;
     }
-    
-    // Check for "X seater" with hire/rental context
+
+    // Check for "X seater" with hire/rental context.
     if (preg_match('/(?:\d+\s*seater|\d+\s*seat).*(?:hire|rent|rental)/i', $message) || 
         preg_match('/(?:hire|rent|rental).*(?:\d+\s*seater|\d+\s*seat)/i', $message)) {
         return true;
     }
-    
-    // Only check generic "hire" or "rent" if they appear with car/vehicle context
-    // This prevents false positives
+
+    // Service-intent with transport context catches natural phrases like
+    // "airport transfer with driver" or "wedding car options".
+    $hasServiceIntent = preg_match('/\b(?:self[\s-]?drive|chauffeur|with\s+driver|driver\s+included|airport\s+(?:pickup|drop[\s-]?off|transfer)|wedding\s+car|bridal\s+car|vip\s+transfer|fleet\s+hire|long[\s-]?term\s+rental|monthly\s+rental|weekly\s+rental|minibus\s+hire|van\s+hire|bus\s+hire|truck\s+hire)\b/i', $message) === 1;
+    $hasTransportContext = preg_match('/\b(?:car|vehicle|transport|rental|hire|rent|trip)\b/i', $message) === 1;
+    if ($hasServiceIntent && $hasTransportContext) {
+        return true;
+    }
+
+    // Only check generic "hire" or "rent" if they appear with car/vehicle context.
+    // This prevents false positives.
     if (preg_match('/(?:car|vehicle|auto).*(?:hire|rent|rental)/i', $message) ||
         preg_match('/(?:hire|rent|rental).*(?:car|vehicle|auto)/i', $message)) {
         return true;
@@ -4313,9 +4339,9 @@ function buildLocationFollowUpCarHireMessage($db, $message, $conversationHistory
         return false;
     }
 
-    $isLikelyFollowUp = preg_match('/\b(what about|how about|about|instead|then|and|try|only|just|show|filter|list)\b/i', $current) === 1
+    $isLikelyFollowUp = preg_match('/\b(what about|how about|about|instead|then|and|try|only|just|show|filter|list|same|switch|change|move)\b/i', $current) === 1
         || preg_match('/^(only|just)\s/i', $current) === 1
-        || str_word_count($current) <= 6;
+        || str_word_count($current) <= 8;
     if (!$isLikelyFollowUp) {
         return false;
     }
@@ -4343,7 +4369,7 @@ function buildLocationFollowUpCarHireMessage($db, $message, $conversationHistory
     }
 
     $base = $priorCarHireMessage;
-    $priorParams = extractCarHireSearchParams($priorCarHireMessage);
+    $priorParams = extractCarHireSearchParams($priorCarHireMessage, $db);
     if (!empty($priorParams['location'])) {
         $oldLoc = (string)$priorParams['location'];
         $base = preg_replace('/\b(in|at|around|near)\s+' . preg_quote($oldLoc, '/') . '\b/i', '', $base);
@@ -4427,6 +4453,63 @@ function buildCarHireComparativeFollowUpMessage($db, $message, $conversationHist
     }
 
     if ($priorCarHireMessage === '') {
+        return false;
+    }
+
+    return trim($priorCarHireMessage . ' ' . $current);
+}
+
+/**
+ * Build a contextual car-hire filter follow-up.
+ * Example: previous "Looking for car hire in Lilongwe" + current "self drive only"
+ * => "Looking for car hire in Lilongwe self drive only"
+ */
+function buildCarHireFilterFollowUpMessage($message, $conversationHistory) {
+    $current = trim((string)$message);
+    if ($current === '') {
+        return false;
+    }
+
+    // If it's already an explicit car-hire query, don't rewrite.
+    if (detectCarHireQuery($current)) {
+        return false;
+    }
+
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return false;
+    }
+
+    $isLikelyFilterFollowUp = preg_match('/\b(self[\s-]?drive|with\s+driver|chauffeur|airport|wedding|corporate|van|minibus|bus|truck|suv|sedan|pickup|automatic|manual|diesel|petrol|cheapest|best\s+value|most\s+expensive|closest|nearest|verified|featured|certified|luxury|economy|family)\b/i', $current) === 1
+        || preg_match('/\b(only|just|same|filter|show|list|with|without)\b/i', $current) === 1
+        || str_word_count($current) <= 7;
+
+    if (!$isLikelyFilterFollowUp) {
+        return false;
+    }
+
+    $priorCarHireMessage = '';
+    for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
+        $item = $conversationHistory[$i];
+        if (!is_array($item) || ($item['role'] ?? '') !== 'user') {
+            continue;
+        }
+
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') {
+            continue;
+        }
+
+        if (detectCarHireQuery($content)) {
+            $priorCarHireMessage = $content;
+            break;
+        }
+    }
+
+    if ($priorCarHireMessage === '') {
+        return false;
+    }
+
+    if (stripos($priorCarHireMessage, $current) !== false) {
         return false;
     }
 
@@ -10626,6 +10709,43 @@ function aichatHasBusinessReviews($db) {
 }
 
 /**
+ * Get table columns once per request (cached).
+ */
+function aichatGetTableColumns($db, $tableName) {
+    static $cache = [];
+
+    $table = strtolower(trim((string)$tableName));
+    if ($table === '') {
+        return [];
+    }
+
+    if (isset($cache[$table])) {
+        return $cache[$table];
+    }
+
+    $columns = [];
+    try {
+        $stmt = $db->query("SHOW COLUMNS FROM `{$table}`");
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $field = strtolower(trim((string)($row['Field'] ?? '')));
+            if ($field !== '') {
+                $columns[$field] = true;
+            }
+        }
+    } catch (Throwable $e) {
+        error_log("aichatGetTableColumns failed for {$table}: " . $e->getMessage());
+    }
+
+    $cache[$table] = $columns;
+    return $columns;
+}
+
+function aichatTableHasColumn($db, $tableName, $columnName) {
+    $columns = aichatGetTableColumns($db, $tableName);
+    return isset($columns[strtolower(trim((string)$columnName))]);
+}
+
+/**
  * Search garages based on parameters
  */
 function searchGarages($db, $searchParams, $userLocation = null) {
@@ -10958,6 +11078,83 @@ function detectPriceComparativeQuery($message) {
     return $intent['sort_by_price'] ?? false;
 }
 
+function buildCarHireConversationOptions(array $searchParams, array $companies, $userLocation = null, $sourceMessage = '') {
+    $options = [];
+
+    $location = trim((string)($searchParams['location'] ?? ''));
+    if ($location === '' && !empty($companies[0]['location_name'])) {
+        $location = trim((string)$companies[0]['location_name']);
+    }
+
+    $locationLabel = $location !== '' ? ucwords(strtolower($location)) : '';
+    $locationTail = $locationLabel !== '' ? " in {$locationLabel}" : '';
+
+    if (!empty($companies)) {
+        if (empty($searchParams['price_comparison'])) {
+            $options[] = 'Show the cheapest car hire option' . $locationTail;
+        }
+
+        if (empty($searchParams['company_service'])) {
+            $options[] = 'Show self-drive car hire options' . $locationTail;
+            $options[] = 'Show car hire with driver' . $locationTail;
+        }
+
+        if (empty($searchParams['event_type'])) {
+            $options[] = 'Show wedding event car hire options' . $locationTail;
+        }
+
+        if (empty($searchParams['vehicle_type'])) {
+            $options[] = 'Show SUV car hire options' . $locationTail;
+            $options[] = 'Show van or minibus hire options' . $locationTail;
+        }
+
+        if (empty($searchParams['proximity'])) {
+            $options[] = 'Which is the closest car hire to me?';
+        }
+    } else {
+        if ($locationLabel !== '') {
+            if (strtolower($locationLabel) !== 'lilongwe') {
+                $options[] = 'What about car hire in Lilongwe?';
+            }
+            if (strtolower($locationLabel) !== 'blantyre') {
+                $options[] = 'What about car hire in Blantyre?';
+            }
+        }
+
+        $options[] = 'Show self-drive car hire options';
+        $options[] = 'Show car hire with driver';
+        $options[] = 'Show wedding event car hire options';
+        $options[] = 'Show van or minibus hire options';
+    }
+
+    $messageLower = strtolower(trim((string)$sourceMessage));
+    $deduped = [];
+    $seen = [];
+    foreach ($options as $option) {
+        $option = trim((string)$option);
+        if ($option === '') {
+            continue;
+        }
+
+        $norm = strtolower($option);
+        if (isset($seen[$norm])) {
+            continue;
+        }
+
+        if ($messageLower !== '' && strpos($messageLower, strtolower(preg_replace('/[\?]/', '', $option))) !== false) {
+            continue;
+        }
+
+        $seen[$norm] = true;
+        $deduped[] = $option;
+        if (count($deduped) >= 4) {
+            break;
+        }
+    }
+
+    return $deduped;
+}
+
 function handleCarHireQuery($db, $message, $conversationHistory) {
     try {
         // Get user info for location context
@@ -10980,7 +11177,7 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
         }
         
         // Extract search parameters from message
-        $searchParams = extractCarHireSearchParams($message);
+        $searchParams = extractCarHireSearchParams($message, $db);
         
         // Detect if this is a "most" query (e.g., "which car hire has most cars")
         $isComparativeQuery = detectComparativeQuery($message);
@@ -11223,11 +11420,26 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
             }
         }
         
+        $conversationOptions = buildCarHireConversationOptions(
+            (array)$searchParams,
+            (array)($results['companies'] ?? []),
+            $userLocation,
+            $message
+        );
+
+        if (!empty($conversationOptions)) {
+            $response .= "\n\nYou can ask next:\n";
+            foreach ($conversationOptions as $option) {
+                $response .= "• {$option}\n";
+            }
+        }
+
         sendSuccess([
             'response' => $response,
             'car_hire_companies' => array_slice($results['companies'], 0, 10),
             'total_results' => count($results['companies']),
-            'base_url' => $baseUrl
+            'base_url' => $baseUrl,
+            'conversation_options' => $conversationOptions
         ]);
 
     } catch (Throwable $e) {
@@ -11263,8 +11475,20 @@ function extractCarHireSearchParams($message, $db = null) {
         }
     }
     
-    // Extract location (but don't override proximity)
-    $locations = ['blantyre', 'lilongwe', 'mzuzu', 'zomba', 'mangochi', 'salima', 'kasungu', 'mulanje'];
+    // Extract location (but don't override proximity).
+    // Use DB-aware extractor first when available; fallback to static list.
+    if ($db !== null) {
+        $detectedLocation = extractLocationMentionFromText($db, $message);
+        if (!empty($detectedLocation)) {
+            $params['location'] = strtolower(trim((string)$detectedLocation));
+        }
+    }
+
+    $locations = [
+        'blantyre', 'lilongwe', 'mzuzu', 'zomba', 'mangochi', 'salima', 'kasungu', 'mulanje',
+        'dedza', 'ntcheu', 'mchinji', 'dowa', 'ntchisi', 'nkhotakota', 'karonga', 'rumphi',
+        'balaka', 'machinga', 'phalombe', 'thyolo', 'chiradzulu', 'nsanje', 'chikwawa', 'likoma'
+    ];
     foreach ($locations as $location) {
         if (strpos($messageLower, $location) !== false) {
             $params['location'] = $location;
@@ -11273,8 +11497,8 @@ function extractCarHireSearchParams($message, $db = null) {
     }
     
     // Extract vehicle make/model
-    $makes = ['toyota', 'honda', 'bmw', 'mercedes', 'nissan', 'ford', 'mazda', 'volkswagen', 'audi', 'hyundai', 'kia'];
-    $models = ['hilux', 'prado', 'landcruiser', 'corolla', 'camry', 'ranger', 'x5', 'x3', 'c-class', 'e-class'];
+    $makes = ['toyota', 'honda', 'bmw', 'mercedes', 'nissan', 'ford', 'mazda', 'volkswagen', 'audi', 'hyundai', 'kia', 'isuzu', 'mitsubishi', 'subaru'];
+    $models = ['hilux', 'prado', 'landcruiser', 'corolla', 'camry', 'ranger', 'x5', 'x3', 'c-class', 'e-class', 'fortuner', 'rav4', 'vitz', 'x-trail', 'navara', 'l200', 'd-max'];
     
     foreach ($makes as $make) {
         if (strpos($messageLower, $make) !== false) {
@@ -11290,11 +11514,34 @@ function extractCarHireSearchParams($message, $db = null) {
         }
     }
     
-    // Extract vehicle type
-    $vehicleTypes = ['suv', 'sedan', 'hatchback', 'pickup', 'truck', 'luxury', 'economy', 'van', 'minibus', 'bus'];
-    foreach ($vehicleTypes as $type) {
-        if (strpos($messageLower, $type) !== false) {
-            $params['vehicle_type'] = $type;
+    // Extract vehicle type with synonym mapping.
+    $vehicleTypeMap = [
+        '4x4' => 'suv',
+        '4wd' => 'suv',
+        'off road' => 'suv',
+        'suv' => 'suv',
+        'saloon' => 'sedan',
+        'sedan' => 'sedan',
+        'hatchback' => 'hatchback',
+        'station wagon' => 'wagon',
+        'estate' => 'wagon',
+        'wagon' => 'wagon',
+        'pickup truck' => 'pickup',
+        'pickup' => 'pickup',
+        'truck' => 'truck',
+        'luxury' => 'luxury',
+        'executive' => 'luxury',
+        'economy' => 'economy',
+        'budget' => 'economy',
+        'van' => 'van',
+        'mpv' => 'minibus',
+        'people carrier' => 'minibus',
+        'minibus' => 'minibus',
+        'bus' => 'bus'
+    ];
+    foreach ($vehicleTypeMap as $needle => $mappedType) {
+        if (strpos($messageLower, $needle) !== false) {
+            $params['vehicle_type'] = $mappedType;
             break;
         }
     }
@@ -11307,7 +11554,7 @@ function extractCarHireSearchParams($message, $db = null) {
     }
     
     // Extract price range
-    if (preg_match('/(?:under|below|less than|max|maximum|up to)\s*(?:mwk|kwacha)?\s*(\d+(?:[.,]\d+)?)\s*(?:million|m|k)?/i', $message, $matches)) {
+    if (preg_match('/(?:under|below|less than|max|maximum|up to|at most)\s*(?:mwk|kwacha)?\s*(\d+(?:[.,]\d+)?)\s*(?:million|m|k)?/i', $message, $matches)) {
         $price = floatval(str_replace([',', '.'], '', $matches[1]));
         if (strpos($messageLower, 'million') !== false || strpos($messageLower, ' m') !== false) {
             $params['max_daily_rate'] = $price * 1000000;
@@ -11316,7 +11563,7 @@ function extractCarHireSearchParams($message, $db = null) {
         }
     }
     
-    if (preg_match('/(?:over|above|more than|min|minimum|from)\s*(?:mwk|kwacha)?\s*(\d+(?:[.,]\d+)?)\s*(?:million|m|k)?/i', $message, $matches)) {
+    if (preg_match('/(?:over|above|more than|min|minimum|from|at least)\s*(?:mwk|kwacha)?\s*(\d+(?:[.,]\d+)?)\s*(?:million|m|k)?/i', $message, $matches)) {
         $price = floatval(str_replace([',', '.'], '', $matches[1]));
         if (strpos($messageLower, 'million') !== false || strpos($messageLower, ' m') !== false) {
             $params['min_daily_rate'] = $price * 1000000;
@@ -11343,16 +11590,28 @@ function extractCarHireSearchParams($message, $db = null) {
 
     $serviceMap = [
         'self drive' => 'Self Drive',
+        'self-drive' => 'Self Drive',
         'with driver' => 'With Driver',
         'driver' => 'With Driver',
+        'driver included' => 'With Driver',
         'chauffeur' => 'Chauffeur Service',
         'airport' => 'Airport Pickup',
+        'airport transfer' => 'Airport Pickup',
+        'airport pickup' => 'Airport Pickup',
+        'airport drop' => 'Airport Pickup',
         'wedding' => 'Wedding Cars',
+        'bridal' => 'Wedding Cars',
         'corporate' => 'Corporate Rental',
+        'conference' => 'Corporate Rental',
         'van hire' => 'Van Hire',
+        'minibus hire' => 'Van Hire',
         'truck hire' => 'Truck Hire',
         'vip' => 'VIP Service',
+        'executive' => 'VIP Service',
         'tourist' => 'Tourist Packages',
+        'long term' => 'Long Term Rental',
+        'monthly' => 'Long Term Rental',
+        'weekly' => 'Long Term Rental',
         '24/7' => '24/7 Service'
     ];
     foreach ($serviceMap as $needle => $mapped) {
@@ -11365,12 +11624,17 @@ function extractCarHireSearchParams($message, $db = null) {
     $eventMap = [
         'wedding' => 'Wedding',
         'corporate event' => 'Corporate Event',
+        'conference' => 'Corporate Event',
         'funeral' => 'Funeral',
         'birthday' => 'Birthday Party',
+        'party' => 'Birthday Party',
         'prom' => 'Prom Night',
         'vip transfer' => 'Airport VIP Transfer',
+        'airport vip' => 'Airport VIP Transfer',
         'graduation' => 'Graduation',
-        'church' => 'Church Event'
+        'church' => 'Church Event',
+        'wedding event' => 'Wedding',
+        'engagement' => 'Wedding'
     ];
     foreach ($eventMap as $needle => $mapped) {
         if (strpos($messageLower, $needle) !== false) {
@@ -11389,6 +11653,10 @@ function extractCarHireSearchParams($message, $db = null) {
         $params['quality_only'] = true;
     }
 
+    if (preg_match('/\b(top rated|highly rated|best rated|well reviewed)\b/i', $message)) {
+        $params['quality_only'] = true;
+    }
+
     $params['search_terms'] = buildAIChatBusinessSearchTerms($message);
 
     $priceComparison = detectPriceComparativeQuery($message);
@@ -11403,86 +11671,149 @@ function extractCarHireSearchParams($message, $db = null) {
  * Search car hire companies and their fleet based on parameters
  */
 function searchCarHire($db, $searchParams, $userLocation = null) {
-    $whereConditions = ["ch.status = 'active'"];
+    $companyColumns = aichatGetTableColumns($db, 'car_hire_companies');
+    $locationColumns = aichatGetTableColumns($db, 'locations');
+    $fleetColumns = aichatGetTableColumns($db, 'car_hire_fleet');
+    $makeColumns = aichatGetTableColumns($db, 'car_makes');
+    $modelColumns = aichatGetTableColumns($db, 'car_models');
+
+    $whereConditions = [];
     $params = [];
-    
-    // Location filter - case-insensitive
-    if (!empty($searchParams['location'])) {
-        $locationSearch = strtolower(trim($searchParams['location']));
-        $whereConditions[] = "(LOWER(loc.name) LIKE ? OR LOWER(loc.district) LIKE ? OR LOWER(loc.region) LIKE ?)";
-        $locationPattern = '%' . $locationSearch . '%';
-        $params[] = $locationPattern;
-        $params[] = $locationPattern;
-        $params[] = $locationPattern;
-    } elseif (!empty($searchParams['proximity']) && $userLocation && !empty($userLocation['location_name'])) {
-        // For proximity queries, prioritize user's location but don't make it mandatory
-        $locationSearch = strtolower(trim($userLocation['location_name']));
-        $whereConditions[] = "(LOWER(loc.name) LIKE ? OR LOWER(loc.district) LIKE ? OR LOWER(loc.region) LIKE ?)";
-        $locationPattern = '%' . $locationSearch . '%';
-        $params[] = $locationPattern;
-        $params[] = $locationPattern;
-        $params[] = $locationPattern;
+
+    if (isset($companyColumns['status'])) {
+        $whereConditions[] = "ch.status = 'active'";
     }
 
-    if (!empty($searchParams['hire_category'])) {
+    $canJoinLocations = isset($companyColumns['location_id']) && isset($locationColumns['id']);
+    $locationSearch = '';
+    if (!empty($searchParams['location'])) {
+        $locationSearch = strtolower(trim((string)$searchParams['location']));
+    } elseif (!empty($searchParams['proximity']) && $userLocation && !empty($userLocation['location_name'])) {
+        $locationSearch = strtolower(trim((string)$userLocation['location_name']));
+    }
+
+    if ($locationSearch !== '') {
+        $locationConditions = [];
+        if ($canJoinLocations && isset($locationColumns['name'])) {
+            $locationConditions[] = "LOWER(loc.name) LIKE ?";
+        }
+        if ($canJoinLocations && isset($locationColumns['district'])) {
+            $locationConditions[] = "LOWER(loc.district) LIKE ?";
+        }
+        if ($canJoinLocations && isset($locationColumns['region'])) {
+            $locationConditions[] = "LOWER(loc.region) LIKE ?";
+        }
+        if (isset($companyColumns['address'])) {
+            $locationConditions[] = "LOWER(ch.address) LIKE ?";
+        }
+
+        if (!empty($locationConditions)) {
+            $whereConditions[] = '(' . implode(' OR ', $locationConditions) . ')';
+            $locationPattern = '%' . $locationSearch . '%';
+            for ($i = 0; $i < count($locationConditions); $i++) {
+                $params[] = $locationPattern;
+            }
+        }
+    }
+
+    if (!empty($searchParams['hire_category']) && isset($companyColumns['hire_category'])) {
         $whereConditions[] = "(ch.hire_category = ? OR ch.hire_category = 'all')";
         $params[] = $searchParams['hire_category'];
     }
 
     if (!empty($searchParams['quality_only'])) {
-        $whereConditions[] = "(ch.verified = 1 OR ch.certified = 1 OR ch.featured = 1)";
+        $qualityConditions = [];
+        foreach (['verified', 'certified', 'featured'] as $qualityField) {
+            if (isset($companyColumns[$qualityField])) {
+                $qualityConditions[] = "ch.{$qualityField} = 1";
+            }
+        }
+        if (!empty($qualityConditions)) {
+            $whereConditions[] = '(' . implode(' OR ', $qualityConditions) . ')';
+        }
     }
 
     $searchTerms = !empty($searchParams['search_terms']) && is_array($searchParams['search_terms'])
         ? array_slice($searchParams['search_terms'], 0, 4)
         : [];
-    if (!empty($searchTerms)) {
+    $searchableCompanyFields = [];
+    foreach (['business_name', 'owner_name', 'address', 'description'] as $field) {
+        if (isset($companyColumns[$field])) {
+            $searchableCompanyFields[] = "LOWER(ch.{$field}) LIKE ?";
+        }
+    }
+    if (!empty($searchTerms) && !empty($searchableCompanyFields)) {
         $termConditions = [];
         foreach ($searchTerms as $term) {
-            $termConditions[] = "(LOWER(ch.business_name) LIKE ? OR LOWER(ch.owner_name) LIKE ? OR LOWER(ch.address) LIKE ? OR LOWER(ch.description) LIKE ?)";
-            $like = '%' . strtolower($term) . '%';
-            array_push($params, $like, $like, $like, $like);
+            $perTerm = [];
+            $like = '%' . strtolower((string)$term) . '%';
+            foreach ($searchableCompanyFields as $fieldCondition) {
+                $perTerm[] = $fieldCondition;
+                $params[] = $like;
+            }
+            if (!empty($perTerm)) {
+                $termConditions[] = '(' . implode(' OR ', $perTerm) . ')';
+            }
         }
-        $whereConditions[] = '(' . implode(' OR ', $termConditions) . ')';
+        if (!empty($termConditions)) {
+            $whereConditions[] = '(' . implode(' OR ', $termConditions) . ')';
+        }
     }
-    
+
+    if (empty($whereConditions)) {
+        $whereConditions[] = '1 = 1';
+    }
     $whereClause = implode(' AND ', $whereConditions);
-    
-    // Determine sort order
-    $sortBy = $searchParams['sort_by'] ?? 'default';
-    $isProximityQuery = !empty($searchParams['proximity']);
-    
+
+    $sortBy = (string)($searchParams['sort_by'] ?? 'default');
+    $orderParts = [];
     if ($sortBy === 'vehicle_count') {
-        // Sort by vehicle count (for "most" queries)
-        $orderBy = "vehicle_count DESC, ch.featured DESC, ch.verified DESC, ch.certified DESC";
-    } else {
-        // Default sort: featured, verified, certified, then name
-        $orderBy = "ch.featured DESC, ch.verified DESC, ch.certified DESC, ch.business_name ASC";
+        $orderParts[] = 'vehicle_count DESC';
     }
-    
-    // Get car hire companies with vehicle count and location information
+    foreach (['featured', 'verified', 'certified'] as $sortField) {
+        if (isset($companyColumns[$sortField])) {
+            $orderParts[] = "ch.{$sortField} DESC";
+        }
+    }
+    if ($sortBy !== 'vehicle_count') {
+        if (isset($companyColumns['business_name'])) {
+            $orderParts[] = 'ch.business_name ASC';
+        } elseif (isset($companyColumns['id'])) {
+            $orderParts[] = 'ch.id DESC';
+        }
+    }
+    if (empty($orderParts)) {
+        $orderParts[] = 'vehicle_count DESC';
+    }
+    $orderBy = implode(', ', $orderParts);
+
+    $locationSelectParts = [
+        ($canJoinLocations && isset($locationColumns['name'])) ? 'loc.name as location_name' : 'NULL as location_name',
+        ($canJoinLocations && isset($locationColumns['region'])) ? 'loc.region as region' : 'NULL as region',
+        ($canJoinLocations && isset($locationColumns['district'])) ? 'loc.district as district' : 'NULL as district',
+        ($canJoinLocations && isset($locationColumns['latitude'])) ? 'loc.latitude as latitude' : 'NULL as latitude',
+        ($canJoinLocations && isset($locationColumns['longitude'])) ? 'loc.longitude as longitude' : 'NULL as longitude'
+    ];
+    $locationJoinSql = $canJoinLocations ? 'LEFT JOIN locations loc ON ch.location_id = loc.id' : '';
+
+    $vehicleCountSelect = '0 as vehicle_count';
+    $fleetCountJoinSql = '';
+    if (isset($fleetColumns['company_id']) && isset($companyColumns['id'])) {
+        $fleetCountWhere = isset($fleetColumns['is_active']) ? ' WHERE is_active = 1' : '';
+        $fleetCountJoinSql = "LEFT JOIN (SELECT company_id, COUNT(*) AS vehicle_count FROM car_hire_fleet{$fleetCountWhere} GROUP BY company_id) fv ON fv.company_id = ch.id";
+        $vehicleCountSelect = 'COALESCE(fv.vehicle_count, 0) as vehicle_count';
+    }
+
     $reviewSubqueries = aichatHasBusinessReviews($db)
         ? "(SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r WHERE r.business_type = 'car_hire' AND r.business_id = ch.id AND r.status = 'active') as avg_rating,\n             (SELECT COUNT(*) FROM business_reviews r WHERE r.business_type = 'car_hire' AND r.business_id = ch.id AND r.status = 'active') as review_count"
-        : "NULL as avg_rating, 0 as review_count";
-    $stmt = $db->prepare("
-         SELECT ch.*, loc.name as location_name, loc.region, loc.district, loc.latitude, loc.longitude,
-             COUNT(f.id) as vehicle_count,
-             {$reviewSubqueries}
-        FROM car_hire_companies ch
-        INNER JOIN locations loc ON ch.location_id = loc.id
-        LEFT JOIN car_hire_fleet f ON ch.id = f.company_id AND f.is_active = 1
-        WHERE {$whereClause}
-        GROUP BY ch.id
-        ORDER BY {$orderBy}
-        LIMIT 50
-    ");
-    
+        : 'NULL as avg_rating, 0 as review_count';
+
+    $stmt = $db->prepare("\n        SELECT ch.*, " . implode(', ', $locationSelectParts) . ",\n               {$vehicleCountSelect},\n               {$reviewSubqueries}\n        FROM car_hire_companies ch\n        {$locationJoinSql}\n        {$fleetCountJoinSql}\n        WHERE {$whereClause}\n        ORDER BY {$orderBy}\n        LIMIT 50\n    ");
     $stmt->execute($params);
     $companies = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $companies = rankAIChatBusinessResultsByDistance($companies, (array)$searchParams, $userLocation);
-    
-    // For each company, check if they have matching vehicles
+
     foreach ($companies as &$company) {
         $company['matching_vehicles'] = [];
         $company['total_vehicles'] = 0;
@@ -11490,96 +11821,121 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
         $company['services_list'] = decodeAIChatBusinessJsonList($company['services'] ?? []);
         $company['special_services_list'] = decodeAIChatBusinessJsonList($company['special_services'] ?? []);
         $company['event_types_list'] = decodeAIChatBusinessJsonList($company['event_types'] ?? []);
-        
-        // Search fleet for matching vehicles
-        $fleetConditions = ["f.company_id = ?", "f.is_active = 1", "f.is_available = 1"];
-        $fleetParams = [$company['id']];
-        
-        // Make filter
-        if (!empty($searchParams['make'])) {
-            $makeStmt = $db->prepare("SELECT id FROM car_makes WHERE LOWER(name) LIKE ? LIMIT 1");
-            $makeStmt->execute(['%' . strtolower($searchParams['make']) . '%']);
-            $make = $makeStmt->fetch(PDO::FETCH_ASSOC);
-            if ($make) {
-                $fleetConditions[] = "f.make_id = ?";
-                $fleetParams[] = $make['id'];
+
+        try {
+            if (isset($company['id']) && isset($fleetColumns['company_id'])) {
+                $fleetConditions = ["f.company_id = ?"];
+                $fleetParams = [(int)$company['id']];
+
+                if (isset($fleetColumns['is_active'])) {
+                    $fleetConditions[] = 'f.is_active = 1';
+                }
+                if (isset($fleetColumns['is_available'])) {
+                    $fleetConditions[] = 'f.is_available = 1';
+                }
+
+                if (!empty($searchParams['make']) && isset($fleetColumns['make_id']) && isset($makeColumns['id']) && isset($makeColumns['name'])) {
+                    $makeStmt = $db->prepare("SELECT id FROM car_makes WHERE LOWER(name) LIKE ? LIMIT 1");
+                    $makeStmt->execute(['%' . strtolower((string)$searchParams['make']) . '%']);
+                    $make = $makeStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($make) {
+                        $fleetConditions[] = 'f.make_id = ?';
+                        $fleetParams[] = $make['id'];
+                    }
+                }
+
+                if (!empty($searchParams['model']) && isset($fleetColumns['model_id']) && isset($modelColumns['id']) && isset($modelColumns['name'])) {
+                    $modelStmt = $db->prepare("SELECT id FROM car_models WHERE LOWER(name) LIKE ? LIMIT 1");
+                    $modelStmt->execute(['%' . strtolower((string)$searchParams['model']) . '%']);
+                    $model = $modelStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($model) {
+                        $fleetConditions[] = 'f.model_id = ?';
+                        $fleetParams[] = $model['id'];
+                    }
+                }
+
+                $canJoinModels = isset($fleetColumns['model_id']) && isset($modelColumns['id']) && isset($modelColumns['name']);
+                if (!empty($searchParams['vehicle_type']) && $canJoinModels && isset($modelColumns['body_type'])) {
+                    $fleetConditions[] = 'mo.body_type LIKE ?';
+                    $fleetParams[] = '%' . $searchParams['vehicle_type'] . '%';
+                }
+
+                if (!empty($searchParams['seats']) && isset($fleetColumns['seats'])) {
+                    $fleetConditions[] = 'f.seats = ?';
+                    $fleetParams[] = (int)$searchParams['seats'];
+                }
+
+                if (!empty($searchParams['min_daily_rate']) && isset($fleetColumns['daily_rate'])) {
+                    $fleetConditions[] = 'f.daily_rate >= ?';
+                    $fleetParams[] = $searchParams['min_daily_rate'];
+                }
+
+                if (!empty($searchParams['max_daily_rate']) && isset($fleetColumns['daily_rate'])) {
+                    $fleetConditions[] = 'f.daily_rate <= ?';
+                    $fleetParams[] = $searchParams['max_daily_rate'];
+                }
+
+                if (!empty($searchParams['fuel_type']) && isset($fleetColumns['fuel_type'])) {
+                    $fleetConditions[] = 'LOWER(f.fuel_type) = ?';
+                    $fleetParams[] = strtolower((string)$searchParams['fuel_type']);
+                }
+
+                if (!empty($searchParams['transmission']) && isset($fleetColumns['transmission'])) {
+                    $fleetConditions[] = 'LOWER(f.transmission) = ?';
+                    $fleetParams[] = strtolower((string)$searchParams['transmission']);
+                }
+
+                $fleetSelectParts = ['f.*'];
+                $fleetJoins = [];
+
+                if (isset($fleetColumns['make_id']) && isset($makeColumns['id']) && isset($makeColumns['name'])) {
+                    $fleetJoins[] = 'LEFT JOIN car_makes m ON f.make_id = m.id';
+                    $fleetSelectParts[] = 'm.name as make_name';
+                } else {
+                    $fleetSelectParts[] = 'NULL as make_name';
+                }
+
+                if ($canJoinModels) {
+                    $fleetJoins[] = 'LEFT JOIN car_models mo ON f.model_id = mo.id';
+                    $fleetSelectParts[] = 'mo.name as model_name';
+                    $fleetSelectParts[] = isset($modelColumns['body_type']) ? 'mo.body_type as body_type' : 'NULL as body_type';
+                } else {
+                    $fleetSelectParts[] = 'NULL as model_name';
+                    $fleetSelectParts[] = 'NULL as body_type';
+                }
+
+                $fleetWhereClause = implode(' AND ', $fleetConditions);
+                $fleetOrderBy = isset($fleetColumns['daily_rate'])
+                    ? 'f.daily_rate ASC'
+                    : (isset($fleetColumns['id']) ? 'f.id DESC' : 'f.company_id ASC');
+
+                $fleetStmt = $db->prepare("\n                    SELECT " . implode(', ', $fleetSelectParts) . "\n                    FROM car_hire_fleet f\n                    " . implode("\n", $fleetJoins) . "\n                    WHERE {$fleetWhereClause}\n                    ORDER BY {$fleetOrderBy}\n                    LIMIT 10\n                ");
+                $fleetStmt->execute($fleetParams);
+                $company['matching_vehicles'] = $fleetStmt->fetchAll(PDO::FETCH_ASSOC);
             }
+        } catch (Throwable $fleetError) {
+            error_log('searchCarHire fleet query error for company ' . (int)($company['id'] ?? 0) . ': ' . $fleetError->getMessage());
+            $company['matching_vehicles'] = [];
         }
-        
-        // Model filter
-        if (!empty($searchParams['model'])) {
-            $modelStmt = $db->prepare("SELECT id FROM car_models WHERE LOWER(name) LIKE ? LIMIT 1");
-            $modelStmt->execute(['%' . strtolower($searchParams['model']) . '%']);
-            $model = $modelStmt->fetch(PDO::FETCH_ASSOC);
-            if ($model) {
-                $fleetConditions[] = "f.model_id = ?";
-                $fleetParams[] = $model['id'];
-            }
-        }
-        
-        // Vehicle type filter
-        if (!empty($searchParams['vehicle_type'])) {
-            $fleetConditions[] = "mo.body_type LIKE ?";
-            $fleetParams[] = '%' . $searchParams['vehicle_type'] . '%';
-        }
-        
-        // Seats filter
-        if (!empty($searchParams['seats'])) {
-            $fleetConditions[] = "f.seats = ?";
-            $fleetParams[] = (int)$searchParams['seats'];
-        }
-        
-        // Price range filters
-        if (!empty($searchParams['min_daily_rate'])) {
-            $fleetConditions[] = "f.daily_rate >= ?";
-            $fleetParams[] = $searchParams['min_daily_rate'];
-        }
-        
-        if (!empty($searchParams['max_daily_rate'])) {
-            $fleetConditions[] = "f.daily_rate <= ?";
-            $fleetParams[] = $searchParams['max_daily_rate'];
-        }
-        
-        // Fuel type filter
-        if (!empty($searchParams['fuel_type'])) {
-            $fleetConditions[] = "LOWER(f.fuel_type) = ?";
-            $fleetParams[] = strtolower($searchParams['fuel_type']);
-        }
-        
-        // Transmission filter
-        if (!empty($searchParams['transmission'])) {
-            $fleetConditions[] = "LOWER(f.transmission) = ?";
-            $fleetParams[] = strtolower($searchParams['transmission']);
-        }
-        
-        $fleetWhereClause = implode(' AND ', $fleetConditions);
-        
-        $fleetStmt = $db->prepare("
-            SELECT f.*, m.name as make_name, mo.name as model_name, mo.body_type, f.seats, f.fuel_type, f.transmission
-            FROM car_hire_fleet f
-            INNER JOIN car_makes m ON f.make_id = m.id
-            INNER JOIN car_models mo ON f.model_id = mo.id
-            WHERE {$fleetWhereClause}
-            ORDER BY f.daily_rate ASC
-            LIMIT 10
-        ");
-        
-        $fleetStmt->execute($fleetParams);
-        $company['matching_vehicles'] = $fleetStmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Get total vehicle count (use from query if available, otherwise fetch)
-        // Note: vehicle_count is already calculated in the SQL query above
-        if (isset($company['vehicle_count']) && $company['vehicle_count'] > 0) {
+
+        if (isset($company['vehicle_count']) && is_numeric($company['vehicle_count']) && $company['vehicle_count'] > 0) {
             $company['total_vehicles'] = (int)$company['vehicle_count'];
-        } else {
-            // Fallback: fetch if not in query result
-            $countStmt = $db->prepare("SELECT COUNT(*) FROM car_hire_fleet WHERE company_id = ? AND is_active = 1");
-            $countStmt->execute([$company['id']]);
-            $company['total_vehicles'] = (int)$countStmt->fetchColumn();
+        } elseif (isset($company['id']) && isset($fleetColumns['company_id'])) {
+            $countSql = 'SELECT COUNT(*) FROM car_hire_fleet WHERE company_id = ?';
+            if (isset($fleetColumns['is_active'])) {
+                $countSql .= ' AND is_active = 1';
+            }
+            try {
+                $countStmt = $db->prepare($countSql);
+                $countStmt->execute([$company['id']]);
+                $company['total_vehicles'] = (int)$countStmt->fetchColumn();
+            } catch (Throwable $countError) {
+                error_log('searchCarHire count fallback error for company ' . (int)($company['id'] ?? 0) . ': ' . $countError->getMessage());
+                $company['total_vehicles'] = 0;
+            }
         }
-        
-        // Calculate daily rate from
-        if (!empty($company['matching_vehicles'])) {
+
+        if (!empty($company['matching_vehicles']) && isset($fleetColumns['daily_rate'])) {
             $rates = array_column($company['matching_vehicles'], 'daily_rate');
             $rates = array_filter($rates);
             if (!empty($rates)) {
@@ -11589,18 +11945,17 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
             $company['daily_rate_from'] = (float)$company['daily_rate_from'];
         }
     }
+    unset($company);
 
-    // PHP post-filter: use OR logic — company passes if it matches hire_category (SQL already
-    // narrowed the set), OR company_service, OR event_type. AND logic was too strict and caused
-    // empty results when companies had one field but not the other.
+    // PHP post-filter: use OR logic — company passes if it matches hire_category, OR
+    // company_service, OR event_type.
     $hasServiceFilter = !empty($searchParams['company_service']);
-    $hasEventFilter   = !empty($searchParams['event_type']);
+    $hasEventFilter = !empty($searchParams['event_type']);
     $hasCategoryFilter = !empty($searchParams['hire_category']);
 
     $companies = array_values(array_filter($companies, function($company) use (
         $searchParams, $hasServiceFilter, $hasEventFilter, $hasCategoryFilter
     ) {
-        // vehicle_type filter (needs decoded JSON lists, can't be done in SQL easily)
         if (!empty($searchParams['vehicle_type'])) {
             $companyVehicleTypes = $company['vehicle_types_list'] ?? [];
             $companyVehicleTypes[] = (string)($company['hire_category'] ?? '');
@@ -11609,10 +11964,9 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
             }
         }
 
-        // Service/event filter: if any of these filters were specified, company must satisfy at least one
         if ($hasServiceFilter || $hasEventFilter) {
             $serviceMatch = false;
-            $eventMatch   = false;
+            $eventMatch = false;
 
             if ($hasServiceFilter) {
                 $companyServices = array_merge($company['services_list'] ?? [], $company['special_services_list'] ?? []);
@@ -11622,8 +11976,12 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
                 $eventMatch = aiChatBusinessMatchesList($company['event_types_list'] ?? [], [$searchParams['event_type']]);
             }
 
-            // If hire_category already narrowed the SQL result set, treat that as satisfying the filter
-            $categoryMatch = $hasCategoryFilter; // SQL already applied this filter
+            $categoryMatch = false;
+            if ($hasCategoryFilter) {
+                $companyCategory = strtolower(trim((string)($company['hire_category'] ?? '')));
+                $targetCategory = strtolower(trim((string)$searchParams['hire_category']));
+                $categoryMatch = ($companyCategory !== '' && ($companyCategory === $targetCategory || $companyCategory === 'all'));
+            }
 
             if (!$serviceMatch && !$eventMatch && !$categoryMatch) {
                 return false;
@@ -11632,18 +11990,15 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
 
         return true;
     }));
-    
-    // Filter companies to only show those with matching vehicles if vehicle filters were specified
-    if (!empty($searchParams['make']) || !empty($searchParams['model']) || !empty($searchParams['vehicle_type']) || 
+
+    if (!empty($searchParams['make']) || !empty($searchParams['model']) || !empty($searchParams['vehicle_type']) ||
         !empty($searchParams['seats']) || !empty($searchParams['fuel_type']) || !empty($searchParams['transmission']) ||
         !empty($searchParams['min_daily_rate']) || !empty($searchParams['max_daily_rate'])) {
-        $companies = array_filter($companies, function($company) {
+        $companies = array_values(array_filter($companies, function($company) {
             return !empty($company['matching_vehicles']);
-        });
-        $companies = array_values($companies); // Re-index array
+        }));
     }
 
-    // Apply price-comparison ordering after calculating daily_rate_from values.
     if (!empty($searchParams['price_comparison'])) {
         $comparison = (string)$searchParams['price_comparison'];
         usort($companies, function($a, $b) use ($comparison) {
@@ -11654,11 +12009,10 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
                 return $bRate <=> $aRate;
             }
 
-            // Default to cheapest and best_value behaving like ascending price.
             return $aRate <=> $bRate;
         });
     }
-    
+
     return ['companies' => $companies];
 }
 
