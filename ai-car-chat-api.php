@@ -5529,7 +5529,17 @@ function handleSearchQuery($db, $message, $conversationHistory) {
                 $response = $alt['message'] . "\n\n";
                 $listings = $alt['listings'];
             } else {
-                // No alternatives found - be helpful but don't show all listings
+                // No alternatives found — ask AI for general advice before giving up
+                $aiFallback = callAIChatKnowledgeFallback($db, $message, 'listing', $baseUrl);
+                if ($aiFallback !== null && $aiFallback !== '') {
+                    sendSuccess([
+                        'response' => $aiFallback,
+                        'search_results' => [],
+                        'total_results' => 0
+                    ]);
+                    return;
+                }
+                // Static fallback if AI unavailable
                 $response = "I couldn't find any vehicles matching your exact criteria. ";
                 $suggestions = [];
                 if ($hasLocation) {
@@ -5546,7 +5556,6 @@ function handleSearchQuery($db, $message, $conversationHistory) {
                 }
                 $response .= "[Browse all listings]({$baseUrl}index.html) to see what's available.";
                 
-                // Send response without listings
                 sendSuccess([
                     'response' => $response,
                     'search_results' => [],
@@ -7128,6 +7137,57 @@ function queryCarSpecsFromInternet($message, $makeName, $modelName, $year = null
     return 'Research focus: ' . $vehicleLabel
         . '. Prioritize ' . implode(', ', $requestedTopics)
         . '. Use broadly known automotive reference knowledge, and clearly flag where exact figures may vary by trim, engine, drivetrain, market, or model year. Avoid invented certainty when exact local-database figures are unavailable.';
+}
+
+/**
+ * Call the AI provider with a compact knowledge-fallback prompt when the MotorLink
+ * database has no results for a query. Returns the AI-generated suggestion string,
+ * or null if the provider is unavailable/disabled.
+ *
+ * @param object $db         PDO database connection
+ * @param string $query      The original user query
+ * @param string $type       'car_hire' | 'dealer' | 'garage' | 'listing'
+ * @param string $baseUrl    Site base URL for browse links
+ * @return string|null
+ */
+function callAIChatKnowledgeFallback($db, $query, $type, $baseUrl = '') {
+    $user = getCurrentUser(true);
+    if (!$user) { return null; }
+
+    $settings = getAIChatSettings($db);
+    if (!(int)($settings['enabled'] ?? 1)) { return null; }
+
+    $typeLabels = [
+        'car_hire'  => 'car hire / vehicle rental companies in Malawi',
+        'dealer'    => 'car dealers / showrooms in Malawi',
+        'garage'    => 'garages / auto-repair workshops in Malawi',
+        'listing'   => 'cars for sale in Malawi',
+    ];
+    $typeLabel = $typeLabels[$type] ?? 'automotive services in Malawi';
+
+    $browseHint = '';
+    if ($baseUrl !== '') {
+        $pageMap = ['car_hire' => 'car-hire.html', 'dealer' => 'dealers.html', 'garage' => 'garages.html', 'listing' => 'index.html'];
+        $page = $pageMap[$type] ?? 'index.html';
+        $browseHint = " Users can also browse all results at {$baseUrl}{$page}.";
+    }
+
+    $systemPrompt = "You are the MotorLink AI Assistant for Malawi. "
+        . "The MotorLink database has no matching {$typeLabel} for the user's query. "
+        . "Your job is to be genuinely helpful by:\n"
+        . "1. Briefly acknowledging nothing was found in our database (1 sentence).\n"
+        . "2. Using your general knowledge to suggest: what alternatives or similar options typically exist, what the user should look for, or what questions to ask when searching.\n"
+        . "3. If relevant, mention that new businesses can register on MotorLink so the directory grows.\n"
+        . "Keep the response under 150 words. Use short bullet points where helpful. Do not invent specific business names or phone numbers.{$browseHint}";
+
+    $messages = [
+        ['role' => 'system', 'content' => $systemPrompt],
+        ['role' => 'user', 'content' => $query],
+    ];
+
+    $result = callOpenAIAPIForSpecs($db, $user, $messages);
+    if ($result === null || empty($result['response'])) { return null; }
+    return trim((string)$result['response']);
 }
 
 /**
@@ -9813,12 +9873,12 @@ function searchDealers($db, $searchParams, $userLocation = null) {
         $whereClause = implode(' AND ', $whereConditions);
         
         // Include location information and business_hours
+        $dealerReviewSubqueries = aichatHasBusinessReviews($db)
+            ? "(SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as avg_rating,\n                                     (SELECT COUNT(*) FROM business_reviews r WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as review_count,"
+            : "NULL as avg_rating, 0 as review_count,";
         $stmt = $db->prepare("
                  SELECT d.*, loc.name as location_name, loc.region, loc.district, loc.latitude, loc.longitude, d.business_hours,
-                                     (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
-                                        WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as avg_rating,
-                                     (SELECT COUNT(*) FROM business_reviews r
-                                        WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as review_count,
+                                     {$dealerReviewSubqueries}
                    (SELECT COUNT(*) 
                     FROM car_listings cl 
                     INNER JOIN users u ON cl.user_id = u.id 
@@ -9919,8 +9979,13 @@ function handleDealerQuery($db, $message, $conversationHistory) {
         
         // Format response
         if (empty($dealers)) {
-            $response = "I couldn't find any dealers in the database matching your search. ";
-            $response .= "Try [browsing all dealers]({$baseUrl}dealers.html) on the website, or contact support if you believe this is an error.";
+            $aiFallback = callAIChatKnowledgeFallback($db, $message, 'dealer', $baseUrl);
+            if ($aiFallback !== null && $aiFallback !== '') {
+                $response = $aiFallback;
+            } else {
+                $response = "No dealers matching your search were found in our database. "
+                    . "Try [browsing all dealers]({$baseUrl}dealers.html) or contact support.";
+            }
         } else {
             // For proximity queries (closest, nearest), return only the closest result
             if ($isProximityQuery && !empty($dealers)) {
@@ -10184,8 +10249,13 @@ function handleGarageQuery($db, $message, $conversationHistory) {
             }
             
             if (empty($garages)) {
-                $response = "I couldn't find any garages in the database matching your search. ";
-                $response .= "Try [browsing all garages]({$baseUrl}garages.html) on the website, or contact support if you believe this is an error.";
+                $aiFallback = callAIChatKnowledgeFallback($db, $message, 'garage', $baseUrl);
+                if ($aiFallback !== null && $aiFallback !== '') {
+                    $response = $aiFallback;
+                } else {
+                    $response = "No garages matching your search were found in our database. "
+                        . "Try [browsing all garages]({$baseUrl}garages.html) or contact support.";
+                }
             } else {
                 $response = "I found some garages:\n\n";
                 // Continue with the garage listing below
@@ -10514,6 +10584,22 @@ function calculateDistance($lat1, $lon1, $lat2, $lon2) {
 }
 
 /**
+ * Check (once per request, then cache) whether the business_reviews table exists.
+ * Prevents SQLSTATE[42S02] on live servers where the table may not yet be present.
+ */
+function aichatHasBusinessReviews($db) {
+    static $exists = null;
+    if ($exists !== null) { return $exists; }
+    try {
+        $db->query("SELECT 1 FROM business_reviews LIMIT 1");
+        $exists = true;
+    } catch (PDOException $e) {
+        $exists = false;
+    }
+    return $exists;
+}
+
+/**
  * Search garages based on parameters
  */
 function searchGarages($db, $searchParams, $userLocation = null) {
@@ -10602,12 +10688,12 @@ function searchGarages($db, $searchParams, $userLocation = null) {
     // Use INNER JOIN like getGarages() in api.php for consistency
     // This ensures we only get garages with valid locations
     try {
+        $garageReviewSubqueries = aichatHasBusinessReviews($db)
+            ? "(SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as avg_rating,\n                   (SELECT COUNT(*) FROM business_reviews r WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as review_count"
+            : "NULL as avg_rating, 0 as review_count";
         $stmt = $db->prepare("
                 SELECT g.*, loc.name as location_name, loc.region, loc.district, loc.latitude, loc.longitude, g.business_hours, g.operating_hours,
-                   (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
-                    WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as avg_rating,
-                   (SELECT COUNT(*) FROM business_reviews r
-                    WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as review_count
+                   {$garageReviewSubqueries}
             FROM garages g
             INNER JOIN locations loc ON g.location_id = loc.id
             WHERE {$whereClause}
@@ -10907,8 +10993,13 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
         
         // Format response
         if (empty($results['companies'])) {
-            $response = "I couldn't find any car hire companies matching your search. ";
-            $response .= "Try [browsing all car hire companies]({$baseUrl}car-hire.html) on the website.";
+            $aiFallback = callAIChatKnowledgeFallback($db, $message, 'car_hire', $baseUrl);
+            if ($aiFallback !== null && $aiFallback !== '') {
+                $response = $aiFallback;
+            } else {
+                $response = "No car hire companies matching your search were found in our database. "
+                    . "Try [browsing all car hire companies]({$baseUrl}car-hire.html) or refine your search.";
+            }
         } else {
             // For proximity queries (closest, nearest), return only the closest result
             if ($isProximityQuery && !empty($results['companies'])) {
@@ -11333,13 +11424,13 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
     }
     
     // Get car hire companies with vehicle count and location information
+    $reviewSubqueries = aichatHasBusinessReviews($db)
+        ? "(SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r WHERE r.business_type = 'car_hire' AND r.business_id = ch.id AND r.status = 'active') as avg_rating,\n             (SELECT COUNT(*) FROM business_reviews r WHERE r.business_type = 'car_hire' AND r.business_id = ch.id AND r.status = 'active') as review_count"
+        : "NULL as avg_rating, 0 as review_count";
     $stmt = $db->prepare("
          SELECT ch.*, loc.name as location_name, loc.region, loc.district, loc.latitude, loc.longitude,
              COUNT(f.id) as vehicle_count,
-             (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
-              WHERE r.business_type = 'car_hire' AND r.business_id = ch.id AND r.status = 'active') as avg_rating,
-             (SELECT COUNT(*) FROM business_reviews r
-              WHERE r.business_type = 'car_hire' AND r.business_id = ch.id AND r.status = 'active') as review_count
+             {$reviewSubqueries}
         FROM car_hire_companies ch
         INNER JOIN locations loc ON ch.location_id = loc.id
         LEFT JOIN car_hire_fleet f ON ch.id = f.company_id AND f.is_active = 1
