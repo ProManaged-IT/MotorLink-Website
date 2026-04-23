@@ -105,6 +105,17 @@
                             <li><i class="fas fa-check"></i> Garage, dealer, and car hire info</li>
                             <li><i class="fas fa-check"></i> General car advice</li>
                         </ul>
+                        <div class="ai-chat-conversation-options ai-chat-welcome-options">
+                            <div class="ai-chat-conversation-options-label">Popular quick queries:</div>
+                            <div class="ai-chat-conversation-options-list">
+                                <button type="button" class="ai-chat-conversation-option-btn ai-chat-welcome-query-btn" data-conversation-option="Emergency breakdown assistance near me">Emergency breakdown assistance near me</button>
+                                <button type="button" class="ai-chat-conversation-option-btn ai-chat-welcome-query-btn" data-conversation-option="Tyre repair near me">Tyre repair near me</button>
+                                <button type="button" class="ai-chat-conversation-option-btn ai-chat-welcome-query-btn" data-conversation-option="Nearest towing service near me">Nearest towing service near me</button>
+                                <button type="button" class="ai-chat-conversation-option-btn ai-chat-welcome-query-btn" data-conversation-option="Closest garage open now near me">Closest garage open now near me</button>
+                                <button type="button" class="ai-chat-conversation-option-btn ai-chat-welcome-query-btn" data-conversation-option="Battery jump start near me">Battery jump start near me</button>
+                                <button type="button" class="ai-chat-conversation-option-btn ai-chat-welcome-query-btn" data-conversation-option="Fuel delivery near me">Fuel delivery near me</button>
+                            </div>
+                        </div>
                         <p class="ai-chat-disclaimer">Just ask me anything!</p>
                     </div>
                 </div>

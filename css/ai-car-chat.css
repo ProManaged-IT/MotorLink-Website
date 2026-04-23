@@ -1077,6 +1077,21 @@
     outline-offset: 2px;
 }
 
+.ai-chat-welcome-options {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed rgba(148, 163, 184, 0.45);
+    text-align: left;
+}
+
+.ai-chat-welcome-options .ai-chat-conversation-options-label {
+    margin-bottom: 8px;
+}
+
+.ai-chat-welcome-options .ai-chat-conversation-options-list {
+    justify-content: center;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    13. FEEDBACK
    ═══════════════════════════════════════════════════════════════════════════ */

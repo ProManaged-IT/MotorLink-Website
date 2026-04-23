@@ -1,406 +1,531 @@
-/**
+﻿/**
  * MotorLink — Interactive Product Walkthrough
- * --------------------------------------------
- *   - Contextual tooltips / spotlight tour
- *   - Auto-runs on first login and first visit after registration
- *   - Dismissible forever per-user (DB) + localStorage for guests
- *   - No external dependencies
- *   - Admin-toggleable (server-side feature flag)
+ * ─────────────────────────────────────────────
+ *   · Spotlight + contextual tooltip tour (7 steps on index.html)
+ *   · Tooltip has a CSS arrow that POINTS at the highlighted target
+ *   · Tooltip transitions (fade + move) between steps
+ *   · Back / Next / Skip / Finish all work correctly
+ *   · Clicking the dark overlay does NOT advance the step (only buttons do)
+ *   · Brand green theme — no purple
+ *   · Admin-toggleable via site_settings
  */
 (function () {
     'use strict';
 
-    // Only run on index.html (home page)
-    const path = (window.location.pathname || '/').toLowerCase();
-    if (!(path === '/' || path.endsWith('/index.html') || path.endsWith('/'))) {
-        return;
-    }
+    // Only run on homepage
+    const _path = (window.location.pathname || '/').toLowerCase().replace(/\/+$/, '');
+    if (_path !== '' && _path !== '/index.html' && !_path.endsWith('/index.html')) return;
 
-    const LS_COMPLETED_KEY = 'motorlink_walkthrough_completed';
-    const LS_DISMISSED_KEY = 'motorlink_walkthrough_dismissed';
+    const LS_DONE = 'motorlink_walkthrough_completed';
+    const LS_SKIP = 'motorlink_walkthrough_dismissed';
     const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname.startsWith('127.')) ? 'proxy.php' : 'api.php';
 
-    // ─── Tour steps ───────────────────────────────────────────────────────
-    // Each step targets an element on index.html; falls back gracefully if missing.
+    // ── Steps ────────────────────────────────────────────────────────────
     const STEPS = [
         {
-            selector: '.hero-search, #heroSearch, .search-form, .search-container',
+            selector: '.hero-search, #heroSearch, .search-form, .search-container, form[role="search"]',
             title: 'Find Your Perfect Car',
-            body:  'Search thousands of vehicles by make, model, price, or location. Start typing or use filters to narrow down your ideal ride.',
-            icon:  'fa-magnifying-glass',
-            position: 'bottom'
+            body:  'Search thousands of vehicles by make, model, price, or location. Start typing or use the smart filters.',
+            icon:  'fa-magnifying-glass'
         },
         {
-            selector: 'a[href*="showroom"], a[href*="car-database"], nav a:nth-child(1)',
+            selector: 'a[href*="showroom"], a[href*="car-database"]',
             title: 'Browse Our Showroom',
-            body:  'Explore our complete inventory of cars for sale across Malawi — from budget-friendly to luxury.',
-            icon:  'fa-car',
-            position: 'bottom'
+            body:  'Explore our full inventory — from budget-friendly to luxury cars available across Malawi.',
+            icon:  'fa-car-side'
         },
         {
             selector: 'a[href*="car-hire"]',
             title: 'Car Hire Services',
-            body:  'Need a car for a day, a wedding, or a long trip? Browse verified car hire companies with instant WhatsApp booking.',
-            icon:  'fa-key',
-            position: 'bottom'
+            body:  'Need wheels for a wedding, trip, or business? Book instantly via WhatsApp with verified hire companies.',
+            icon:  'fa-key'
         },
         {
             selector: 'a[href*="dealers"]',
             title: 'Trusted Dealers',
-            body:  'Connect with certified dealers across Malawi. Check their ratings, inventory, and get direct contact details.',
-            icon:  'fa-building',
-            position: 'bottom'
+            body:  'Browse certified dealers, see their ratings and full inventory in one tap.',
+            icon:  'fa-store'
         },
         {
             selector: 'a[href*="garages"]',
             title: 'Find a Garage',
-            body:  'Servicing, repairs, breakdowns — find nearby garages offering the services your car needs.',
-            icon:  'fa-wrench',
-            position: 'bottom'
+            body:  'Service, repairs, or a breakdown? Find a nearby garage that covers exactly what you need.',
+            icon:  'fa-wrench'
         },
         {
-            selector: '#aiChatToggle, .ai-chat-toggle, [data-ai-chat]',
-            title: 'Meet Your AI Assistant',
-            body:  'Ask anything about cars, prices, or services. Our AI assistant understands natural questions like "find me a 7-seater under 3M in Lilongwe".',
-            icon:  'fa-robot',
-            position: 'left'
+            selector: '#aiChatToggle, .ai-chat-toggle, [data-ai-chat], .ai-car-chat-widget',
+            title: 'Your AI Car Assistant',
+            body:  'Ask anything in plain language — "7-seater under MK3M in Blantyre". Our AI finds it for you.',
+            icon:  'fa-robot'
         },
         {
             selector: 'a[href*="sell"]',
             title: 'Sell Your Car',
-            body:  'Ready to sell? List your vehicle in minutes and reach thousands of buyers across the country.',
-            icon:  'fa-tag',
-            position: 'bottom'
+            body:  'List your car in minutes and reach thousands of serious buyers across the country.',
+            icon:  'fa-tag'
         }
     ];
 
-    let currentStep = 0;
-    let overlay = null;
+    let step      = 0;
+    let overlay   = null;
     let spotlight = null;
-    let tooltip = null;
-    let resizeHandler = null;
+    let card      = null;         // the tooltip card
+    let resizeRaf = null;
 
-    // ─── Entry point ──────────────────────────────────────────────────────
-    function init() {
-        // Quick localStorage shortcut
-        try {
-            if (localStorage.getItem(LS_COMPLETED_KEY) === '1' || localStorage.getItem(LS_DISMISSED_KEY) === '1') {
-                return;
+    // ── Styles ───────────────────────────────────────────────────────────
+    function injectStyles() {
+        if (document.getElementById('ml-wt-css')) return;
+        const s = document.createElement('style');
+        s.id = 'ml-wt-css';
+        s.textContent = `
+            #ml-wt-overlay {
+                position: fixed; inset: 0;
+                background: rgba(10,20,30,0.62);
+                z-index: 99990;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+                pointer-events: all;
+                cursor: default;
             }
-        } catch (e) {}
+            #ml-wt-overlay.wt-on { opacity: 1; }
+
+            #ml-wt-spot {
+                position: fixed;
+                border-radius: 10px;
+                box-shadow: 0 0 0 9999px rgba(10,20,30,0.62),
+                            0 0 0 3px #00c853,
+                            0 0 24px rgba(0,200,83,0.4);
+                z-index: 99991;
+                pointer-events: none;
+                transition: top 0.38s cubic-bezier(0.65,0,0.35,1),
+                            left 0.38s cubic-bezier(0.65,0,0.35,1),
+                            width 0.38s cubic-bezier(0.65,0,0.35,1),
+                            height 0.38s cubic-bezier(0.65,0,0.35,1);
+                background: transparent;
+            }
+
+            #ml-wt-card {
+                position: fixed;
+                width: 320px;
+                max-width: calc(100vw - 32px);
+                background: #fff;
+                border-radius: 16px;
+                box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+                z-index: 99992;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                overflow: visible;
+                opacity: 0;
+                transform: scale(0.94);
+                transition: opacity 0.22s ease, transform 0.22s ease,
+                            top 0.35s cubic-bezier(0.65,0,0.35,1),
+                            left 0.35s cubic-bezier(0.65,0,0.35,1);
+                pointer-events: all;
+            }
+            #ml-wt-card.wt-show { opacity: 1; transform: scale(1); }
+            #ml-wt-card.wt-fade { opacity: 0; transform: scale(0.94); }
+
+            .wt-card-inner { border-radius: 16px; overflow: hidden; }
+
+            .wt-head {
+                background: linear-gradient(135deg, #00c853 0%, #00a843 100%);
+                color: #fff;
+                padding: 16px 18px 13px;
+                position: relative;
+            }
+            .wt-head-row { display: flex; align-items: center; gap: 12px; }
+            .wt-head-icon {
+                width: 40px; height: 40px;
+                border-radius: 50%;
+                background: rgba(255,255,255,0.22);
+                display: flex; align-items: center; justify-content: center;
+                font-size: 17px; flex-shrink: 0;
+            }
+            .wt-head-title { font-size: 1rem; font-weight: 700; margin: 0; flex: 1; line-height: 1.3; }
+            .wt-close {
+                background: rgba(255,255,255,0.2);
+                border: 0; width: 28px; height: 28px; border-radius: 50%;
+                color: #fff; font-size: 17px; cursor: pointer;
+                display: flex; align-items: center; justify-content: center;
+                transition: all 0.2s; flex-shrink: 0;
+            }
+            .wt-close:hover { background: rgba(255,255,255,0.38); transform: rotate(90deg); }
+
+            .wt-body {
+                padding: 14px 18px 16px;
+                color: #374151; font-size: 0.9rem; line-height: 1.6;
+            }
+
+            .wt-footer {
+                display: flex; align-items: center; justify-content: space-between;
+                padding: 10px 16px 14px; border-top: 1px solid #f3f4f6;
+            }
+            .wt-dots { display: flex; gap: 5px; align-items: center; }
+            .wt-dot  {
+                width: 6px; height: 6px; border-radius: 50%;
+                background: #d1d5db; transition: all 0.2s;
+            }
+            .wt-dot.on { background: #00c853; width: 16px; border-radius: 3px; }
+
+            .wt-btns { display: flex; gap: 7px; }
+            .wt-btn {
+                padding: 7px 14px; border: 0; border-radius: 8px;
+                font-weight: 600; font-size: 0.8rem; cursor: pointer;
+                min-height: 34px; transition: all 0.18s;
+                font-family: inherit; display: flex; align-items: center; gap: 5px;
+                white-space: nowrap;
+            }
+            .wt-btn-ghost { background: #f3f4f6; color: #6b7280; }
+            .wt-btn-ghost:hover { background: #e5e7eb; color: #374151; }
+            .wt-btn-skip  { background: transparent; color: #9ca3af; padding-left: 6px; }
+            .wt-btn-skip:hover { color: #6b7280; }
+            .wt-btn-primary {
+                background: linear-gradient(135deg, #00c853 0%, #00a843 100%);
+                color: #fff; box-shadow: 0 3px 10px rgba(0,200,83,0.3);
+            }
+            .wt-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(0,200,83,0.4); }
+
+            /* Arrow pointing from card toward the target element */
+            .wt-arrow {
+                position: absolute;
+                width: 0; height: 0;
+                pointer-events: none;
+            }
+            /* Arrow below spotlight (card is above) — points DOWN */
+            .wt-arrow-bottom {
+                bottom: -11px; left: var(--arrow-x, 50%); transform: translateX(-50%);
+                border-left: 11px solid transparent;
+                border-right: 11px solid transparent;
+                border-top: 12px solid #fff;
+                filter: drop-shadow(0 3px 4px rgba(0,0,0,0.12));
+            }
+            /* Arrow above spotlight (card is below) — points UP */
+            .wt-arrow-top {
+                top: -11px; left: var(--arrow-x, 50%); transform: translateX(-50%);
+                border-left: 11px solid transparent;
+                border-right: 11px solid transparent;
+                border-bottom: 12px solid #00c853;
+            }
+            /* Arrow to right (card is to left) — points RIGHT */
+            .wt-arrow-right {
+                right: -11px; top: var(--arrow-y, 50%); transform: translateY(-50%);
+                border-top: 11px solid transparent;
+                border-bottom: 11px solid transparent;
+                border-left: 12px solid #fff;
+                filter: drop-shadow(3px 0 4px rgba(0,0,0,0.12));
+            }
+            /* Arrow to left (card is to right) — points LEFT */
+            .wt-arrow-left {
+                left: -11px; top: var(--arrow-y, 50%); transform: translateY(-50%);
+                border-top: 11px solid transparent;
+                border-bottom: 11px solid transparent;
+                border-right: 12px solid #00c853;
+            }
+
+            .wt-step-label {
+                font-size: 0.73rem; color: rgba(255,255,255,0.8);
+                margin-top: 2px; font-weight: 500;
+            }
+
+            @media (max-width: 540px) {
+                #ml-wt-card {
+                    width: calc(100vw - 24px);
+                    position: fixed !important;
+                    bottom: 16px !important;
+                    left: 12px !important;
+                    top: auto !important;
+                    right: auto !important;
+                    transition: opacity 0.22s ease, transform 0.22s ease;
+                }
+                .wt-arrow { display: none; }
+            }
+        `;
+        document.head.appendChild(s);
+    }
+
+    // ── Entry ────────────────────────────────────────────────────────────
+    function init() {
+        try {
+            if (localStorage.getItem(LS_DONE) === '1' || localStorage.getItem(LS_SKIP) === '1') return;
+        } catch(e){}
 
         fetch(`${API_BASE}?action=get_walkthrough_state`, { credentials: 'same-origin' })
             .then(r => r.json())
-            .then(data => {
-                if (!data || !data.success) return;
-                if (!data.should_show) {
-                    try { localStorage.setItem(LS_COMPLETED_KEY, '1'); } catch (e) {}
+            .then(d => {
+                if (!d || !d.success || !d.should_show) {
+                    if (d && d.success && !d.should_show) {
+                        try { localStorage.setItem(LS_DONE, '1'); } catch(e){}
+                    }
                     return;
                 }
-                // Delay so the page has painted
-                setTimeout(start, 1200);
+                setTimeout(launch, 1500);
             })
             .catch(() => {});
     }
 
-    // ─── Styles injection ─────────────────────────────────────────────────
-    function ensureStyles() {
-        if (document.getElementById('ml-wt-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'ml-wt-styles';
-        style.textContent = `
-            .ml-wt-overlay {
-                position: fixed; inset: 0;
-                background: rgba(15, 23, 42, 0.55);
-                z-index: 99998;
-                opacity: 0;
-                transition: opacity 0.3s ease;
-                pointer-events: auto;
-            }
-            .ml-wt-overlay.show { opacity: 1; }
-            .ml-wt-spotlight {
-                position: fixed;
-                border-radius: 12px;
-                box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.65), 0 0 0 4px rgba(102, 126, 234, 0.6);
-                z-index: 99999;
-                pointer-events: none;
-                transition: all 0.35s cubic-bezier(0.65, 0, 0.35, 1);
-                background: transparent;
-            }
-            .ml-wt-tooltip {
-                position: fixed;
-                max-width: 340px;
-                width: calc(100vw - 40px);
-                background: #fff;
-                border-radius: 16px;
-                box-shadow: 0 25px 60px rgba(0,0,0,0.4);
-                z-index: 100000;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                overflow: hidden;
-                opacity: 0;
-                transform: translateY(10px);
-                transition: opacity 0.25s ease, transform 0.25s ease;
-            }
-            .ml-wt-tooltip.show { opacity: 1; transform: translateY(0); }
-            .ml-wt-head {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: #fff;
-                padding: 18px 20px 14px;
-                position: relative;
-            }
-            .ml-wt-close {
-                position: absolute;
-                top: 10px; right: 10px;
-                background: rgba(255,255,255,0.2);
-                border: 0;
-                width: 30px; height: 30px;
-                border-radius: 50%;
-                color: #fff;
-                font-size: 18px;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: all 0.2s;
-            }
-            .ml-wt-close:hover { background: rgba(255,255,255,0.35); transform: rotate(90deg); }
-            .ml-wt-step-icon {
-                width: 42px; height: 42px;
-                border-radius: 50%;
-                background: rgba(255,255,255,0.25);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 18px;
-                margin-bottom: 8px;
-            }
-            .ml-wt-title { margin: 0; font-size: 1.1rem; font-weight: 700; }
-            .ml-wt-body {
-                padding: 16px 20px 18px;
-                color: #334155;
-                font-size: 0.92rem;
-                line-height: 1.55;
-            }
-            .ml-wt-footer {
-                padding: 10px 20px 18px;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 10px;
-                border-top: 1px solid #f1f5f9;
-                padding-top: 14px;
-            }
-            .ml-wt-progress {
-                display: flex;
-                gap: 5px;
-                align-items: center;
-            }
-            .ml-wt-dot {
-                width: 7px; height: 7px;
-                border-radius: 50%;
-                background: #e2e8f0;
-                transition: all 0.2s;
-            }
-            .ml-wt-dot.active { background: #667eea; width: 18px; border-radius: 4px; }
-            .ml-wt-actions {
-                display: flex;
-                gap: 8px;
-            }
-            .ml-wt-btn {
-                padding: 8px 14px;
-                border: 0;
-                border-radius: 8px;
-                font-weight: 600;
-                font-size: 0.82rem;
-                cursor: pointer;
-                min-height: 36px;
-                transition: all 0.2s;
-                font-family: inherit;
-            }
-            .ml-wt-btn-skip {
-                background: transparent;
-                color: #94a3b8;
-            }
-            .ml-wt-btn-skip:hover { color: #475569; }
-            .ml-wt-btn-primary {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: #fff;
-                box-shadow: 0 3px 10px rgba(102,126,234,0.35);
-            }
-            .ml-wt-btn-primary:hover { transform: translateY(-1px); }
-            .ml-wt-btn-ghost {
-                background: #f1f5f9;
-                color: #475569;
-            }
-            .ml-wt-btn-ghost:hover { background: #e2e8f0; }
-            .ml-wt-arrow {
-                position: absolute;
-                width: 16px; height: 16px;
-                background: #fff;
-                transform: rotate(45deg);
-            }
-            .ml-wt-arrow.top    { top: -8px; }
-            .ml-wt-arrow.bottom { bottom: -8px; background: #fff; }
-            .ml-wt-arrow.left   { left: -8px; }
-            .ml-wt-arrow.right  { right: -8px; }
-
-            @media (max-width: 520px) {
-                .ml-wt-tooltip {
-                    max-width: none;
-                    left: 50% !important;
-                    transform: translateX(-50%) translateY(10px);
-                    bottom: 20px !important;
-                    top: auto !important;
-                }
-                .ml-wt-tooltip.show { transform: translateX(-50%) translateY(0); }
-                .ml-wt-arrow { display: none; }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-
-    // ─── Start ────────────────────────────────────────────────────────────
-    function start() {
-        ensureStyles();
-        currentStep = 0;
+    // ── Launch ───────────────────────────────────────────────────────────
+    function launch() {
+        injectStyles();
+        step = 0;
 
         overlay = document.createElement('div');
-        overlay.className = 'ml-wt-overlay';
-        overlay.addEventListener('click', () => showStep(currentStep + 1));
+        overlay.id = 'ml-wt-overlay';
+        // Clicking the dark area does NOT advance — intentional
         document.body.appendChild(overlay);
 
         spotlight = document.createElement('div');
-        spotlight.className = 'ml-wt-spotlight';
+        spotlight.id = 'ml-wt-spot';
         document.body.appendChild(spotlight);
 
-        tooltip = document.createElement('div');
-        tooltip.className = 'ml-wt-tooltip';
-        document.body.appendChild(tooltip);
+        card = document.createElement('div');
+        card.id = 'ml-wt-card';
+        document.body.appendChild(card);
 
-        requestAnimationFrame(() => overlay.classList.add('show'));
+        requestAnimationFrame(() => overlay.classList.add('wt-on'));
 
-        resizeHandler = () => { if (overlay) showStep(currentStep, true); };
-        window.addEventListener('resize', resizeHandler);
-        window.addEventListener('scroll', resizeHandler, { passive: true });
+        const onResize = () => {
+            if (resizeRaf) cancelAnimationFrame(resizeRaf);
+            resizeRaf = requestAnimationFrame(() => positionCurrentStep());
+        };
+        window.addEventListener('resize', onResize);
+        window.addEventListener('scroll', onResize, { passive: true });
+        overlay._cleanup = () => {
+            window.removeEventListener('resize', onResize);
+            window.removeEventListener('scroll', onResize);
+        };
 
-        showStep(0);
+        showStep(0, false);
     }
 
-    // ─── Render step ──────────────────────────────────────────────────────
-    function showStep(index, silent) {
-        if (index >= STEPS.length) {
-            finish(true);
-            return;
-        }
-        currentStep = index;
-        const step = STEPS[index];
-        let target = document.querySelector(step.selector);
+    // ── Navigate between steps ───────────────────────────────────────────
+    function showStep(index, animate) {
+        if (index < 0) return;
+        if (index >= STEPS.length) { finish(true); return; }
 
-        // If the target is missing on this page, skip silently
-        if (!target) {
-            showStep(index + 1, silent);
-            return;
+        const s = STEPS[index];
+        const target = document.querySelector(s.selector);
+        if (!target) { showStep(index + 1, animate); return; }
+
+        step = index;
+
+        const rect = target.getBoundingClientRect();
+        const needsScroll = rect.top < 70 || rect.bottom > window.innerHeight - 70;
+
+        if (needsScroll) {
+            // Fade card out, scroll, then render at new position
+            if (card) card.classList.add('wt-fade');
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => { if (overlay) renderStep(index); }, 520);
+        } else {
+            renderStep(index, animate);
         }
+    }
+
+    function renderStep(index) {
+        const s = STEPS[index];
+        const target = document.querySelector(s.selector);
+        if (!target) { showStep(index + 1, false); return; }
 
         const rect = target.getBoundingClientRect();
         const pad = 8;
 
-        // Position spotlight
-        spotlight.style.top    = (rect.top - pad) + 'px';
-        spotlight.style.left   = (rect.left - pad) + 'px';
+        // Move spotlight
+        spotlight.style.top    = (rect.top    - pad) + 'px';
+        spotlight.style.left   = (rect.left   - pad) + 'px';
         spotlight.style.width  = (rect.width  + pad * 2) + 'px';
         spotlight.style.height = (rect.height + pad * 2) + 'px';
 
-        // Smooth-scroll the element into view if it's off-screen
-        if (rect.top < 50 || rect.bottom > window.innerHeight - 50) {
-            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            setTimeout(() => { if (overlay) showStep(index, true); }, 400);
-            return;
-        }
+        // Build card HTML (hidden first for measurement)
+        card.classList.remove('wt-show');
+        card.classList.add('wt-fade');
+        card.innerHTML = buildCardHTML(index, s);
 
-        // Build tooltip content
-        tooltip.innerHTML = `
-            <div class="ml-wt-head">
-                <button class="ml-wt-close" aria-label="Close tour">&times;</button>
-                <div class="ml-wt-step-icon"><i class="fas ${step.icon || 'fa-lightbulb'}"></i></div>
-                <h3 class="ml-wt-title">${step.title}</h3>
-            </div>
-            <div class="ml-wt-body">${step.body}</div>
-            <div class="ml-wt-footer">
-                <div class="ml-wt-progress">
-                    ${STEPS.map((_, i) => `<span class="ml-wt-dot${i === index ? ' active' : ''}"></span>`).join('')}
-                </div>
-                <div class="ml-wt-actions">
-                    ${index > 0 ? '<button class="ml-wt-btn ml-wt-btn-ghost" data-wt-prev>Back</button>' : '<button class="ml-wt-btn ml-wt-btn-skip" data-wt-skip>Skip</button>'}
-                    <button class="ml-wt-btn ml-wt-btn-primary" data-wt-next>
-                        ${index === STEPS.length - 1 ? '<i class="fas fa-check"></i> Finish' : 'Next <i class="fas fa-arrow-right"></i>'}
-                    </button>
-                </div>
-            </div>
-        `;
+        // Wire buttons BEFORE measurement
+        wireButtons(index);
 
-        // Wire buttons
-        tooltip.querySelector('.ml-wt-close').onclick = () => finish(false);
-        const skipBtn = tooltip.querySelector('[data-wt-skip]');
-        if (skipBtn) skipBtn.onclick = () => finish(false);
-        const prevBtn = tooltip.querySelector('[data-wt-prev]');
-        if (prevBtn) prevBtn.onclick = (e) => { e.stopPropagation(); showStep(index - 1); };
-        tooltip.querySelector('[data-wt-next]').onclick = (e) => { e.stopPropagation(); showStep(index + 1); };
+        // Measure, position, then reveal
+        card.style.visibility = 'hidden';
+        card.style.top  = '0px';
+        card.style.left = '0px';
+        requestAnimationFrame(() => {
+            const pos = computePosition(rect, card.offsetWidth, card.offsetHeight, pad);
+            card.style.top  = pos.top  + 'px';
+            card.style.left = pos.left + 'px';
 
-        // Position tooltip below or above target
-        const tt = tooltip;
-        tt.style.visibility = 'hidden';
-        tt.classList.add('show');
-        const ttRect = tt.getBoundingClientRect();
-        let top, left;
+            // Set arrow position offsets
+            card.style.setProperty('--arrow-x', pos.arrowX + 'px');
+            card.style.setProperty('--arrow-y', pos.arrowY + 'px');
 
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
+            // Update arrow class
+            const existing = card.querySelector('.wt-arrow');
+            if (existing) existing.className = 'wt-arrow ' + pos.arrowClass;
 
-        if (spaceBelow > ttRect.height + 20 || spaceBelow > spaceAbove) {
-            top = rect.bottom + 14;
-        } else {
-            top = rect.top - ttRect.height - 14;
-        }
-        left = rect.left + (rect.width / 2) - (ttRect.width / 2);
-        left = Math.max(10, Math.min(window.innerWidth - ttRect.width - 10, left));
-        top  = Math.max(10, Math.min(window.innerHeight - ttRect.height - 10, top));
-
-        tt.style.top  = top + 'px';
-        tt.style.left = left + 'px';
-        tt.style.visibility = 'visible';
+            card.style.visibility = 'visible';
+            card.classList.remove('wt-fade');
+            requestAnimationFrame(() => card && card.classList.add('wt-show'));
+        });
     }
 
-    // ─── Finish / Dismiss ─────────────────────────────────────────────────
+    function positionCurrentStep() {
+        if (step < 0 || step >= STEPS.length) return;
+        const s = STEPS[step];
+        const target = document.querySelector(s.selector);
+        if (!target) return;
+        const pad = 8;
+        const rect = target.getBoundingClientRect();
+        spotlight.style.top    = (rect.top    - pad) + 'px';
+        spotlight.style.left   = (rect.left   - pad) + 'px';
+        spotlight.style.width  = (rect.width  + pad * 2) + 'px';
+        spotlight.style.height = (rect.height + pad * 2) + 'px';
+
+        const pos = computePosition(rect, card.offsetWidth, card.offsetHeight, pad);
+        card.style.top  = pos.top  + 'px';
+        card.style.left = pos.left + 'px';
+        card.style.setProperty('--arrow-x', pos.arrowX + 'px');
+        card.style.setProperty('--arrow-y', pos.arrowY + 'px');
+        const arrow = card.querySelector('.wt-arrow');
+        if (arrow) arrow.className = 'wt-arrow ' + pos.arrowClass;
+    }
+
+    // ── Position algorithm ───────────────────────────────────────────────
+    function computePosition(rect, cW, cH, pad) {
+        const vW = window.innerWidth;
+        const vH = window.innerHeight;
+        const gap = 14 + pad;  // gap from spotlight edge to card
+
+        const spaceBelow = vH - rect.bottom - gap;
+        const spaceAbove = rect.top        - gap;
+        const spaceRight = vW - rect.right  - gap;
+        const spaceLeft  = rect.left       - gap;
+
+        let top, left, arrowClass, arrowX = 0, arrowY = 0;
+
+        // Target centre
+        const tCx = rect.left + rect.width  / 2;
+        const tCy = rect.top  + rect.height / 2;
+
+        if (spaceBelow >= cH || spaceBelow >= spaceAbove) {
+            // Card below target — arrow points UP (toward target)
+            top  = rect.bottom + gap;
+            left = tCx - cW / 2;
+            arrowClass = 'wt-arrow-top';
+            arrowX = Math.max(22, Math.min(cW - 22, tCx - Math.max(16, Math.min(vW - cW - 16, left))));
+        } else if (spaceAbove >= cH) {
+            // Card above target — arrow points DOWN
+            top  = rect.top - gap - cH;
+            left = tCx - cW / 2;
+            arrowClass = 'wt-arrow-bottom';
+            arrowX = Math.max(22, Math.min(cW - 22, tCx - Math.max(16, Math.min(vW - cW - 16, left))));
+        } else if (spaceRight >= cW) {
+            // Card to right — arrow points LEFT
+            left = rect.right + gap;
+            top  = tCy - cH / 2;
+            arrowClass = 'wt-arrow-left';
+            arrowY = Math.max(22, Math.min(cH - 22, tCy - Math.max(16, Math.min(vH - cH - 16, top))));
+        } else {
+            // Card to left — arrow points RIGHT
+            left = rect.left - gap - cW;
+            top  = tCy - cH / 2;
+            arrowClass = 'wt-arrow-right';
+            arrowY = Math.max(22, Math.min(cH - 22, tCy - Math.max(16, Math.min(vH - cH - 16, top))));
+        }
+
+        // Clamp within viewport
+        left = Math.max(16, Math.min(vW - cW - 16, left));
+        top  = Math.max(16, Math.min(vH - cH - 16, top));
+
+        return { top, left, arrowClass, arrowX, arrowY };
+    }
+
+    // ── Build card HTML ──────────────────────────────────────────────────
+    function buildCardHTML(index, s) {
+        const total = STEPS.filter(st => document.querySelector(st.selector)).length;
+        const localIdx = STEPS.slice(0, index + 1).filter(st => document.querySelector(st.selector)).length - 1;
+        const dots = STEPS
+            .filter(st => document.querySelector(st.selector))
+            .map((_, i) => `<span class="wt-dot${i === localIdx ? ' on' : ''}"></span>`)
+            .join('');
+
+        const isLast = STEPS.slice(index + 1).every(st => !document.querySelector(st.selector));
+        const isFirst = STEPS.slice(0, index).every(st => !document.querySelector(st.selector));
+
+        return `
+            <div class="wt-card-inner">
+                <div class="wt-head">
+                    <div class="wt-head-row">
+                        <div class="wt-head-icon"><i class="fas ${s.icon || 'fa-lightbulb'}"></i></div>
+                        <div style="flex:1;min-width:0;">
+                            <h3 class="wt-head-title">${s.title}</h3>
+                            <div class="wt-step-label">Step ${localIdx + 1} of ${total}</div>
+                        </div>
+                        <button class="wt-close" data-wt="close" aria-label="End tour">&times;</button>
+                    </div>
+                </div>
+                <div class="wt-body">${s.body}</div>
+                <div class="wt-footer">
+                    <div class="wt-dots">${dots}</div>
+                    <div class="wt-btns">
+                        ${isFirst
+                            ? '<button class="wt-btn wt-btn-skip"  data-wt="skip">Skip tour</button>'
+                            : '<button class="wt-btn wt-btn-ghost" data-wt="prev"><i class="fas fa-arrow-left"></i> Back</button>'
+                        }
+                        <button class="wt-btn wt-btn-primary" data-wt="next">
+                            ${isLast ? '<i class="fas fa-check"></i> Finish' : 'Next <i class="fas fa-arrow-right"></i>'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="wt-arrow"></div>
+        `;
+    }
+
+    // ── Wire buttons (clean: no delegation races) ───────────────────────
+    function wireButtons(index) {
+        // Use data-wt attributes for safe delegation on the card
+        card.onclick = function (e) {
+            const btn = e.target.closest('[data-wt]');
+            if (!btn) return;
+            e.stopPropagation();
+            const action = btn.dataset.wt;
+            if (action === 'next')  { transition(() => showStep(index + 1, true)); }
+            if (action === 'prev')  { transition(() => showStep(index - 1, true)); }
+            if (action === 'skip')  finish(false);
+            if (action === 'close') finish(false);
+        };
+    }
+
+    function transition(fn) {
+        if (!card) return;
+        card.classList.remove('wt-show');
+        card.classList.add('wt-fade');
+        setTimeout(fn, 200);
+    }
+
+    // ── Finish ───────────────────────────────────────────────────────────
     function finish(completed) {
-        try {
-            localStorage.setItem(completed ? LS_COMPLETED_KEY : LS_DISMISSED_KEY, '1');
-        } catch (e) {}
+        try { localStorage.setItem(completed ? LS_DONE : LS_SKIP, '1'); } catch(e){}
 
         fetch(`${API_BASE}?action=complete_walkthrough`, {
-            method: 'POST',
-            credentials: 'same-origin',
+            method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ completed: completed })
+            body: JSON.stringify({ completed })
         }).catch(() => {});
 
-        if (overlay) { overlay.classList.remove('show'); setTimeout(() => overlay && overlay.remove(), 300); }
-        if (spotlight) spotlight.remove();
-        if (tooltip)   tooltip.remove();
-        if (resizeHandler) {
-            window.removeEventListener('resize', resizeHandler);
-            window.removeEventListener('scroll', resizeHandler);
+        if (overlay) {
+            overlay.classList.remove('wt-on');
+            if (overlay._cleanup) overlay._cleanup();
+            setTimeout(() => { overlay && overlay.remove(); spotlight && spotlight.remove(); card && card.remove(); overlay = spotlight = card = null; }, 350);
         }
-        overlay = spotlight = tooltip = null;
     }
 
-    // ─── Expose manual trigger for "Take the tour" button ────────────────
+    // ── Public API ───────────────────────────────────────────────────────
     window.startMotorLinkWalkthrough = function () {
-        try { localStorage.removeItem(LS_COMPLETED_KEY); localStorage.removeItem(LS_DISMISSED_KEY); } catch (e) {}
-        start();
+        // Clean up any existing instance first
+        if (overlay) finish(false);
+        try { localStorage.removeItem(LS_DONE); localStorage.removeItem(LS_SKIP); } catch(e){}
+        setTimeout(launch, 100);
     };
 
-    // Boot
+    // ── Boot ─────────────────────────────────────────────────────────────
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {

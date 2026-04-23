@@ -5334,7 +5334,19 @@ function formatAIChatDistanceLabel($item) {
         return '';
     }
 
-    return round($distanceKm, 1) . ' km away';
+    $distanceKm = max(0.1, (float)$distanceKm);
+    if ($distanceKm <= 5) {
+        $speedKmh = 28.0;
+    } elseif ($distanceKm <= 20) {
+        $speedKmh = 36.0;
+    } else {
+        $speedKmh = 50.0;
+    }
+
+    $driveMinutes = (int)round(($distanceKm / $speedKmh) * 60);
+    $driveMinutes = max(2, min(240, $driveMinutes));
+
+    return round($distanceKm, 1) . ' km away (~' . $driveMinutes . ' min drive)';
 }
 
 /**
@@ -11787,8 +11799,9 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
                     $response .= " in {$company['location_name']}";
                 }
                 
-                if (!empty($company['distance'])) {
-                    $response .= " (approximately " . round($company['distance'], 1) . " km away)";
+                $distanceLabel = formatAIChatDistanceLabel($company);
+                if ($distanceLabel !== '') {
+                    $response .= " (approximately {$distanceLabel})";
                 }
                 
                 $response .= ".\n\n";

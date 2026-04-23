@@ -459,6 +459,22 @@ class AICarChat {
             });
         }
 
+        const chatMessages = document.getElementById('aiChatMessages');
+        if (chatMessages && chatMessages.dataset.welcomeQueryBound !== '1') {
+            chatMessages.dataset.welcomeQueryBound = '1';
+            chatMessages.addEventListener('click', (e) => {
+                const quickBtn = e.target.closest('.ai-chat-welcome-query-btn');
+                if (!quickBtn) {
+                    return;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+                const optionText = quickBtn.getAttribute('data-conversation-option') || quickBtn.textContent || '';
+                this.handleConversationOption(optionText);
+            });
+        }
+
         if (chatInput) {
             chatInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -1265,6 +1281,24 @@ class AICarChat {
         this.retryCount = 0;
     }
 
+    formatDistanceWithDriveTime(distanceValue) {
+        const km = Number(distanceValue);
+        if (!Number.isFinite(km) || km <= 0) {
+            return '';
+        }
+
+        const safeKm = Math.max(0.1, km);
+        let speedKmh = 50;
+        if (safeKm <= 5) {
+            speedKmh = 28;
+        } else if (safeKm <= 20) {
+            speedKmh = 36;
+        }
+
+        const driveMinutes = Math.max(2, Math.min(240, Math.round((safeKm / speedKmh) * 60)));
+        return `${safeKm.toFixed(1)} km away (~${driveMinutes} min drive)`;
+    }
+
     addMessage(role, content, searchResults = null, totalResults = 0, garages = null, carHireCompanies = null, options = {}) {
         const messagesContainer = document.getElementById('aiChatMessages');
         if (!messagesContainer) return;
@@ -1359,6 +1393,8 @@ class AICarChat {
             const garageName = this.escapeHtml(garage.name || 'Garage');
             const location = garage.location_name ? this.escapeHtml(garage.location_name) : '';
             const phone = garage.phone ? this.escapeHtml(garage.phone) : '';
+            const distanceRaw = (garage.distance_km ?? garage.distance ?? null);
+            const distanceLabel = this.formatDistanceWithDriveTime(distanceRaw);
 
             let servicesList = [];
             if (garage.services_list) {
@@ -1379,6 +1415,7 @@ class AICarChat {
                     <div class="ai-chat-result-title">${garageName}</div>
                     <div class="ai-chat-result-meta">
                         ${location ? `<span>📍 ${location}</span>` : ''}
+                        ${distanceLabel ? `<span>📏 ${this.escapeHtml(distanceLabel)}</span>` : ''}
                         ${phone ? `<span>📞 ${phone}</span>` : ''}
                         ${servicesStr ? `<span>🔧 ${servicesStr}${servicesList.length > 3 ? ' and more' : ''}</span>` : ''}
                     </div>
@@ -1406,6 +1443,8 @@ class AICarChat {
             const companyName = this.escapeHtml(company.business_name || 'Car Hire Company');
             const location = company.location_name ? this.escapeHtml(company.location_name) : '';
             const phone = company.phone ? this.escapeHtml(company.phone) : '';
+            const distanceRaw = (company.distance_km ?? company.distance ?? null);
+            const distanceLabel = this.formatDistanceWithDriveTime(distanceRaw);
 
             let vehiclesText = '';
             if (company.matching_vehicles && company.matching_vehicles.length > 0) {
@@ -1424,6 +1463,7 @@ class AICarChat {
                     <div class="ai-chat-result-title">${companyName}</div>
                     <div class="ai-chat-result-meta">
                         ${location ? `<span>📍 ${location}</span>` : ''}
+                        ${distanceLabel ? `<span>📏 ${this.escapeHtml(distanceLabel)}</span>` : ''}
                         ${phone ? `<span>📞 ${phone}</span>` : ''}
                         ${vehiclesText ? `<span>🚗 ${this.escapeHtml(vehiclesText)}</span>` : ''}
                     </div>
