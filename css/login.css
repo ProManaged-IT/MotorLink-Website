@@ -502,55 +502,145 @@ body.auth-page {
 }
 
 /* ============================================================
-   TABLET — brand panel collapses to top strip
+   TABLET — premium branded header strip + roomy form
    ============================================================ */
 @media (max-width: 900px) {
-    .auth-split { flex-direction: column; }
+    .auth-split { flex-direction: column; min-height: 100vh; }
 
     .auth-brand-panel {
         flex: none;
-        height: 68px;
+        height: auto;
+        min-height: 88px;
     }
 
     .auth-brand-panel::after { display: none; }
 
     .auth-brand-inner {
-        padding: 0 24px;
+        padding: 16px 28px 18px;
         flex-direction: row;
         align-items: center;
-        height: 68px;
+        height: auto;
+        min-height: 88px;
     }
 
-    .auth-brand-logo { font-size: 20px; }
-    .auth-brand-copy, .auth-brand-decoration { display: none; }
+    .auth-brand-logo { font-size: 21px; white-space: nowrap; flex-shrink: 0; }
+
+    /* Show compact tagline next to logo on tablet */
+    .auth-brand-copy {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        justify-content: center;
+        padding: 0 0 0 20px;
+    }
+
+    .auth-brand-copy h2   { display: none; }
+    .auth-brand-features  { display: none; }
+
+    .auth-brand-copy > p {
+        font-size: 12px;
+        margin: 0;
+        max-width: none;
+        color: rgba(255, 255, 255, 0.52);
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .auth-brand-decoration { display: none; }
 
     .auth-mobile-bar { display: none; }
 
     .auth-form-panel { flex: 1; }
     .auth-form-inner {
-        padding: 36px 28px 48px;
+        padding: 44px 44px 60px;
         justify-content: flex-start;
-        max-width: 560px;
+        max-width: 600px;
     }
 }
 
 /* ============================================================
-   MOBILE
+   MOBILE — brand backdrop + white bottom-sheet card
    ============================================================ */
 @media (max-width: 600px) {
-    .auth-brand-panel { display: none; }
-    .auth-mobile-bar  { display: flex; }
+    /* Dark green body doubles as the brand area above the form card */
+    body.auth-page {
+        background: linear-gradient(160deg, #0a1f13 0%, #1a3d22 100%);
+    }
 
-    .auth-form-panel { flex: 1; }
+    .auth-split {
+        flex-direction: column;
+        min-height: 100vh;
+        background: transparent;
+    }
+
+    /* Brand panel hidden — body bg takes over */
+    .auth-brand-panel { display: none; }
+
+    /* Mobile top bar floats on the dark body bg */
+    .auth-mobile-bar {
+        display: flex;
+        background: transparent;
+        border-bottom: none;
+        padding: 22px 20px 18px;
+        position: relative;
+        z-index: 1;
+        flex-shrink: 0;
+    }
+
+    .auth-mobile-logo {
+        color: #ffffff;
+        font-size: 20px;
+    }
+
+    .auth-mobile-logo i { color: #00c853; }
+
+    .auth-mobile-link {
+        color: rgba(255, 255, 255, 0.85);
+        border-color: rgba(255, 255, 255, 0.32);
+        font-size: 12px;
+        padding: 6px 14px;
+    }
+
+    .auth-mobile-link:hover {
+        background: rgba(255, 255, 255, 0.14);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.6);
+    }
+
+    /* Form panel = white bottom-sheet card */
+    .auth-form-panel {
+        flex: 1;
+        background: #ffffff;
+        border-radius: 24px 24px 0 0;
+        box-shadow: 0 -10px 48px rgba(0, 0, 0, 0.3);
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    /* Pull-handle hint at top of card */
+    .auth-form-inner::before {
+        content: '';
+        display: block;
+        width: 40px;
+        height: 4px;
+        background: #e5e7eb;
+        border-radius: 2px;
+        margin: 0 auto 20px;
+    }
+
     .auth-form-inner {
-        padding: 28px 20px 48px;
+        padding: 28px 24px calc(env(safe-area-inset-bottom, 0px) + 52px);
         justify-content: flex-start;
         max-width: 100%;
     }
 
+    .auth-form-header { margin-bottom: 28px; }
     .auth-form-header h1 { font-size: 24px; }
-    .form-control { height: 48px; font-size: 15px; }
-    .btn-lg { height: 50px; font-size: 15px; }
+
+    .form-control { height: 50px; font-size: 15px; }
+    .btn-lg { height: 52px; font-size: 15px; min-height: 44px; }
 
     .toast {
         top: auto;
