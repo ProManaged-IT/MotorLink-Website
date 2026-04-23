@@ -1399,6 +1399,10 @@ try {
         case 'listing_restrictions': getListingRestrictions($db); break;
         case 'check_guest_identity': checkGuestIdentity($db); break;
         case 'get_public_client_config': getPublicClientConfig($db); break;
+        case 'get_feedback_config': getFeedbackConfig($db); break;
+        case 'submit_feedback': submitUserFeedback($db); break;
+        case 'get_walkthrough_state': getWalkthroughState($db); break;
+        case 'complete_walkthrough': completeWalkthrough($db); break;
         case 'get_ai_chat_status': getAIChatStatus($db); break;
         case 'verify_listing_email': verifyListingEmail($db); break;
         case 'guest_listing_request_code': requestGuestListingManageCode($db); break;
@@ -9407,6 +9411,165 @@ function getPublicClientConfig($db) {
     } catch (Exception $e) {
         error_log("getPublicClientConfig error: " . $e->getMessage());
         sendError('Failed to load runtime client config', 500);
+    }
+}
+
+/**
+ * Public: return feedback widget timing + whether it's enabled.
+ * Called by js/feedback-widget.js on every page.
+ */
+function getFeedbackConfig($db) {
+    try {
+        $keys = ['feedback_enabled','feedback_delay_minutes','feedback_show_on_unload','feedback_cooldown_days'];
+        $placeholders = implode(',', array_fill(0, count($keys), '?'));
+        $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
+        $stmt->execute($keys);
+        $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        sendSuccess([
+            'enabled'         => !empty($rows['feedback_enabled']) && $rows['feedback_enabled'] !== '0',
+            'delay_minutes'   => max(1, (int)($rows['feedback_delay_minutes'] ?? 5)),
+            'show_on_unload'  => !empty($rows['feedback_show_on_unload']) && $rows['feedback_show_on_unload'] !== '0',
+            'cooldown_days'   => max(1, (int)($rows['feedback_cooldown_days'] ?? 30)),
+        ]);
+    } catch (Exception $e) {
+        error_log("getFeedbackConfig error: " . $e->getMessage());
+        // Fail open (disabled) rather than break UI
+        sendSuccess(['enabled' => false, 'delay_minutes' => 5, 'show_on_unload' => false, 'cooldown_days' => 30]);
+    }
+}
+
+/**
+ * Public: accept a user/visitor feedback submission.
+ * Works for authenticated and anonymous users.
+ */
+function submitUserFeedback($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendError('POST required', 405);
+    }
+
+    // Check enabled flag
+    try {
+        $enabled = $db->query("SELECT setting_value FROM site_settings WHERE setting_key='feedback_enabled' LIMIT 1")->fetchColumn();
+        if ($enabled === '0' || $enabled === false) {
+            sendError('Feedback submissions are currently disabled', 403);
+        }
+    } catch (Exception $e) { /* continue */ }
+
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+
+    $rating   = max(0, min(5, (int)($input['rating'] ?? 0)));
+    $category = trim(strip_tags((string)($input['category'] ?? 'general')));
+    $message  = trim((string)($input['message'] ?? ''));
+    $email    = trim((string)($input['email'] ?? ''));
+    $pageUrl  = trim((string)($input['page_url'] ?? ''));
+
+    if (strlen($message) < 3) {
+        sendError('Message is required (at least 3 characters)', 400);
+    }
+    if (mb_strlen($message) > 2000) {
+        $message = mb_substr($message, 0, 2000);
+    }
+    $validCategories = ['general','bug','suggestion','compliment','complaint','feature_request','other'];
+    if (!in_array($category, $validCategories, true)) {
+        $category = 'general';
+    }
+    if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $email = '';
+    }
+    if ($pageUrl !== '' && mb_strlen($pageUrl) > 500) {
+        $pageUrl = mb_substr($pageUrl, 0, 500);
+    }
+
+    // Auto-attach logged-in user
+    $userId = null; $userName = null; $userEmail = null;
+    try {
+        $currentUser = getCurrentUser(true);
+        if ($currentUser) {
+            $userId    = (int)$currentUser['id'];
+            $userName  = $currentUser['full_name'] ?? null;
+            $userEmail = $currentUser['email'] ?? null;
+            if ($email === '' && !empty($userEmail)) {
+                $email = $userEmail;
+            }
+        }
+    } catch (Throwable $e) { /* guests allowed */ }
+
+    $ua = mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 500);
+    $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '';
+    $ip = substr(explode(',', $ip)[0], 0, 64);
+
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO user_feedback
+                (user_id, user_name, email, rating, category, message, page_url, user_agent, ip_address, status, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?, 'new', NOW())
+        ");
+        $stmt->execute([$userId, $userName, $email ?: null, $rating, $category, $message, $pageUrl ?: null, $ua, $ip]);
+        sendSuccess([
+            'feedback_id' => (int)$db->lastInsertId(),
+            'message'     => 'Thank you for your feedback!'
+        ]);
+    } catch (Exception $e) {
+        error_log("submitUserFeedback error: " . $e->getMessage());
+        sendError('Failed to save feedback', 500);
+    }
+}
+
+/**
+ * Return whether the walkthrough should run for the current user.
+ */
+function getWalkthroughState($db) {
+    try {
+        $enabled = $db->query("SELECT setting_value FROM site_settings WHERE setting_key='walkthrough_enabled' LIMIT 1")->fetchColumn();
+        $globalEnabled = !($enabled === '0' || $enabled === false);
+        if (!$globalEnabled) {
+            sendSuccess(['should_show' => false, 'reason' => 'disabled']);
+            return;
+        }
+
+        $user = getCurrentUser(true);
+        if (!$user) {
+            // Guest — let client decide via localStorage
+            sendSuccess(['should_show' => true, 'reason' => 'guest', 'authenticated' => false]);
+            return;
+        }
+
+        $stmt = $db->prepare("SELECT walkthrough_completed_at FROM users WHERE id = ? LIMIT 1");
+        $stmt->execute([(int)$user['id']]);
+        $completedAt = $stmt->fetchColumn();
+
+        sendSuccess([
+            'should_show'   => empty($completedAt),
+            'authenticated' => true,
+            'completed_at'  => $completedAt ?: null
+        ]);
+    } catch (Exception $e) {
+        error_log("getWalkthroughState error: " . $e->getMessage());
+        sendSuccess(['should_show' => false, 'reason' => 'error']);
+    }
+}
+
+/**
+ * Mark walkthrough as completed for the logged-in user.
+ */
+function completeWalkthrough($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendError('POST required', 405);
+    }
+    try {
+        $user = getCurrentUser(true);
+        if (!$user) {
+            // Guest — nothing to persist server-side
+            sendSuccess(['persisted' => false]);
+            return;
+        }
+        $stmt = $db->prepare("UPDATE users SET walkthrough_completed_at = NOW() WHERE id = ? AND walkthrough_completed_at IS NULL");
+        $stmt->execute([(int)$user['id']]);
+        sendSuccess(['persisted' => true]);
+    } catch (Exception $e) {
+        error_log("completeWalkthrough error: " . $e->getMessage());
+        sendError('Failed to save walkthrough state', 500);
     }
 }
 

@@ -269,6 +269,9 @@
                     <a href="#" class="nav-item" data-section="ai-chat-usage">
                         <i class="fas fa-robot"></i> AI Chat Usage
                     </a>
+                    <a href="#" class="nav-item" data-section="feedback">
+                        <i class="fas fa-comment-dots"></i> User Feedback
+                    </a>
                     <a href="#" class="nav-item" data-section="scraper">
                         <i class="fas fa-spider"></i> Business Scraper
                     </a>
@@ -2729,6 +2732,133 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <!-- User Feedback Section -->
+                <div class="content-section" id="feedback-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-comment-dots"></i> User Feedback</h2>
+                        <div style="display:flex;gap:10px;align-items:center;">
+                            <select id="feedbackStatusFilter" class="form-control" style="min-width:160px;" onchange="loadFeedbackList(1)">
+                                <option value="all">All statuses</option>
+                                <option value="new" selected>New only</option>
+                                <option value="reviewed">Reviewed</option>
+                                <option value="archived">Archived</option>
+                            </select>
+                            <select id="feedbackCategoryFilter" class="form-control" style="min-width:170px;" onchange="loadFeedbackList(1)">
+                                <option value="">All categories</option>
+                                <option value="general">General</option>
+                                <option value="suggestion">Suggestion</option>
+                                <option value="compliment">Compliment</option>
+                                <option value="bug">Bug</option>
+                                <option value="complaint">Complaint</option>
+                                <option value="feature_request">Feature Request</option>
+                                <option value="other">Other</option>
+                            </select>
+                            <button class="btn btn-outline" onclick="loadFeedbackList(1)">
+                                <i class="fas fa-sync"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Stats strip -->
+                    <div id="feedbackStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:18px;">
+                        <div class="settings-card" style="text-align:center;padding:14px;">
+                            <div style="font-size:0.78rem;color:#64748b;margin-bottom:4px;">Total</div>
+                            <div id="fbStatTotal" style="font-size:1.5rem;font-weight:700;color:#0f172a;">—</div>
+                        </div>
+                        <div class="settings-card" style="text-align:center;padding:14px;border-left:3px solid #f59e0b;">
+                            <div style="font-size:0.78rem;color:#64748b;margin-bottom:4px;">New</div>
+                            <div id="fbStatNew" style="font-size:1.5rem;font-weight:700;color:#d97706;">—</div>
+                        </div>
+                        <div class="settings-card" style="text-align:center;padding:14px;border-left:3px solid #10b981;">
+                            <div style="font-size:0.78rem;color:#64748b;margin-bottom:4px;">Reviewed</div>
+                            <div id="fbStatReviewed" style="font-size:1.5rem;font-weight:700;color:#059669;">—</div>
+                        </div>
+                        <div class="settings-card" style="text-align:center;padding:14px;border-left:3px solid #94a3b8;">
+                            <div style="font-size:0.78rem;color:#64748b;margin-bottom:4px;">Archived</div>
+                            <div id="fbStatArchived" style="font-size:1.5rem;font-weight:700;color:#475569;">—</div>
+                        </div>
+                        <div class="settings-card" style="text-align:center;padding:14px;border-left:3px solid #667eea;">
+                            <div style="font-size:0.78rem;color:#64748b;margin-bottom:4px;">Avg Rating</div>
+                            <div id="fbStatAvg" style="font-size:1.5rem;font-weight:700;color:#4f46e5;">—</div>
+                        </div>
+                    </div>
+
+                    <!-- Settings panel -->
+                    <div class="settings-card" style="margin-bottom:20px;">
+                        <h4 style="margin:0 0 12px;"><i class="fas fa-sliders-h"></i> Widget Settings</h4>
+                        <div class="form-row">
+                            <div>
+                                <label><input type="checkbox" id="fbEnabled"> Enable feedback widget</label>
+                                <p class="form-text">Turn the entire feedback system on or off sitewide.</p>
+                            </div>
+                            <div>
+                                <label><input type="checkbox" id="fbUnload"> Trigger on exit intent / tab hidden</label>
+                                <p class="form-text">Prompt users when they're about to leave the site.</p>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div>
+                                <label for="fbDelay">Trigger delay (minutes)</label>
+                                <input type="number" id="fbDelay" class="form-control" min="1" max="180" value="5">
+                                <p class="form-text">Show the modal after this many minutes on any page.</p>
+                            </div>
+                            <div>
+                                <label for="fbCooldown">Cooldown (days)</label>
+                                <input type="number" id="fbCooldown" class="form-control" min="1" max="365" value="30">
+                                <p class="form-text">Don't show again for this many days after dismiss/submit.</p>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="saveFeedbackSettings()">
+                            <i class="fas fa-save"></i> Save Settings
+                        </button>
+                    </div>
+
+                    <!-- Walkthrough settings -->
+                    <div class="settings-card" style="margin-bottom:20px;">
+                        <h4 style="margin:0 0 12px;"><i class="fas fa-route"></i> Product Walkthrough</h4>
+                        <div class="form-row">
+                            <div>
+                                <label><input type="checkbox" id="wtEnabled"> Enable walkthrough for new users</label>
+                                <p class="form-text">Interactive tour on the homepage for first-time logins / new registrations.</p>
+                            </div>
+                            <div>
+                                <label for="wtResetUser">Reset walkthrough for user</label>
+                                <div style="display:flex;gap:8px;">
+                                    <input type="number" id="wtResetUser" class="form-control" placeholder="User ID (leave blank = ALL users)" min="0">
+                                    <button class="btn btn-outline-danger" onclick="resetWalkthrough()">
+                                        <i class="fas fa-undo"></i> Reset
+                                    </button>
+                                </div>
+                                <p class="form-text">Force the tour to show again on next visit.</p>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="saveWalkthroughSettings()">
+                            <i class="fas fa-save"></i> Save Walkthrough Settings
+                        </button>
+                    </div>
+
+                    <!-- Feedback list -->
+                    <div class="data-table-container">
+                        <table class="data-table" id="feedbackTable">
+                            <thead>
+                                <tr>
+                                    <th>When</th>
+                                    <th>User</th>
+                                    <th>Rating</th>
+                                    <th>Category</th>
+                                    <th>Message</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="feedbackTableBody">
+                                <tr><td colspan="7" style="text-align:center;color:#94a3b8;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="feedbackPagination" style="display:flex;justify-content:center;gap:8px;margin-top:14px;"></div>
                 </div>
 
                 <!-- Business Scraper Section -->

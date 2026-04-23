@@ -1858,14 +1858,27 @@ function decodeAIChatBusinessJsonList($value) {
     if (is_array($value)) {
         $items = $value;
     } elseif (is_string($value) && trim($value) !== '') {
-        $decoded = json_decode($value, true);
-        $items = (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) ? $decoded : [];
+        $raw = trim((string)$value);
+        $decoded = json_decode($raw, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            $items = $decoded;
+        } else {
+            // Fallback for legacy/plain storage (e.g. "Oil Change, Brake Service").
+            $plain = trim($raw, "[] ");
+            if (strpos($plain, ',') !== false) {
+                $items = preg_split('/\s*,\s*/', $plain, -1, PREG_SPLIT_NO_EMPTY);
+            } else {
+                $items = [$plain];
+            }
+        }
     } else {
         $items = [];
     }
 
     return array_values(array_filter(array_map(function ($item) {
-        return trim((string)$item);
+        $normalized = trim((string)$item);
+        $normalized = trim($normalized, "\"'");
+        return $normalized;
     }, $items), function ($item) {
         return $item !== '';
     }));
@@ -5099,8 +5112,8 @@ function loadAIChatProfileLocationContext($db, $userId) {
                     loc.name AS location_name,
                     loc.region,
                     loc.district,
-                    loc.latitude,
-                    loc.longitude
+                    NULL AS latitude,
+                    NULL AS longitude
              FROM users u
              LEFT JOIN locations loc
                ON LOWER(u.city) = LOWER(loc.name)
@@ -7263,6 +7276,16 @@ function callAIChatKnowledgeFallback($db, $query, $type, $baseUrl = '') {
         $browseHint = " Users can also browse all results at {$baseUrl}{$page}.";
     }
 
+    // For simple directory lookups, return immediately and let deterministic
+    // fallback text respond instead of waiting on external providers.
+    $queryText = trim((string)$query);
+    $isSimpleDirectoryLookup = in_array($type, ['car_hire', 'dealer', 'garage', 'listing'], true)
+        && str_word_count($queryText) <= 12
+        && preg_match('/\b(looking|need|find|show|nearest|closest|near|in|airport|wedding|driver|self[\s-]?drive|hire|rental|dealer|garage|car)\b/i', $queryText) === 1;
+    if ($isSimpleDirectoryLookup) {
+        return null;
+    }
+
     $systemPrompt = "You are the MotorLink AI Assistant for Malawi. "
         . "The MotorLink database has no matching {$typeLabel} for the user's query. "
         . "Your job is to be genuinely helpful by:\n"
@@ -7276,7 +7299,14 @@ function callAIChatKnowledgeFallback($db, $query, $type, $baseUrl = '') {
         ['role' => 'user', 'content' => $query],
     ];
 
-    $result = callOpenAIAPIForSpecs($db, $user, $messages);
+    $result = callOpenAIAPIForSpecs($db, $user, $messages, [
+        'overall_budget_seconds' => 6,
+        'connect_timeout' => 3,
+        'request_timeout_first' => 4,
+        'request_timeout_retry' => 5,
+        'max_providers' => 1,
+        'max_attempts_per_provider' => 1,
+    ]);
     if ($result === null || empty($result['response'])) { return null; }
     return trim((string)$result['response']);
 }
@@ -7284,7 +7314,7 @@ function callAIChatKnowledgeFallback($db, $query, $type, $baseUrl = '') {
 /**
  * Call OpenAI API for car spec queries (extracted for reuse)
  */
-function callOpenAIAPIForSpecs($db, $user, $messages) {
+function callOpenAIAPIForSpecs($db, $user, $messages, $options = []) {
     $settings = getAIChatSettings($db);
     $preferredProvider = normalizeAIChatProvider($settings['ai_provider'] ?? 'openai');
     $enabled = (int)($settings['enabled'] ?? 1);
@@ -7304,14 +7334,46 @@ function callOpenAIAPIForSpecs($db, $user, $messages) {
     $temperature = (float)($settings['temperature'] ?? 0.7);
     $providerOrder = getAIChatProviderRetryOrder($db, $settings, $preferredProvider);
 
+    $options = is_array($options) ? $options : [];
+    $overallBudgetSeconds = isset($options['overall_budget_seconds']) && is_numeric($options['overall_budget_seconds'])
+        ? max(2, (int)$options['overall_budget_seconds'])
+        : 22;
+    $connectTimeout = isset($options['connect_timeout']) && is_numeric($options['connect_timeout'])
+        ? max(2, (int)$options['connect_timeout'])
+        : 6;
+    $requestTimeoutFirst = isset($options['request_timeout_first']) && is_numeric($options['request_timeout_first'])
+        ? max(3, (int)$options['request_timeout_first'])
+        : 12;
+    $requestTimeoutRetry = isset($options['request_timeout_retry']) && is_numeric($options['request_timeout_retry'])
+        ? max(3, (int)$options['request_timeout_retry'])
+        : 16;
+    $maxProviders = isset($options['max_providers']) && is_numeric($options['max_providers'])
+        ? max(1, (int)$options['max_providers'])
+        : 2;
+    $maxAttemptsPerProvider = isset($options['max_attempts_per_provider']) && is_numeric($options['max_attempts_per_provider'])
+        ? max(1, min(2, (int)$options['max_attempts_per_provider']))
+        : 2;
+
     $isWindows = (PHP_OS_FAMILY === 'Windows');
     $serverHost = $_SERVER['HTTP_HOST'] ?? '';
     $isLocalDev = (strpos($serverHost, 'localhost') !== false || strpos($serverHost, '127.0.0.1') !== false);
     $disableSSL = $isLocalDev || $isWindows;
 
+    $overallStart = microtime(true);
+    $providersTried = 0;
     foreach ($providerOrder as $provider) {
+        if ((microtime(true) - $overallStart) >= $overallBudgetSeconds) {
+            error_log('callOpenAIAPIForSpecs: overall budget exhausted before provider ' . $provider);
+            break;
+        }
+
         if (!isAIChatProviderEnabled($settings, $provider)) {
             continue;
+        }
+
+        $providersTried++;
+        if ($providersTried > $maxProviders) {
+            break;
         }
 
         $providerConfig = getAIChatProviderConfig($provider);
@@ -7327,8 +7389,13 @@ function callOpenAIAPIForSpecs($db, $user, $messages) {
         $modelName = normalizeAIChatModelName($provider, $configuredModel, $providerConfig['default_model']);
 
         $attempt = 0;
-        while ($attempt < 2) {
+        while ($attempt < $maxAttemptsPerProvider) {
             $attempt++;
+
+            if ((microtime(true) - $overallStart) >= $overallBudgetSeconds) {
+                error_log('callOpenAIAPIForSpecs: budget hit mid-provider ' . $provider . ', attempt ' . $attempt);
+                break 2;
+            }
 
             $requestBody = [
                 'model' => $modelName,
@@ -7350,10 +7417,13 @@ function callOpenAIAPIForSpecs($db, $user, $messages) {
                 'Authorization: Bearer ' . $providerApiKey
             ]);
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody));
-            // Tighter provider timeout so we return a clean error to the client
-            // before its 60s abort window. First try 35s, retry gets 45s.
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
-            curl_setopt($ch, CURLOPT_TIMEOUT, $attempt === 1 ? 35 : 45);
+            $requestTimeout = ($attempt === 1) ? $requestTimeoutFirst : $requestTimeoutRetry;
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $connectTimeout);
+            curl_setopt($ch, CURLOPT_TIMEOUT, $requestTimeout);
+            curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1);
+            curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, max(3, min(8, $requestTimeout - 2)));
+            curl_setopt($ch, CURLOPT_ENCODING, '');
+            curl_setopt($ch, CURLOPT_TCP_NODELAY, true);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !$disableSSL);
             curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $disableSSL ? 0 : 2);
 
@@ -7387,7 +7457,7 @@ function callOpenAIAPIForSpecs($db, $user, $messages) {
                 $isModelError = isAIChatModelErrorResponse($httpCode, $errorMessage, $errorType, $errorCode);
                 $defaultModel = (string)$providerConfig['default_model'];
 
-                if ($isModelError && $attempt === 1 && $modelName !== $defaultModel) {
+                if ($isModelError && $attempt === 1 && $maxAttemptsPerProvider > 1 && $modelName !== $defaultModel) {
                     error_log(getAIChatProviderLabel($provider) . " model '" . $modelName . "' failed in specs flow. Retrying with default '" . $defaultModel . "'.");
                     $modelName = $defaultModel;
                     continue;
@@ -9794,65 +9864,29 @@ function detectDealerQuery($message) {
  */
 function detectGarageQuery($message) {
     $messageLower = strtolower($message);
-    
-    // First, exclude general knowledge questions (how/why/what is questions about concepts)
-    // These should NOT trigger garage queries
-    $generalKnowledgePatterns = [
-        '/^how (does|do|can|will|should|would)/i',
-        '/^why (does|do|is|are|will)/i',
-        '/^what (is|are|does|do|was|were)/i',
-        '/explain (how|why|what)/i',
-        '/tell me (how|why|what)/i'
-    ];
-    
-    foreach ($generalKnowledgePatterns as $pattern) {
-        if (preg_match($pattern, $messageLower)) {
-            // If it's a general knowledge question, check if it's specifically about finding a garage
-            // Only return true if it explicitly asks to find/locate a garage
-            if (preg_match('/(find|locate|where is|which|what garage|garage open|garage near)/i', $messageLower)) {
-                // Explicit garage search query
-                break; // Continue to check garage-specific keywords
-            } else {
-                // General knowledge question - don't trigger garage query
-                return false;
-            }
+
+    $hasGarageNoun = preg_match('/\b(garage|garages|workshop|workshops|mechanic|mechanics|repair shop|auto shop)\b/i', $messageLower) === 1;
+    $hasSearchIntent = preg_match('/\b(find|looking|need|search|locate|where|which|near|nearby|closest|nearest|open|available|in|around|within)\b/i', $messageLower) === 1;
+    $hasServiceIntent = preg_match('/\b(brake|oil change|engine|ac|air conditioning|transmission|electrical|body work|paint|dent|glass|tire|tyre|battery|diagnostic|diagnostics|towing|recovery|breakdown|emergency|suspension|clutch|radiator|alignment)\b/i', $messageLower) === 1;
+    $hasLocationMention = inferLocationFromMessage($messageLower) !== null;
+
+    // Avoid routing pure how/why concept questions as garage search.
+    if (preg_match('/^(how|why|what is|what are|explain)\b/i', $messageLower) === 1) {
+        if (!($hasGarageNoun && $hasSearchIntent) && !($hasServiceIntent && ($hasSearchIntent || $hasLocationMention))) {
+            return false;
         }
     }
-    
-    // Specific garage-related queries that should trigger garage search
-    $garageSpecificKeywords = [
-        'what garage', 'which garage', 'find a garage', 'find garage', 'locate garage',
-        'garage open', 'garages open', 'open garage', 'garage near', 'garage nearby',
-        'garage closest', 'garage nearest', 'nearest garage', 'closest garage',
-        'garage that offers', 'garage offering', 'garages that offer',
-        'where can i get', 'where can i find a garage', 'where to find garage',
-        'need a garage', 'looking for a garage', 'search for garage'
-    ];
-    
-    // Check for specific garage query patterns
-    foreach ($garageSpecificKeywords as $keyword) {
-        if (strpos($messageLower, $keyword) !== false) {
-            return true;
-        }
+
+    if ($hasGarageNoun && ($hasSearchIntent || $hasServiceIntent || $hasLocationMention)) {
+        return true;
     }
-    
-    // Also check for service queries that are looking for garages (not general knowledge)
-    // But only if they're asking WHERE to find them, not HOW they work
-    $serviceKeywords = [
-        'brake service', 'oil change', 'engine repair', 'ac repair',
-        'body work', 'painting', 'tire service', 'battery replacement',
-        'diagnostics', 'towing service', 'breakdown service', 'emergency repair'
-    ];
-    
-    // Only trigger if it's asking WHERE to find the service, not HOW it works
-    if (preg_match('/(where|which|what|find|locate|near|open).*(garage|workshop|mechanic)/i', $messageLower)) {
-        foreach ($serviceKeywords as $service) {
-            if (strpos($messageLower, $service) !== false) {
-                return true;
-            }
-        }
+
+    // Also treat service + location/proximity requests as garage searches,
+    // even when the user omits the word "garage".
+    if ($hasServiceIntent && ($hasSearchIntent || $hasLocationMention)) {
+        return true;
     }
-    
+
     return false;
 }
 
@@ -9968,7 +10002,7 @@ function searchDealers($db, $searchParams, $userLocation = null) {
             ? "(SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as avg_rating,\n                                     (SELECT COUNT(*) FROM business_reviews r WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as review_count,"
             : "NULL as avg_rating, 0 as review_count,";
         $stmt = $db->prepare("
-                 SELECT d.*, loc.name as location_name, loc.region, loc.district, loc.latitude, loc.longitude, d.business_hours,
+                 SELECT d.*, loc.name as location_name, loc.region, loc.district, NULL as latitude, NULL as longitude, d.business_hours,
                                      {$dealerReviewSubqueries}
                    (SELECT COUNT(*) 
                     FROM car_listings cl 
@@ -10268,97 +10302,32 @@ function handleGarageQuery($db, $message, $conversationHistory) {
         
         // Format response
         if (empty($garages)) {
-            // If location was specified, try with different statuses but keep location
-            if (!empty($searchParams['location'])) {
-                // First try with pending_approval status but same location
+            $hasStrictGarageFilters = !empty($searchParams['location'])
+                || !empty($searchParams['service'])
+                || !empty($searchParams['specialization'])
+                || !empty($searchParams['car_brand'])
+                || !empty($searchParams['emergency_only'])
+                || !empty($searchParams['quality_only'])
+                || !empty($searchParams['open_now']);
+
+            // Only do a broader retry for generic queries. For attribute-specific queries,
+            // keep filters strict so results remain correct and expected.
+            if (!$hasStrictGarageFilters) {
                 $retryParams = $searchParams;
                 $retryParams['status'] = 'pending_approval';
                 $garages = searchGarages($db, $retryParams, $userLocation);
-                
-                // If still no results, try without status filter but keep location
-                if (empty($garages)) {
-                    $retryParams = $searchParams;
-                    unset($retryParams['status']);
-                    // Try to get any garage in that location regardless of status
-                    try {
-                        $locationSearch = strtolower(trim($searchParams['location']));
-                        $locationPattern = '%' . $locationSearch . '%';
-                        $testStmt = $db->prepare("
-                            SELECT COUNT(*) as count 
-                            FROM garages g
-                            INNER JOIN locations loc ON g.location_id = loc.id
-                            WHERE (LOWER(loc.name) LIKE ? OR LOWER(loc.district) LIKE ? OR LOWER(loc.region) LIKE ?)
-                        ");
-                        $testStmt->execute([$locationPattern, $locationPattern, $locationPattern]);
-                        $locationCount = $testStmt->fetch(PDO::FETCH_ASSOC);
-                        if ($isLocalhost) {
-                            error_log("Garages in location '{$searchParams['location']}': " . $locationCount['count']);
-                        }
-                    } catch (Exception $e) {
-                        if ($isLocalhost) {
-                            error_log("Error checking location count: " . $e->getMessage());
-                        }
-                    }
-                }
             }
-            
-            // If still no results and location was specified, try without location but keep other filters
-            if (empty($garages) && !empty($searchParams['location'])) {
-                $retryParams = $searchParams;
-                unset($retryParams['location']);
-                $retryParams['status'] = 'active';
-                $garages = searchGarages($db, $retryParams, $userLocation);
-            }
-            
-            // If still no results, try with minimal filters
-            if (empty($garages)) {
-                if (!empty($searchParams['service']) || !empty($searchParams['specialization'])) {
-                    // Retry with minimal filters - just active status
-                    $broadSearchParams = ['status' => 'active'];
-                    if (!empty($searchParams['proximity'])) {
-                        $broadSearchParams['proximity'] = true;
-                    }
-                    $garages = searchGarages($db, $broadSearchParams, $userLocation);
-                }
-            }
-            
-            // If still no results, try with pending_approval status as well
-            if (empty($garages)) {
-                $broadSearchParams = ['status' => 'active'];
-                $garages = searchGarages($db, $broadSearchParams, null);
-                
-                // If still empty, try without status filter to see if there are ANY garages
-                if (empty($garages)) {
-                    // Try to get count of all garages for debugging
-                    try {
-                        $countStmt = $db->query("SELECT status, COUNT(*) as count FROM garages GROUP BY status");
-                        $statusCounts = $countStmt->fetchAll(PDO::FETCH_ASSOC);
-                        if ($isLocalhost) {
-                            error_log("Garage status counts: " . json_encode($statusCounts));
-                        }
-                    } catch (Exception $e) {
-                        if ($isLocalhost) {
-                            error_log("Error getting garage counts: " . $e->getMessage());
-                        }
-                    }
-                    
-                    // Try with pending_approval status
-                    $broadSearchParams = ['status' => 'pending_approval'];
-                    $garages = searchGarages($db, $broadSearchParams, null);
-                }
-            }
-            
+
             if (empty($garages)) {
                 $aiFallback = callAIChatKnowledgeFallback($db, $message, 'garage', $baseUrl);
                 if ($aiFallback !== null && $aiFallback !== '') {
                     $response = $aiFallback;
                 } else {
                     $response = "No garages matching your search were found in our database. "
-                        . "Try [browsing all garages]({$baseUrl}garages.html) or contact support.";
+                        . "Try [browsing all garages]({$baseUrl}garages.html) or refine your location/service filters.";
                 }
             } else {
                 $response = "I found some garages:\n\n";
-                // Continue with the garage listing below
             }
         }
         
@@ -10526,10 +10495,83 @@ function handleGarageQuery($db, $message, $conversationHistory) {
 /**
  * Extract garage search parameters from user message
  */
+function buildGarageServiceNeedles($service) {
+    $service = strtolower(trim((string)$service));
+    if ($service === '') {
+        return [];
+    }
+
+    $needles = [$service];
+    $aliasGroups = [
+        'brake service' => ['brake repair', 'brake replacement', 'brake'],
+        'oil change' => ['oil service', 'engine oil'],
+        'engine repair' => ['engine service', 'engine'],
+        'ac repair' => ['air conditioning', 'ac service', 'aircon'],
+        'transmission service' => ['transmission repair', 'transmission'],
+        'electrical repair' => ['electrical service', 'electrical'],
+        'body work' => ['body repair', 'panel beating', 'panel repair'],
+        'painting' => ['car painting', 'paint'],
+        'dent removal' => ['dent repair', 'dent'],
+        'glass replacement' => ['windshield', 'windscreen', 'glass repair'],
+        'tire service' => ['tyre service', 'tire repair', 'tyre repair', 'wheel balancing'],
+        'battery replacement' => ['battery', 'battery service'],
+        'computer diagnostics' => ['diagnostics', 'diagnostic', 'engine diagnostics', 'scanner', 'scan'],
+        'hybrid service' => ['hybrid repair', 'hybrid'],
+        'performance tuning' => ['tuning', 'performance'],
+        'wheel alignment' => ['alignment', 'wheel balancing'],
+        'suspension repair' => ['suspension'],
+        'exhaust repair' => ['exhaust'],
+        'clutch repair' => ['clutch'],
+        'radiator repair' => ['radiator'],
+        'windshield repair' => ['windscreen repair', 'windshield'],
+        'towing' => ['towing service', 'tow', 'tow truck'],
+        'breakdown recovery' => ['recovery service', 'recovery', 'breakdown', 'roadside assistance', 'emergency service', 'emergency repair'],
+        'tire replacement' => ['tyre replacement', 'flat tire', 'flat tyre'],
+        'jump start' => ['jumpstart'],
+        'fuel delivery' => ['fuel drop'],
+        'lockout service' => ['lockout', 'unlock service']
+    ];
+
+    foreach ($aliasGroups as $canonical => $aliases) {
+        $group = array_merge([$canonical], $aliases);
+        $matched = false;
+        foreach ($group as $alias) {
+            $alias = strtolower(trim((string)$alias));
+            if ($alias === '') {
+                continue;
+            }
+            if (strpos($service, $alias) !== false || strpos($alias, $service) !== false) {
+                $matched = true;
+                break;
+            }
+        }
+
+        if ($matched) {
+            foreach ($group as $entry) {
+                $entry = strtolower(trim((string)$entry));
+                if ($entry !== '') {
+                    $needles[] = $entry;
+                }
+            }
+        }
+    }
+
+    $tokens = preg_split('/[^a-z0-9]+/', $service);
+    $tokenStopWords = ['service', 'repair', 'and', 'with', 'for', 'car', 'auto'];
+    foreach ((array)$tokens as $token) {
+        $token = trim((string)$token);
+        if (strlen($token) >= 4 && !in_array($token, $tokenStopWords, true)) {
+            $needles[] = $token;
+        }
+    }
+
+    return array_values(array_unique(array_filter($needles)));
+}
+
 function extractGarageSearchParams($message, $db = null) {
     $params = [];
     $messageLower = strtolower($message);
-    
+
     // Detect proximity queries (closest, nearest, near me, nearby)
     $proximityKeywords = ['closest', 'nearest', 'near me', 'nearby', 'close to me', 'near'];
     foreach ($proximityKeywords as $keyword) {
@@ -10538,128 +10580,136 @@ function extractGarageSearchParams($message, $db = null) {
             break;
         }
     }
-    
-    // Extract location
-    $locations = ['blantyre', 'lilongwe', 'mzuzu', 'zomba', 'mangochi', 'salima', 'kasungu', 'mulanje'];
-    foreach ($locations as $location) {
-        if (strpos($messageLower, $location) !== false) {
-            $params['location'] = $location;
-            break;
+
+    // Extract location using DB-aware matching first.
+    if ($db !== null) {
+        $detectedLocation = extractLocationMentionFromText($db, $message);
+        if (!empty($detectedLocation)) {
+            $params['location'] = strtolower(trim((string)$detectedLocation));
         }
     }
-    
-    // Extract service type - Improved precision with multiple keyword matching
-    $services = [
-        // Multi-keyword patterns (more specific first)
-        'brake service' => 'Brake Service',
-        'brake repair' => 'Brake Service',
-        'brake replacement' => 'Brake Service',
-        'oil change' => 'Oil Change',
-        'oil service' => 'Oil Change',
-        'engine repair' => 'Engine Repair',
-        'engine service' => 'Engine Repair',
-        'engine diagnostic' => 'Engine Diagnostics',
-        'ac repair' => 'AC Repair',
-        'air conditioning' => 'AC Repair',
-        'ac service' => 'AC Repair',
-        'transmission service' => 'Transmission Service',
-        'transmission repair' => 'Transmission Service',
-        'transmission' => 'Transmission Service',
-        'electrical repair' => 'Electrical Repair',
-        'electrical service' => 'Electrical Repair',
-        'electrical' => 'Electrical Repair',
-        'body work' => 'Body Work',
-        'body repair' => 'Body Work',
-        'painting' => 'Painting',
-        'car painting' => 'Painting',
-        'tire service' => 'Tire Service',
-        'tire repair' => 'Tire Service',
-        'tire replacement' => 'Tire Service',
-        'tire' => 'Tire Service',
-        'tyre' => 'Tire Service',
-        'battery replacement' => 'Battery Replacement',
-        'battery' => 'Battery Replacement',
-        'diagnostics' => 'Engine Diagnostics',
-        'engine diagnostic' => 'Engine Diagnostics',
-        'towing service' => 'Towing Service',
-        'towing' => 'Towing Service',
-        'recovery service' => 'Breakdown Recovery',
-        'breakdown recovery' => 'Breakdown Recovery',
-        'recovery' => 'Breakdown Recovery',
-        'emergency service' => 'Emergency Services',
-        'emergency repair' => 'Emergency Services',
-        'emergency' => 'Emergency Services',
-        'wheel alignment' => 'Wheel Alignment',
-        'alignment' => 'Wheel Alignment',
-        'suspension' => 'Suspension Repair',
-        'suspension repair' => 'Suspension Repair',
-        'exhaust' => 'Exhaust Repair',
-        'exhaust repair' => 'Exhaust Repair',
-        'clutch' => 'Clutch Repair',
-        'clutch repair' => 'Clutch Repair',
-        'radiator' => 'Radiator Repair',
-        'radiator repair' => 'Radiator Repair',
-        'windshield' => 'Windshield Repair',
-        'windshield repair' => 'Windshield Repair',
-        'windscreen' => 'Windshield Repair'
-    ];
-    
-    // Try multi-word matches first (more specific)
-    $foundService = false;
-    foreach ($services as $keyword => $service) {
-        // Check if the keyword appears as a whole phrase (more precise)
-        if (preg_match('/\b' . preg_quote($keyword, '/') . '\b/i', $messageLower)) {
-            $params['service'] = $service;
-            $foundService = true;
-            break;
-        }
-    }
-    
-    // If no multi-word match found, try single keywords (fallback)
-    if (!$foundService) {
-        $singleKeywords = [
-            'brake' => 'Brake Service',
-            'oil' => 'Oil Change',
-            'engine' => 'Engine Repair',
-            'ac' => 'AC Repair',
-            'electrical' => 'Electrical Repair',
-            'body' => 'Body Work',
-            'paint' => 'Painting',
-            'tire' => 'Tire Service',
-            'tyre' => 'Tire Service',
-            'battery' => 'Battery Replacement',
-            'diagnostic' => 'Engine Diagnostics',
-            'tow' => 'Towing Service',
-            'recover' => 'Breakdown Recovery',
-            'emergency' => 'Emergency Services'
+    if (empty($params['location'])) {
+        $locations = [
+            'blantyre', 'lilongwe', 'mzuzu', 'zomba', 'mangochi', 'salima', 'kasungu', 'mulanje',
+            'dedza', 'ntcheu', 'mchinji', 'dowa', 'ntchisi', 'nkhotakota', 'karonga', 'rumphi',
+            'balaka', 'machinga', 'phalombe', 'thyolo', 'chiradzulu', 'nsanje', 'chikwawa', 'likoma'
         ];
-        
-        foreach ($singleKeywords as $keyword => $service) {
-            if (strpos($messageLower, $keyword) !== false) {
-                $params['service'] = $service;
+        foreach ($locations as $location) {
+            if (strpos($messageLower, $location) !== false) {
+                $params['location'] = $location;
                 break;
             }
         }
     }
-    
-    // Extract specialization
-    $specializations = ['toyota', 'honda', 'bmw', 'mercedes', 'nissan', 'ford', 'luxury', 'european', 'japanese'];
-    foreach ($specializations as $specialization) {
-        if (strpos($messageLower, $specialization) !== false) {
-            $params['specialization'] = $specialization;
+
+    // Extract service type using canonical labels used in saved garage data.
+    $serviceAliasMap = [
+        'Brake Service' => ['brake service', 'brake repair', 'brake replacement', 'brake'],
+        'Oil Change' => ['oil change', 'oil service', 'engine oil'],
+        'Engine Repair' => ['engine repair', 'engine service'],
+        'AC Repair' => ['ac repair', 'air conditioning', 'ac service', 'aircon'],
+        'Transmission Service' => ['transmission service', 'transmission repair', 'transmission'],
+        'Electrical Repair' => ['electrical repair', 'electrical service', 'electrical'],
+        'Body Work' => ['body work', 'body repair', 'panel beating'],
+        'Painting' => ['painting', 'car painting', 'paint'],
+        'Dent Removal' => ['dent removal', 'dent repair', 'dent'],
+        'Glass Replacement' => ['glass replacement', 'windscreen', 'windshield', 'glass repair'],
+        'Tire Service' => ['tire service', 'tyre service', 'tire repair', 'tyre repair', 'tire', 'tyre'],
+        'Battery Replacement' => ['battery replacement', 'battery'],
+        'Computer Diagnostics' => ['computer diagnostics', 'engine diagnostics', 'diagnostics', 'diagnostic'],
+        'Hybrid Service' => ['hybrid service', 'hybrid repair', 'hybrid'],
+        'Performance Tuning' => ['performance tuning', 'tuning', 'performance'],
+        'Wheel Alignment' => ['wheel alignment', 'alignment'],
+        'Suspension Repair' => ['suspension repair', 'suspension'],
+        'Exhaust Repair' => ['exhaust repair', 'exhaust'],
+        'Clutch Repair' => ['clutch repair', 'clutch'],
+        'Radiator Repair' => ['radiator repair', 'radiator'],
+        'Windshield Repair' => ['windshield repair', 'windscreen repair'],
+        'Towing' => ['towing service', 'towing', 'tow truck', 'tow'],
+        'Breakdown Recovery' => ['breakdown recovery', 'recovery service', 'recovery', 'breakdown', 'roadside assistance'],
+        'Tire Replacement' => ['tire replacement', 'tyre replacement', 'flat tire', 'flat tyre'],
+        'Jump Start' => ['jump start', 'jumpstart'],
+        'Fuel Delivery' => ['fuel delivery', 'fuel drop'],
+        'Lockout Service' => ['lockout service', 'lockout', 'unlock service']
+    ];
+
+    $matchedService = '';
+    $bestAliasLength = 0;
+    foreach ($serviceAliasMap as $canonical => $aliases) {
+        foreach ($aliases as $alias) {
+            if (preg_match('/\b' . preg_quote($alias, '/') . '\b/i', $messageLower) === 1) {
+                $aliasLength = strlen((string)$alias);
+                if ($aliasLength > $bestAliasLength) {
+                    $bestAliasLength = $aliasLength;
+                    $matchedService = $canonical;
+                }
+            }
+        }
+    }
+
+    if ($matchedService !== '') {
+        $params['service'] = $matchedService;
+        $params['service_terms'] = buildGarageServiceNeedles($matchedService);
+    }
+
+    // Extract brand/specialization attributes.
+    $brandMap = [
+        'toyota' => 'Toyota',
+        'honda' => 'Honda',
+        'bmw' => 'BMW',
+        'mercedes-benz' => 'Mercedes-Benz',
+        'mercedes' => 'Mercedes-Benz',
+        'nissan' => 'Nissan',
+        'ford' => 'Ford',
+        'mazda' => 'Mazda',
+        'hyundai' => 'Hyundai',
+        'kia' => 'Kia',
+        'isuzu' => 'Isuzu',
+        'mitsubishi' => 'Mitsubishi',
+        'subaru' => 'Subaru',
+        'volkswagen' => 'Volkswagen',
+        'audi' => 'Audi'
+    ];
+    foreach ($brandMap as $needle => $label) {
+        if (strpos($messageLower, $needle) !== false) {
+            $params['car_brand'] = $label;
+            if (empty($params['specialization'])) {
+                $params['specialization'] = strtolower($label);
+            }
             break;
         }
     }
 
+    if (empty($params['specialization']) && preg_match('/\b(luxury|european|japanese|german|american|hybrid|performance)\b/i', $messageLower, $specMatch)) {
+        $params['specialization'] = strtolower(trim((string)$specMatch[1]));
+    }
+
     if (preg_match('/\b(recovery|tow|towing|breakdown|emergency|24\/7|24 7)\b/i', $message)) {
         $params['emergency_only'] = true;
+        if (empty($params['service'])) {
+            $params['service'] = 'Breakdown Recovery';
+            $params['service_terms'] = buildGarageServiceNeedles($params['service']);
+        }
     }
 
     if (preg_match('/\b(verified|certified|featured|trusted|reputable)\b/i', $message)) {
         $params['quality_only'] = true;
     }
 
-    $params['search_terms'] = buildAIChatBusinessSearchTerms($message);
+    $excludeTerms = [];
+    if (!empty($params['location'])) {
+        $excludeTerms[] = strtolower(trim((string)$params['location']));
+    }
+    if (!empty($params['service_terms']) && is_array($params['service_terms'])) {
+        $excludeTerms = array_merge($excludeTerms, array_slice($params['service_terms'], 0, 6));
+    }
+    if (!empty($params['specialization'])) {
+        $excludeTerms[] = strtolower(trim((string)$params['specialization']));
+    }
+    if (!empty($params['car_brand'])) {
+        $excludeTerms[] = strtolower(trim((string)$params['car_brand']));
+    }
+    $params['search_terms'] = buildAIChatBusinessSearchTerms($message, $excludeTerms);
     
     // Detect "open now" queries
     if (detectOpenNowQuery($message)) {
@@ -10750,196 +10800,322 @@ function aichatTableHasColumn($db, $tableName, $columnName) {
  */
 function searchGarages($db, $searchParams, $userLocation = null) {
     try {
-        // Start with flexible status filter - try active first, but can fallback
-        // Garage statuses: 'active', 'pending_approval', 'suspended'
-        $statusFilter = $searchParams['status'] ?? 'active';
-        $whereConditions = ["g.status = ?"];
-        $params = [$statusFilter];
-        
-        // Debug: Log the search parameters (only in development)
-        $isLocalDev = (strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false || 
+        $garageColumns = aichatGetTableColumns($db, 'garages');
+        $locationColumns = aichatGetTableColumns($db, 'locations');
+
+        $whereConditions = [];
+        $params = [];
+
+        $statusFilter = strtolower(trim((string)($searchParams['status'] ?? 'active')));
+        if (isset($garageColumns['status']) && $statusFilter !== 'any' && $statusFilter !== '') {
+            $whereConditions[] = 'g.status = ?';
+            $params[] = $statusFilter;
+        }
+
+        $isLocalDev = (strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false ||
                        strpos($_SERVER['HTTP_HOST'] ?? '', '127.0.0.1') !== false);
-        if ($isLocalDev) {
-            error_log("searchGarages called with params: " . json_encode($searchParams) . ", statusFilter: " . $statusFilter);
-        }
-    
-    // Location filter - make it flexible and case-insensitive
-    // Only filter by location if a specific location is requested
-    if (!empty($searchParams['location'])) {
-        // Use case-insensitive matching and also try district/region
-        // MySQL LIKE is case-insensitive by default, but we'll use LOWER for safety
-        $locationSearch = strtolower(trim($searchParams['location']));
-        $whereConditions[] = "(LOWER(loc.name) LIKE ? OR LOWER(loc.district) LIKE ? OR LOWER(loc.region) LIKE ?)";
-        $locationPattern = '%' . $locationSearch . '%';
-        $params[] = $locationPattern;
-        $params[] = $locationPattern;
-        $params[] = $locationPattern;
-        
-        // Debug logging
-        if ($isLocalDev) {
-            error_log("Location filter applied: " . $locationSearch . " -> Pattern: " . $locationPattern);
-        }
-    } elseif (!empty($searchParams['proximity']) && empty($searchParams['distance_from_user']) && $userLocation && !empty($userLocation['location_name'])) {
-        // For proximity queries, prioritize user's location but don't make it mandatory
-        // We'll sort by distance later, so we can include all garages if needed
-        // Only filter by location if we have a specific location match
-        if (!empty($userLocation['location_name'])) {
-            $whereConditions[] = "loc.name LIKE ?";
-            $params[] = '%' . $userLocation['location_name'] . '%';
-        }
-    }
-    
-    // Service filter
-    if (!empty($searchParams['service'])) {
-        $whereConditions[] = "(g.services LIKE ? OR g.emergency_services LIKE ?)";
-        $serviceSearch = '%' . $searchParams['service'] . '%';
-        $params[] = $serviceSearch;
-        $params[] = $serviceSearch;
-    }
 
-    if (!empty($searchParams['emergency_only'])) {
-        $whereConditions[] = "(g.recovery_number IS NOT NULL OR g.emergency_services IS NOT NULL)";
-    }
-    
-    // Specialization filter
-    if (!empty($searchParams['specialization'])) {
-        $whereConditions[] = "(g.specialization LIKE ? OR g.specializes_in_cars LIKE ?)";
-        $specSearch = '%' . $searchParams['specialization'] . '%';
-        $params[] = $specSearch;
-        $params[] = $specSearch;
-    }
-
-    if (!empty($searchParams['quality_only'])) {
-        $whereConditions[] = "(g.verified = 1 OR g.certified = 1 OR g.featured = 1)";
-    }
-
-    $searchTerms = !empty($searchParams['search_terms']) && is_array($searchParams['search_terms'])
-        ? array_slice($searchParams['search_terms'], 0, 4)
-        : [];
-    if (!empty($searchTerms)) {
-        $termConditions = [];
-        foreach ($searchTerms as $term) {
-            $termConditions[] = "(LOWER(g.name) LIKE ? OR LOWER(g.owner_name) LIKE ? OR LOWER(g.address) LIKE ? OR LOWER(g.description) LIKE ?)";
-            $like = '%' . strtolower($term) . '%';
-            array_push($params, $like, $like, $like, $like);
+        $canJoinLocations = isset($garageColumns['location_id']) && isset($locationColumns['id']);
+        $locationSearch = '';
+        if (!empty($searchParams['location'])) {
+            $locationSearch = strtolower(trim((string)$searchParams['location']));
+        } elseif (!empty($searchParams['proximity']) && empty($searchParams['distance_from_user']) && $userLocation && !empty($userLocation['location_name'])) {
+            $locationSearch = strtolower(trim((string)$userLocation['location_name']));
         }
-        $whereConditions[] = '(' . implode(' OR ', $termConditions) . ')';
-    }
-    
-    $whereClause = implode(' AND ', $whereConditions);
-    
-    // Order by featured/verified status
-    $orderBy = "g.featured DESC, g.verified DESC, g.certified DESC, g.name ASC";
-    
-    // Use INNER JOIN like getGarages() in api.php for consistency
-    // This ensures we only get garages with valid locations
-    try {
+
+        if ($locationSearch !== '') {
+            $locationConditions = [];
+            if ($canJoinLocations && isset($locationColumns['name'])) {
+                $locationConditions[] = 'LOWER(loc.name) LIKE ?';
+            }
+            if ($canJoinLocations && isset($locationColumns['district'])) {
+                $locationConditions[] = 'LOWER(loc.district) LIKE ?';
+            }
+            if ($canJoinLocations && isset($locationColumns['region'])) {
+                $locationConditions[] = 'LOWER(loc.region) LIKE ?';
+            }
+            if (isset($garageColumns['address'])) {
+                $locationConditions[] = 'LOWER(g.address) LIKE ?';
+            }
+
+            if (!empty($locationConditions)) {
+                $whereConditions[] = '(' . implode(' OR ', $locationConditions) . ')';
+                $locationPattern = '%' . $locationSearch . '%';
+                for ($i = 0; $i < count($locationConditions); $i++) {
+                    $params[] = $locationPattern;
+                }
+            }
+        }
+
+        $serviceNeedles = [];
+        if (!empty($searchParams['service_terms']) && is_array($searchParams['service_terms'])) {
+            foreach ($searchParams['service_terms'] as $term) {
+                $term = strtolower(trim((string)$term));
+                if ($term !== '') {
+                    $serviceNeedles[] = $term;
+                }
+            }
+        }
+        if (empty($serviceNeedles) && !empty($searchParams['service'])) {
+            $serviceNeedles = buildGarageServiceNeedles((string)$searchParams['service']);
+        }
+        $serviceNeedles = array_values(array_unique(array_slice($serviceNeedles, 0, 8)));
+
+        if (!empty($serviceNeedles)) {
+            $serviceConditions = [];
+            foreach ($serviceNeedles as $needle) {
+                $like = '%' . $needle . '%';
+                if (isset($garageColumns['services'])) {
+                    $serviceConditions[] = 'LOWER(g.services) LIKE ?';
+                    $params[] = $like;
+                }
+                if (isset($garageColumns['emergency_services'])) {
+                    $serviceConditions[] = 'LOWER(g.emergency_services) LIKE ?';
+                    $params[] = $like;
+                }
+                if (isset($garageColumns['description'])) {
+                    $serviceConditions[] = 'LOWER(g.description) LIKE ?';
+                    $params[] = $like;
+                }
+                if (isset($garageColumns['name'])) {
+                    $serviceConditions[] = 'LOWER(g.name) LIKE ?';
+                    $params[] = $like;
+                }
+            }
+            if (!empty($serviceConditions)) {
+                $whereConditions[] = '(' . implode(' OR ', $serviceConditions) . ')';
+            }
+        }
+
+        $specializationNeedles = [];
+        if (!empty($searchParams['specialization'])) {
+            $specialization = strtolower(trim((string)$searchParams['specialization']));
+            if ($specialization !== '') {
+                $specializationNeedles[] = $specialization;
+                foreach (preg_split('/[^a-z0-9]+/', $specialization) as $token) {
+                    $token = trim((string)$token);
+                    if (strlen($token) >= 3) {
+                        $specializationNeedles[] = $token;
+                    }
+                }
+            }
+        }
+        $specializationNeedles = array_values(array_unique(array_filter($specializationNeedles)));
+
+        if (!empty($specializationNeedles)) {
+            $specializationConditions = [];
+            foreach ($specializationNeedles as $needle) {
+                $like = '%' . $needle . '%';
+                if (isset($garageColumns['specialization'])) {
+                    $specializationConditions[] = 'LOWER(g.specialization) LIKE ?';
+                    $params[] = $like;
+                }
+                if (isset($garageColumns['specializes_in_cars'])) {
+                    $specializationConditions[] = 'LOWER(g.specializes_in_cars) LIKE ?';
+                    $params[] = $like;
+                }
+                if (isset($garageColumns['description'])) {
+                    $specializationConditions[] = 'LOWER(g.description) LIKE ?';
+                    $params[] = $like;
+                }
+            }
+            if (!empty($specializationConditions)) {
+                $whereConditions[] = '(' . implode(' OR ', $specializationConditions) . ')';
+            }
+        }
+
+        $brandNeedles = [];
+        if (!empty($searchParams['car_brand'])) {
+            $brand = strtolower(trim((string)$searchParams['car_brand']));
+            if ($brand !== '') {
+                $brandNeedles[] = $brand;
+                if ($brand === 'mercedes-benz' || $brand === 'mercedes') {
+                    $brandNeedles[] = 'mercedes';
+                    $brandNeedles[] = 'mercedes-benz';
+                }
+            }
+        }
+        $brandNeedles = array_values(array_unique(array_filter($brandNeedles)));
+
+        if (!empty($brandNeedles)) {
+            $brandConditions = [];
+            foreach ($brandNeedles as $needle) {
+                $like = '%' . $needle . '%';
+                if (isset($garageColumns['specializes_in_cars'])) {
+                    $brandConditions[] = 'LOWER(g.specializes_in_cars) LIKE ?';
+                    $params[] = $like;
+                }
+                if (isset($garageColumns['specialization'])) {
+                    $brandConditions[] = 'LOWER(g.specialization) LIKE ?';
+                    $params[] = $like;
+                }
+                if (isset($garageColumns['name'])) {
+                    $brandConditions[] = 'LOWER(g.name) LIKE ?';
+                    $params[] = $like;
+                }
+            }
+            if (!empty($brandConditions)) {
+                $whereConditions[] = '(' . implode(' OR ', $brandConditions) . ')';
+            }
+        }
+
+        if (!empty($searchParams['emergency_only'])) {
+            $emergencyConditions = [];
+            if (isset($garageColumns['recovery_number'])) {
+                $emergencyConditions[] = "(g.recovery_number IS NOT NULL AND TRIM(g.recovery_number) <> '')";
+            }
+            if (isset($garageColumns['emergency_services'])) {
+                $emergencyConditions[] = "(g.emergency_services IS NOT NULL AND TRIM(g.emergency_services) <> '' AND g.emergency_services <> '[]')";
+            }
+            if (!empty($emergencyConditions)) {
+                $whereConditions[] = '(' . implode(' OR ', $emergencyConditions) . ')';
+            }
+        }
+
+        if (!empty($searchParams['quality_only'])) {
+            $qualityConditions = [];
+            foreach (['verified', 'certified', 'featured'] as $qualityField) {
+                if (isset($garageColumns[$qualityField])) {
+                    $qualityConditions[] = 'g.' . $qualityField . ' = 1';
+                }
+            }
+            if (!empty($qualityConditions)) {
+                $whereConditions[] = '(' . implode(' OR ', $qualityConditions) . ')';
+            }
+        }
+
+        $hasStructuredFilters = ($locationSearch !== '')
+            || !empty($serviceNeedles)
+            || !empty($specializationNeedles)
+            || !empty($brandNeedles)
+            || !empty($searchParams['emergency_only'])
+            || !empty($searchParams['quality_only'])
+            || !empty($searchParams['open_now']);
+
+        $searchTerms = !empty($searchParams['search_terms']) && is_array($searchParams['search_terms'])
+            ? array_slice($searchParams['search_terms'], 0, 4)
+            : [];
+        if (!empty($searchTerms) && !$hasStructuredFilters) {
+            $termConditions = [];
+            foreach ($searchTerms as $term) {
+                $like = '%' . strtolower((string)$term) . '%';
+                $perTerm = [];
+                foreach (['name', 'owner_name', 'address', 'description'] as $field) {
+                    if (isset($garageColumns[$field])) {
+                        $perTerm[] = 'LOWER(g.' . $field . ') LIKE ?';
+                        $params[] = $like;
+                    }
+                }
+                if (!empty($perTerm)) {
+                    $termConditions[] = '(' . implode(' OR ', $perTerm) . ')';
+                }
+            }
+            if (!empty($termConditions)) {
+                $whereConditions[] = '(' . implode(' OR ', $termConditions) . ')';
+            }
+        }
+
+        if (empty($whereConditions)) {
+            $whereConditions[] = '1 = 1';
+        }
+        $whereClause = implode(' AND ', $whereConditions);
+
+        $orderParts = [];
+        foreach (['featured', 'verified', 'certified'] as $sortField) {
+            if (isset($garageColumns[$sortField])) {
+                $orderParts[] = 'g.' . $sortField . ' DESC';
+            }
+        }
+        if (isset($garageColumns['name'])) {
+            $orderParts[] = 'g.name ASC';
+        } elseif (isset($garageColumns['id'])) {
+            $orderParts[] = 'g.id DESC';
+        }
+        if (empty($orderParts)) {
+            $orderParts[] = 'g.id DESC';
+        }
+        $orderBy = implode(', ', $orderParts);
+
+        $locationSelectParts = [
+            ($canJoinLocations && isset($locationColumns['name'])) ? 'loc.name as location_name' : 'NULL as location_name',
+            ($canJoinLocations && isset($locationColumns['region'])) ? 'loc.region as region' : 'NULL as region',
+            ($canJoinLocations && isset($locationColumns['district'])) ? 'loc.district as district' : 'NULL as district',
+            ($canJoinLocations && isset($locationColumns['latitude'])) ? 'loc.latitude as latitude' : 'NULL as latitude',
+            ($canJoinLocations && isset($locationColumns['longitude'])) ? 'loc.longitude as longitude' : 'NULL as longitude'
+        ];
+        $locationJoinSql = $canJoinLocations ? 'LEFT JOIN locations loc ON g.location_id = loc.id' : '';
+
         $garageReviewSubqueries = aichatHasBusinessReviews($db)
             ? "(SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as avg_rating,\n                   (SELECT COUNT(*) FROM business_reviews r WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as review_count"
-            : "NULL as avg_rating, 0 as review_count";
-        $stmt = $db->prepare("
-                SELECT g.*, loc.name as location_name, loc.region, loc.district, loc.latitude, loc.longitude, g.business_hours, g.operating_hours,
-                   {$garageReviewSubqueries}
-            FROM garages g
-            INNER JOIN locations loc ON g.location_id = loc.id
-            WHERE {$whereClause}
-            ORDER BY {$orderBy}
-            LIMIT 20
-        ");
+            : 'NULL as avg_rating, 0 as review_count';
+
+        $stmt = $db->prepare("\n            SELECT g.*, " . implode(', ', $locationSelectParts) . ",\n                   {$garageReviewSubqueries}\n            FROM garages g\n            {$locationJoinSql}\n            WHERE {$whereClause}\n            ORDER BY {$orderBy}\n            LIMIT 40\n        ");
         $stmt->execute($params);
         $garages = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Filter by "open now" if specified
-        if (!empty($searchParams['open_now'])) {
-            $openGarages = [];
-            foreach ($garages as $garage) {
-                if (isBusinessOpenNow($garage['business_hours'] ?? null, $garage['operating_hours'] ?? null)) {
-                    $openGarages[] = $garage;
-                }
-            }
-            $garages = $openGarages;
-        }
-    } catch (PDOException $e) {
-        error_log("SQL error in searchGarages: " . $e->getMessage());
-        error_log("SQL: SELECT g.*, loc.name as location_name, loc.region, loc.district FROM garages g INNER JOIN locations loc ON g.location_id = loc.id WHERE {$whereClause} ORDER BY {$orderBy}");
-        error_log("Params: " . print_r($params, true));
-        throw $e;
-    }
-    
-    $garages = rankAIChatBusinessResultsByDistance($garages, (array)$searchParams, $userLocation);
-    
-    // Parse JSON fields safely
-    foreach ($garages as &$garage) {
-        try {
-            if (!empty($garage['services'])) {
-                if (is_string($garage['services'])) {
-                    $decoded = json_decode($garage['services'], true);
-                    $garage['services_list'] = (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) ? $decoded : [];
-                } else {
-                    $garage['services_list'] = is_array($garage['services']) ? $garage['services'] : [];
-                }
-            } else {
-                $garage['services_list'] = [];
-            }
-            
-            if (!empty($garage['emergency_services'])) {
-                if (is_string($garage['emergency_services'])) {
-                    $decoded = json_decode($garage['emergency_services'], true);
-                    $garage['emergency_services_list'] = (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) ? $decoded : [];
-                } else {
-                    $garage['emergency_services_list'] = is_array($garage['emergency_services']) ? $garage['emergency_services'] : [];
-                }
-            } else {
-                $garage['emergency_services_list'] = [];
-            }
-            
-            if (!empty($garage['specialization'])) {
-                if (is_string($garage['specialization'])) {
-                    $decoded = json_decode($garage['specialization'], true);
-                    $garage['specialization_list'] = (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) ? $decoded : [];
-                } else {
-                    $garage['specialization_list'] = is_array($garage['specialization']) ? $garage['specialization'] : [];
-                }
-            } else {
-                $garage['specialization_list'] = [];
-            }
 
-            if (!empty($garage['specializes_in_cars'])) {
-                if (is_string($garage['specializes_in_cars'])) {
-                    $decoded = json_decode($garage['specializes_in_cars'], true);
-                    $garage['specializes_in_cars_list'] = (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) ? $decoded : [];
-                } else {
-                    $garage['specializes_in_cars_list'] = is_array($garage['specializes_in_cars']) ? $garage['specializes_in_cars'] : [];
-                }
-            } else {
-                $garage['specializes_in_cars_list'] = [];
-            }
-        } catch (Exception $e) {
-            error_log("Error parsing JSON fields for garage: " . $e->getMessage());
-            // Set defaults on error
-            $garage['services_list'] = $garage['services_list'] ?? [];
-            $garage['emergency_services_list'] = $garage['emergency_services_list'] ?? [];
-            $garage['specialization_list'] = $garage['specialization_list'] ?? [];
-            $garage['specializes_in_cars_list'] = $garage['specializes_in_cars_list'] ?? [];
+        $garages = rankAIChatBusinessResultsByDistance($garages, (array)$searchParams, $userLocation);
+
+        foreach ($garages as &$garage) {
+            $garage['services_list'] = decodeAIChatBusinessJsonList($garage['services'] ?? []);
+            $garage['emergency_services_list'] = decodeAIChatBusinessJsonList($garage['emergency_services'] ?? []);
+            $garage['specialization_list'] = decodeAIChatBusinessJsonList($garage['specialization'] ?? []);
+            $garage['specializes_in_cars_list'] = decodeAIChatBusinessJsonList($garage['specializes_in_cars'] ?? []);
         }
-    }
-    unset($garage); // Important: unset reference after loop
-    
-    // Debug: Log results (only in development)
-    $isLocalDev = (strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false || 
-                   strpos($_SERVER['HTTP_HOST'] ?? '', '127.0.0.1') !== false);
-    if ($isLocalDev && empty($garages)) {
-        // Test query to see if there are ANY garages in the database
-        try {
-            $testStmt = $db->query("SELECT status, COUNT(*) as count FROM garages GROUP BY status");
-            $testResults = $testStmt->fetchAll(PDO::FETCH_ASSOC);
-            error_log("Garage status breakdown: " . json_encode($testResults));
-        } catch (Exception $testE) {
-            error_log("Test query failed: " . $testE->getMessage());
+        unset($garage);
+
+        if (!empty($serviceNeedles)) {
+            $garages = array_values(array_filter($garages, function ($garage) use ($serviceNeedles) {
+                $values = array_merge(
+                    $garage['services_list'] ?? [],
+                    $garage['emergency_services_list'] ?? [],
+                    $garage['specialization_list'] ?? []
+                );
+                $values[] = (string)($garage['name'] ?? '');
+                $values[] = (string)($garage['description'] ?? '');
+                return aiChatBusinessMatchesList($values, $serviceNeedles);
+            }));
         }
-    }
-    
-    return $garages;
+
+        if (!empty($specializationNeedles)) {
+            $garages = array_values(array_filter($garages, function ($garage) use ($specializationNeedles) {
+                $values = array_merge(
+                    $garage['specialization_list'] ?? [],
+                    $garage['specializes_in_cars_list'] ?? []
+                );
+                $values[] = (string)($garage['description'] ?? '');
+                return aiChatBusinessMatchesList($values, $specializationNeedles);
+            }));
+        }
+
+        if (!empty($brandNeedles)) {
+            $garages = array_values(array_filter($garages, function ($garage) use ($brandNeedles) {
+                $values = array_merge(
+                    $garage['specializes_in_cars_list'] ?? [],
+                    $garage['specialization_list'] ?? []
+                );
+                return aiChatBusinessMatchesList($values, $brandNeedles);
+            }));
+        }
+
+        if (!empty($searchParams['emergency_only'])) {
+            $garages = array_values(array_filter($garages, function ($garage) {
+                $hasRecovery = !empty($garage['recovery_number']);
+                $hasEmergency = !empty($garage['emergency_services_list']);
+                return $hasRecovery || $hasEmergency;
+            }));
+        }
+
+        if (!empty($searchParams['open_now'])) {
+            $garages = array_values(array_filter($garages, function ($garage) {
+                return isBusinessOpenNow($garage['business_hours'] ?? null, $garage['operating_hours'] ?? null);
+            }));
+        }
+
+        if ($isLocalDev && empty($garages)) {
+            error_log('searchGarages: no results with params ' . json_encode($searchParams));
+        }
+
+        return $garages;
     } catch (Exception $e) {
         error_log("searchGarages error: " . $e->getMessage());
         error_log("Stack trace: " . $e->getTraceAsString());
@@ -11078,81 +11254,458 @@ function detectPriceComparativeQuery($message) {
     return $intent['sort_by_price'] ?? false;
 }
 
-function buildCarHireConversationOptions(array $searchParams, array $companies, $userLocation = null, $sourceMessage = '') {
+function aiChatConversationOptionFingerprint($text) {
+    $text = strtolower(trim((string)$text));
+    if ($text === '') {
+        return '';
+    }
+
+    $text = preg_replace('/https?:\/\/\S+/i', ' ', $text);
+    $text = preg_replace('/[^a-z0-9\s]/', ' ', (string)$text);
+    $text = preg_replace('/\s+/', ' ', (string)$text);
+    return trim((string)$text);
+}
+
+function normalizeAIChatConversationOption($text) {
+    $text = trim((string)$text);
+    if ($text === '') {
+        return '';
+    }
+
+    $text = preg_replace('/^[-*\d\)\.(\s]+/', '', $text);
+    $text = preg_replace('/\s+/', ' ', (string)$text);
+    $text = aiChatTruncateText($text, 120);
+    if ($text === '') {
+        return '';
+    }
+
+    $text = rtrim($text, " \t\n\r\0\x0B.!");
+    if ($text === '') {
+        return '';
+    }
+
+    if (substr($text, -1) !== '?') {
+        $text .= '?';
+    }
+
+    $text = ucfirst($text);
+    if (strlen($text) < 9) {
+        return '';
+    }
+
+    return $text;
+}
+
+function parseAIChatConversationOptionsFromModel($rawText) {
+    $rawText = trim((string)$rawText);
+    if ($rawText === '') {
+        return [];
+    }
+
+    $clean = trim((string)preg_replace('/```(?:json)?|```/i', '', $rawText));
+    $decoded = json_decode($clean, true);
+    if (json_last_error() === JSON_ERROR_NONE) {
+        if (isset($decoded['questions']) && is_array($decoded['questions'])) {
+            return $decoded['questions'];
+        }
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+    }
+
+    $items = [];
+    $lines = preg_split('/\r\n|\r|\n/', $clean);
+    foreach ((array)$lines as $line) {
+        $line = trim((string)$line);
+        if ($line === '') {
+            continue;
+        }
+
+        $line = preg_replace('/^[-*\s]+/', '', $line);
+        $line = preg_replace('/^\d+[\)\.]\s*/', '', $line);
+        if ($line !== '') {
+            $items[] = $line;
+        }
+    }
+
+    if (count($items) <= 1 && strpos($clean, '?') !== false) {
+        $chunks = preg_split('/\?\s*/', $clean);
+        $items = [];
+        foreach ((array)$chunks as $chunk) {
+            $chunk = trim((string)$chunk);
+            if ($chunk === '') {
+                continue;
+            }
+            $items[] = $chunk . '?';
+        }
+    }
+
+    return $items;
+}
+
+function collectAIChatAskedQuestionSignals($db, $userId, array $conversationHistory, $sourceMessage = '') {
+    $askedMap = [];
+    $recentQuestions = [];
+
+    $remember = function($text) use (&$askedMap, &$recentQuestions) {
+        $text = trim((string)$text);
+        if ($text === '') {
+            return;
+        }
+
+        $fingerprint = aiChatConversationOptionFingerprint($text);
+        if ($fingerprint === '') {
+            return;
+        }
+
+        $askedMap[$fingerprint] = true;
+        $preview = aiChatNormalizePromptText($text, 120);
+        if ($preview !== '' && !in_array($preview, $recentQuestions, true) && count($recentQuestions) < 12) {
+            $recentQuestions[] = $preview;
+        }
+    };
+
+    $remember($sourceMessage);
+
+    foreach ($conversationHistory as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $role = strtolower(trim((string)($item['role'] ?? '')));
+        if ($role !== 'user') {
+            continue;
+        }
+
+        $remember($item['content'] ?? '');
+    }
+
+    if ((int)$userId > 0) {
+        try {
+            ensureAIChatMemoryTables($db);
+            $stmt = $db->prepare(
+                "SELECT message_text
+                 FROM ai_chat_conversations
+                 WHERE user_id = ?
+                   AND role = 'user'
+                 ORDER BY created_at DESC
+                 LIMIT ?"
+            );
+            $stmt->bindValue(1, (int)$userId, PDO::PARAM_INT);
+            $stmt->bindValue(2, 40, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            foreach ($rows as $rowText) {
+                $remember($rowText);
+            }
+        } catch (Exception $e) {
+            error_log('collectAIChatAskedQuestionSignals error: ' . $e->getMessage());
+        }
+    }
+
+    return [
+        'asked_map' => $askedMap,
+        'recent_questions' => $recentQuestions
+    ];
+}
+
+function getAIChatCarHireWebInsightContext($db, $sourceMessage, array $searchParams) {
+    $result = [
+        'summary' => '',
+        'sources' => []
+    ];
+
+    try {
+        $terms = buildAIChatBusinessSearchTerms($sourceMessage, ['car', 'cars', 'hire', 'rental', 'driver', 'self', 'drive', 'vehicle', 'vehicles']);
+        foreach (['location', 'vehicle_type', 'company_service', 'event_type'] as $key) {
+            if (!empty($searchParams[$key])) {
+                $terms[] = strtolower(trim((string)$searchParams[$key]));
+            }
+        }
+
+        $terms = array_values(array_unique(array_filter(array_map(function ($term) {
+            $term = strtolower(trim((string)$term));
+            return strlen($term) >= 3 ? $term : '';
+        }, $terms))));
+
+        if (empty($terms)) {
+            return $result;
+        }
+
+        $conditions = [];
+        $params = [];
+        foreach (array_slice($terms, 0, 4) as $term) {
+            $conditions[] = 'LOWER(query_text) LIKE ?';
+            $params[] = '%' . $term . '%';
+        }
+
+        if (empty($conditions)) {
+            return $result;
+        }
+
+        $stmt = $db->prepare(
+            "SELECT query_text, summary, sources_json, updated_at, created_at
+             FROM ai_web_cache
+             WHERE " . implode(' OR ', $conditions) . "
+             ORDER BY updated_at DESC, created_at DESC
+             LIMIT 5"
+        );
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if (empty($rows)) {
+            return $result;
+        }
+
+        $snippets = [];
+        $seenSnippets = [];
+        $sourceDomains = [];
+
+        foreach ($rows as $row) {
+            $summary = aiChatNormalizePromptText($row['summary'] ?? '', 180);
+            if ($summary !== '') {
+                $summaryKey = strtolower($summary);
+                if (!isset($seenSnippets[$summaryKey])) {
+                    $seenSnippets[$summaryKey] = true;
+                    $snippets[] = '- ' . $summary;
+                }
+            }
+
+            $sources = json_decode((string)($row['sources_json'] ?? '[]'), true);
+            if (is_array($sources)) {
+                foreach ($sources as $source) {
+                    $url = '';
+                    if (is_string($source)) {
+                        $url = trim($source);
+                    } elseif (is_array($source)) {
+                        $url = trim((string)($source['url'] ?? $source['source'] ?? ''));
+                    }
+
+                    if ($url === '') {
+                        continue;
+                    }
+
+                    $host = parse_url($url, PHP_URL_HOST);
+                    if (!is_string($host) || trim($host) === '') {
+                        continue;
+                    }
+
+                    $host = strtolower(preg_replace('/^www\./i', '', trim($host)));
+                    if ($host !== '' && !in_array($host, $sourceDomains, true)) {
+                        $sourceDomains[] = $host;
+                    }
+                }
+            }
+
+            if (count($snippets) >= 2 && count($sourceDomains) >= 3) {
+                break;
+            }
+        }
+
+        if (!empty($snippets)) {
+            $result['summary'] = implode("\n", array_slice($snippets, 0, 2));
+        }
+        if (!empty($sourceDomains)) {
+            $result['sources'] = array_slice($sourceDomains, 0, 3);
+        }
+    } catch (Exception $e) {
+        error_log('getAIChatCarHireWebInsightContext error: ' . $e->getMessage());
+    }
+
+    return $result;
+}
+
+function buildDeterministicCarHireConversationOptions(array $searchParams, array $companies, $userLocation = null, $sourceMessage = '') {
     $options = [];
 
     $location = trim((string)($searchParams['location'] ?? ''));
     if ($location === '' && !empty($companies[0]['location_name'])) {
         $location = trim((string)$companies[0]['location_name']);
     }
-
-    $locationLabel = $location !== '' ? ucwords(strtolower($location)) : '';
-    $locationTail = $locationLabel !== '' ? " in {$locationLabel}" : '';
-
-    if (!empty($companies)) {
-        if (empty($searchParams['price_comparison'])) {
-            $options[] = 'Show the cheapest car hire option' . $locationTail;
-        }
-
-        if (empty($searchParams['company_service'])) {
-            $options[] = 'Show self-drive car hire options' . $locationTail;
-            $options[] = 'Show car hire with driver' . $locationTail;
-        }
-
-        if (empty($searchParams['event_type'])) {
-            $options[] = 'Show wedding event car hire options' . $locationTail;
-        }
-
-        if (empty($searchParams['vehicle_type'])) {
-            $options[] = 'Show SUV car hire options' . $locationTail;
-            $options[] = 'Show van or minibus hire options' . $locationTail;
-        }
-
-        if (empty($searchParams['proximity'])) {
-            $options[] = 'Which is the closest car hire to me?';
-        }
-    } else {
-        if ($locationLabel !== '') {
-            if (strtolower($locationLabel) !== 'lilongwe') {
-                $options[] = 'What about car hire in Lilongwe?';
-            }
-            if (strtolower($locationLabel) !== 'blantyre') {
-                $options[] = 'What about car hire in Blantyre?';
-            }
-        }
-
-        $options[] = 'Show self-drive car hire options';
-        $options[] = 'Show car hire with driver';
-        $options[] = 'Show wedding event car hire options';
-        $options[] = 'Show van or minibus hire options';
+    if ($location === '' && !empty($userLocation['location_name'])) {
+        $location = trim((string)$userLocation['location_name']);
     }
 
-    $messageLower = strtolower(trim((string)$sourceMessage));
-    $deduped = [];
+    $locationLabel = $location !== '' ? ucwords(strtolower($location)) : '';
+    $locationTail = $locationLabel !== '' ? ' in ' . $locationLabel : '';
+
+    $services = [];
+    $vehicleTypes = [];
+    $eventTypes = [];
+    foreach (array_slice($companies, 0, 6) as $company) {
+        foreach ((array)($company['services_list'] ?? []) as $service) {
+            $service = trim((string)$service);
+            if ($service !== '' && !in_array($service, $services, true)) {
+                $services[] = $service;
+            }
+        }
+        foreach ((array)($company['special_services_list'] ?? []) as $specialService) {
+            $specialService = trim((string)$specialService);
+            if ($specialService !== '' && !in_array($specialService, $services, true)) {
+                $services[] = $specialService;
+            }
+        }
+        foreach ((array)($company['vehicle_types_list'] ?? []) as $vehicleType) {
+            $vehicleType = trim((string)$vehicleType);
+            if ($vehicleType !== '' && !in_array($vehicleType, $vehicleTypes, true)) {
+                $vehicleTypes[] = $vehicleType;
+            }
+        }
+        foreach ((array)($company['event_types_list'] ?? []) as $eventType) {
+            $eventType = trim((string)$eventType);
+            if ($eventType !== '' && !in_array($eventType, $eventTypes, true)) {
+                $eventTypes[] = $eventType;
+            }
+        }
+    }
+
+    if (!empty($companies)) {
+        if (!empty($services)) {
+            $options[] = 'Can you show more ' . strtolower($services[0]) . ' options' . $locationTail;
+        }
+        if (!empty($vehicleTypes)) {
+            $options[] = 'Which company has the best ' . strtolower($vehicleTypes[0]) . ' option' . $locationTail;
+        }
+        if (!empty($eventTypes)) {
+            $options[] = 'Can you compare providers for ' . strtolower($eventTypes[0]) . ' bookings' . $locationTail;
+        }
+        if (!empty($searchParams['price_comparison'])) {
+            $options[] = 'Can you also show the best value option' . $locationTail;
+        } else {
+            $options[] = 'Can you compare the cheapest versus premium options' . $locationTail;
+        }
+        if (empty($searchParams['proximity'])) {
+            $options[] = 'Which option is closest to me right now';
+        }
+    } else {
+        if (!empty($searchParams['company_service'])) {
+            $options[] = 'Can you find similar ' . strtolower((string)$searchParams['company_service']) . ' options in other cities';
+        }
+        if (!empty($searchParams['vehicle_type'])) {
+            $options[] = 'Can you search for ' . strtolower((string)$searchParams['vehicle_type']) . ' hire in nearby towns';
+        }
+        if ($locationLabel !== '') {
+            $options[] = 'Can you check nearby cities around ' . $locationLabel;
+        }
+        $options[] = 'What filters should I change to get better matches';
+    }
+
+    if (empty($options)) {
+        $options[] = 'Can you suggest smarter filters for my next search';
+    }
+
+    return $options;
+}
+
+function buildCarHireConversationOptions($db, array $searchParams, array $companies, $userLocation = null, $sourceMessage = '', $conversationHistory = [], $user = null) {
+    $sourceMessage = trim((string)$sourceMessage);
+    $userId = (int)($user['id'] ?? 0);
+
+    $askedSignals = collectAIChatAskedQuestionSignals($db, $userId, (array)$conversationHistory, $sourceMessage);
+    $askedMap = (array)($askedSignals['asked_map'] ?? []);
+    $recentQuestions = (array)($askedSignals['recent_questions'] ?? []);
+
+    $memorySummary = '';
+    if ($userId > 0) {
+        $memoryRows = loadAIChatUserMemories($db, $userId, 8);
+        $recentTopics = loadRecentAIChatTopics($db, $userId, 4);
+        $memorySummary = buildAIChatUserSummaryText($memoryRows, $recentTopics);
+    }
+
+    $webInsights = getAIChatCarHireWebInsightContext($db, $sourceMessage, $searchParams);
+
+    $resultSnapshot = [];
+    foreach (array_slice($companies, 0, 4) as $company) {
+        $line = '- ' . aiChatNormalizePromptText($company['business_name'] ?? '', 60);
+        if (!empty($company['location_name'])) {
+            $line .= ' | ' . aiChatNormalizePromptText($company['location_name'], 40);
+        }
+        if (!empty($company['daily_rate_from'])) {
+            $line .= ' | from ' . getChatCurrencyCode($db) . ' ' . number_format((float)$company['daily_rate_from']) . '/day';
+        }
+
+        $servicesText = formatAIChatBusinessList((array)($company['services_list'] ?? []), 2);
+        if ($servicesText !== '') {
+            $line .= ' | services: ' . aiChatNormalizePromptText($servicesText, 60);
+        }
+
+        $resultSnapshot[] = $line;
+    }
+
+    $locationHint = trim((string)($searchParams['location'] ?? ($userLocation['location_name'] ?? '')));
+    $aiOptions = [];
+    $assistantUser = (is_array($user) && !empty($user['id'])) ? $user : getCurrentUser(true);
+    if ($assistantUser && !empty($assistantUser['id'])) {
+        $prompt = "Generate exactly 4 intelligent next questions for a user searching car hire on MotorLink Malawi.\n"
+            . "Return strict JSON only: {\"questions\":[\"...\",\"...\",\"...\",\"...\"]}.\n"
+            . "Rules:\n"
+            . "- Questions must be short (6-16 words), actionable, and automotive marketplace relevant.\n"
+            . "- Do not repeat or paraphrase already asked questions.\n"
+            . "- Use current results and user preference context where possible.\n"
+            . "- If internet insight cache is available, include at most one insight-driven question.\n"
+            . "- No phone numbers, no URLs, no markdown, no explanations.\n\n"
+            . "Current user query: " . ($sourceMessage !== '' ? $sourceMessage : 'N/A') . "\n"
+            . "Detected location: " . ($locationHint !== '' ? $locationHint : 'none') . "\n"
+            . "Search params: " . json_encode($searchParams, JSON_UNESCAPED_UNICODE) . "\n"
+            . "Top results:\n" . (!empty($resultSnapshot) ? implode("\n", $resultSnapshot) : '- No exact matches') . "\n"
+            . "User preference memory:\n" . ($memorySummary !== '' ? $memorySummary : '- none') . "\n"
+            . "Recent questions already asked:\n" . (!empty($recentQuestions) ? '- ' . implode("\n- ", array_slice($recentQuestions, 0, 8)) : '- none') . "\n"
+            . "Learned internet insight cache:\n" . (
+                !empty($webInsights['summary'])
+                    ? $webInsights['summary'] . (!empty($webInsights['sources']) ? "\nSources: " . implode(', ', $webInsights['sources']) : '')
+                    : '- none'
+            );
+
+        $messages = [
+            ['role' => 'system', 'content' => 'You generate follow-up questions for a car hire search assistant. Output strict JSON only.'],
+            ['role' => 'user', 'content' => $prompt]
+        ];
+
+        $aiResult = callOpenAIAPIForSpecs($db, $assistantUser, $messages, [
+            'overall_budget_seconds' => 5,
+            'connect_timeout' => 2,
+            'request_timeout_first' => 3,
+            'request_timeout_retry' => 4,
+            'max_providers' => 1,
+            'max_attempts_per_provider' => 1,
+        ]);
+
+        if (!empty($aiResult['response'])) {
+            $aiOptions = parseAIChatConversationOptionsFromModel((string)$aiResult['response']);
+        }
+    }
+
+    $fallbackOptions = buildDeterministicCarHireConversationOptions($searchParams, $companies, $userLocation, $sourceMessage);
+    $mergedCandidates = array_merge((array)$aiOptions, (array)$fallbackOptions);
+
+    $final = [];
     $seen = [];
-    foreach ($options as $option) {
-        $option = trim((string)$option);
+    foreach ($mergedCandidates as $candidate) {
+        $option = normalizeAIChatConversationOption($candidate);
         if ($option === '') {
             continue;
         }
 
-        $norm = strtolower($option);
-        if (isset($seen[$norm])) {
+        $fingerprint = aiChatConversationOptionFingerprint($option);
+        if ($fingerprint === '' || isset($seen[$fingerprint]) || isset($askedMap[$fingerprint])) {
             continue;
         }
 
-        if ($messageLower !== '' && strpos($messageLower, strtolower(preg_replace('/[\?]/', '', $option))) !== false) {
-            continue;
+        // Skip if it's effectively the same as the current user message.
+        if ($sourceMessage !== '') {
+            $sourceFingerprint = aiChatConversationOptionFingerprint($sourceMessage);
+            if ($sourceFingerprint !== '' && ($fingerprint === $sourceFingerprint || strpos($fingerprint, $sourceFingerprint) !== false || strpos($sourceFingerprint, $fingerprint) !== false)) {
+                continue;
+            }
         }
 
-        $seen[$norm] = true;
-        $deduped[] = $option;
-        if (count($deduped) >= 4) {
+        $seen[$fingerprint] = true;
+        $final[] = $option;
+        if (count($final) >= 4) {
             break;
         }
     }
 
-    return $deduped;
+    return $final;
 }
 
 function handleCarHireQuery($db, $message, $conversationHistory) {
@@ -11421,10 +11974,13 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
         }
         
         $conversationOptions = buildCarHireConversationOptions(
+            $db,
             (array)$searchParams,
             (array)($results['companies'] ?? []),
             $userLocation,
-            $message
+            $message,
+            (array)$conversationHistory,
+            $user
         );
 
         if (!empty($conversationOptions)) {
@@ -11808,19 +12364,63 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
         ? "(SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r WHERE r.business_type = 'car_hire' AND r.business_id = ch.id AND r.status = 'active') as avg_rating,\n             (SELECT COUNT(*) FROM business_reviews r WHERE r.business_type = 'car_hire' AND r.business_id = ch.id AND r.status = 'active') as review_count"
         : 'NULL as avg_rating, 0 as review_count';
 
-    $stmt = $db->prepare("\n        SELECT ch.*, " . implode(', ', $locationSelectParts) . ",\n               {$vehicleCountSelect},\n               {$reviewSubqueries}\n        FROM car_hire_companies ch\n        {$locationJoinSql}\n        {$fleetCountJoinSql}\n        WHERE {$whereClause}\n        ORDER BY {$orderBy}\n        LIMIT 50\n    ");
+    $stmt = $db->prepare("\n        SELECT ch.*, " . implode(', ', $locationSelectParts) . ",\n               {$vehicleCountSelect},\n               {$reviewSubqueries}\n        FROM car_hire_companies ch\n        {$locationJoinSql}\n        {$fleetCountJoinSql}\n        WHERE {$whereClause}\n        ORDER BY {$orderBy}\n        LIMIT 25\n    ");
     $stmt->execute($params);
     $companies = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $companies = rankAIChatBusinessResultsByDistance($companies, (array)$searchParams, $userLocation);
 
-    foreach ($companies as &$company) {
+    $needsVehicleMatchingFilters = !empty($searchParams['make']) || !empty($searchParams['model']) || !empty($searchParams['vehicle_type']) ||
+        !empty($searchParams['seats']) || !empty($searchParams['fuel_type']) || !empty($searchParams['transmission']) ||
+        !empty($searchParams['min_daily_rate']) || !empty($searchParams['max_daily_rate']);
+
+    $resolvedMakeId = null;
+    if (!empty($searchParams['make']) && isset($fleetColumns['make_id']) && isset($makeColumns['id']) && isset($makeColumns['name'])) {
+        try {
+            $makeStmt = $db->prepare("SELECT id FROM car_makes WHERE LOWER(name) LIKE ? LIMIT 1");
+            $makeStmt->execute(['%' . strtolower((string)$searchParams['make']) . '%']);
+            $make = $makeStmt->fetch(PDO::FETCH_ASSOC);
+            if ($make && isset($make['id'])) {
+                $resolvedMakeId = (int)$make['id'];
+            }
+        } catch (Throwable $makeError) {
+            error_log('searchCarHire make lookup error: ' . $makeError->getMessage());
+        }
+    }
+
+    $resolvedModelId = null;
+    if (!empty($searchParams['model']) && isset($fleetColumns['model_id']) && isset($modelColumns['id']) && isset($modelColumns['name'])) {
+        try {
+            $modelStmt = $db->prepare("SELECT id FROM car_models WHERE LOWER(name) LIKE ? LIMIT 1");
+            $modelStmt->execute(['%' . strtolower((string)$searchParams['model']) . '%']);
+            $model = $modelStmt->fetch(PDO::FETCH_ASSOC);
+            if ($model && isset($model['id'])) {
+                $resolvedModelId = (int)$model['id'];
+            }
+        } catch (Throwable $modelError) {
+            error_log('searchCarHire model lookup error: ' . $modelError->getMessage());
+        }
+    }
+
+    $hydrateCompanyLimit = $needsVehicleMatchingFilters ? count($companies) : 12;
+
+    foreach ($companies as $companyIndex => &$company) {
         $company['matching_vehicles'] = [];
         $company['total_vehicles'] = 0;
         $company['vehicle_types_list'] = decodeAIChatBusinessJsonList($company['vehicle_types'] ?? []);
         $company['services_list'] = decodeAIChatBusinessJsonList($company['services'] ?? []);
         $company['special_services_list'] = decodeAIChatBusinessJsonList($company['special_services'] ?? []);
         $company['event_types_list'] = decodeAIChatBusinessJsonList($company['event_types'] ?? []);
+
+        if (!$needsVehicleMatchingFilters && $companyIndex >= $hydrateCompanyLimit) {
+            if (isset($company['vehicle_count']) && is_numeric($company['vehicle_count'])) {
+                $company['total_vehicles'] = (int)$company['vehicle_count'];
+            }
+            if (!empty($company['daily_rate_from'])) {
+                $company['daily_rate_from'] = (float)$company['daily_rate_from'];
+            }
+            continue;
+        }
 
         try {
             if (isset($company['id']) && isset($fleetColumns['company_id'])) {
@@ -11834,24 +12434,14 @@ function searchCarHire($db, $searchParams, $userLocation = null) {
                     $fleetConditions[] = 'f.is_available = 1';
                 }
 
-                if (!empty($searchParams['make']) && isset($fleetColumns['make_id']) && isset($makeColumns['id']) && isset($makeColumns['name'])) {
-                    $makeStmt = $db->prepare("SELECT id FROM car_makes WHERE LOWER(name) LIKE ? LIMIT 1");
-                    $makeStmt->execute(['%' . strtolower((string)$searchParams['make']) . '%']);
-                    $make = $makeStmt->fetch(PDO::FETCH_ASSOC);
-                    if ($make) {
-                        $fleetConditions[] = 'f.make_id = ?';
-                        $fleetParams[] = $make['id'];
-                    }
+                if ($resolvedMakeId !== null && isset($fleetColumns['make_id'])) {
+                    $fleetConditions[] = 'f.make_id = ?';
+                    $fleetParams[] = $resolvedMakeId;
                 }
 
-                if (!empty($searchParams['model']) && isset($fleetColumns['model_id']) && isset($modelColumns['id']) && isset($modelColumns['name'])) {
-                    $modelStmt = $db->prepare("SELECT id FROM car_models WHERE LOWER(name) LIKE ? LIMIT 1");
-                    $modelStmt->execute(['%' . strtolower((string)$searchParams['model']) . '%']);
-                    $model = $modelStmt->fetch(PDO::FETCH_ASSOC);
-                    if ($model) {
-                        $fleetConditions[] = 'f.model_id = ?';
-                        $fleetParams[] = $model['id'];
-                    }
+                if ($resolvedModelId !== null && isset($fleetColumns['model_id'])) {
+                    $fleetConditions[] = 'f.model_id = ?';
+                    $fleetParams[] = $resolvedModelId;
                 }
 
                 $canJoinModels = isset($fleetColumns['model_id']) && isset($modelColumns['id']) && isset($modelColumns['name']);

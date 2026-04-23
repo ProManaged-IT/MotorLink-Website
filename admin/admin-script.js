@@ -9230,3 +9230,211 @@ async function clearBrowserCache() {
     }, 500);
     setTimeout(() => clearInterval(checkIfAlreadyLoggedIn), 10000);
 })();
+
+// =============================================================================
+// USER FEEDBACK MANAGEMENT
+// =============================================================================
+
+let feedbackPage = 1;
+const FB_PER_PAGE = 25;
+
+async function loadFeedbackList(page = 1) {
+    feedbackPage = page;
+    const tbody = document.getElementById('feedbackTableBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#94a3b8;">Loading...</td></tr>';
+
+    const status   = document.getElementById('feedbackStatusFilter')?.value || 'all';
+    const category = document.getElementById('feedbackCategoryFilter')?.value || '';
+
+    try {
+        const params = { status, page: String(page), per_page: String(FB_PER_PAGE) };
+        if (category) params.category = category;
+        const resp = await admin.apiCall('get_feedback_list', 'GET', params);
+        if (!resp || !resp.success) throw new Error(resp?.message || 'Failed');
+
+        renderFeedbackStats(resp.stats || {});
+        renderFeedbackRows(resp.feedback || []);
+        renderFeedbackPagination(resp.total || 0, resp.page || 1);
+    } catch (e) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#dc2626;">Error: ${escapeHtml(e.message)}</td></tr>`;
+    }
+}
+
+function renderFeedbackStats(stats) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? '—'; };
+    set('fbStatTotal',    stats.total ?? 0);
+    set('fbStatNew',      stats.new_count ?? 0);
+    set('fbStatReviewed', stats.reviewed_count ?? 0);
+    set('fbStatArchived', stats.archived_count ?? 0);
+    set('fbStatAvg',      stats.avg_rating ? `${stats.avg_rating} ★` : '—');
+}
+
+function renderFeedbackRows(rows) {
+    const tbody = document.getElementById('feedbackTableBody');
+    if (!tbody) return;
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:24px;">No feedback found.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map(r => {
+        const stars  = r.rating > 0 ? `<span style="color:#f59e0b;">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>` : '<span style="color:#cbd5e1;">—</span>';
+        const name   = escapeHtml(r.db_user_name || r.user_name || 'Anonymous');
+        const email  = escapeHtml(r.email || r.db_user_email || '');
+        const dt     = new Date(r.created_at).toLocaleString();
+        const msg    = escapeHtml((r.message || '').length > 120 ? r.message.slice(0, 120) + '…' : r.message);
+        const statusBadge = {
+            new:      '<span style="background:#fef3c7;color:#92400e;padding:3px 8px;border-radius:5px;font-size:0.75rem;">New</span>',
+            reviewed: '<span style="background:#dcfce7;color:#166534;padding:3px 8px;border-radius:5px;font-size:0.75rem;">Reviewed</span>',
+            archived: '<span style="background:#e2e8f0;color:#475569;padding:3px 8px;border-radius:5px;font-size:0.75rem;">Archived</span>'
+        }[r.status] || r.status;
+        return `
+            <tr>
+                <td style="white-space:nowrap;">${dt}</td>
+                <td>${name}${email ? `<br><small style="color:#94a3b8;">${email}</small>` : ''}</td>
+                <td>${stars}</td>
+                <td><small style="text-transform:capitalize;">${escapeHtml(r.category)}</small></td>
+                <td style="max-width:300px;">${msg}<br><a href="#" onclick="viewFeedbackDetails(${r.id});return false;" style="font-size:0.78rem;">View full</a></td>
+                <td>${statusBadge}</td>
+                <td>
+                    ${r.status !== 'reviewed'  ? `<button class="btn btn-sm btn-outline-success" onclick="updateFeedbackStatus(${r.id}, 'reviewed')" title="Mark reviewed"><i class="fas fa-check"></i></button>` : ''}
+                    ${r.status !== 'archived' ? `<button class="btn btn-sm btn-outline" onclick="updateFeedbackStatus(${r.id}, 'archived')" title="Archive"><i class="fas fa-archive"></i></button>` : ''}
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFeedback(${r.id})" title="Delete"><i class="fas fa-trash"></i></button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    // Cache for detail view
+    window._feedbackCache = rows.reduce((a, r) => (a[r.id] = r, a), {});
+}
+
+function renderFeedbackPagination(total, page) {
+    const totalPages = Math.ceil(total / FB_PER_PAGE);
+    const el = document.getElementById('feedbackPagination');
+    if (!el) return;
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    let html = '';
+    if (page > 1) html += `<button class="btn btn-sm btn-outline" onclick="loadFeedbackList(${page - 1})"><i class="fas fa-chevron-left"></i></button>`;
+    html += `<span style="align-self:center;color:#64748b;font-size:0.88rem;">Page ${page} of ${totalPages}</span>`;
+    if (page < totalPages) html += `<button class="btn btn-sm btn-outline" onclick="loadFeedbackList(${page + 1})"><i class="fas fa-chevron-right"></i></button>`;
+    el.innerHTML = html;
+}
+
+async function updateFeedbackStatus(id, status) {
+    try {
+        const resp = await admin.apiCall('update_feedback_status', 'POST', { id, status });
+        if (resp && resp.success) {
+            loadFeedbackList(feedbackPage);
+        } else {
+            alert(resp?.message || 'Failed to update');
+        }
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteFeedback(id) {
+    if (!confirm('Delete this feedback permanently?')) return;
+    try {
+        const resp = await admin.apiCall('delete_feedback', 'POST', { id });
+        if (resp && resp.success) loadFeedbackList(feedbackPage);
+        else alert(resp?.message || 'Failed');
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+function viewFeedbackDetails(id) {
+    const r = (window._feedbackCache || {})[id];
+    if (!r) return;
+    const html = `
+        <div style="padding:20px;">
+            <p><strong>From:</strong> ${escapeHtml(r.db_user_name || r.user_name || 'Anonymous')} ${r.email ? `&lt;${escapeHtml(r.email)}&gt;` : ''}</p>
+            <p><strong>Rating:</strong> ${r.rating > 0 ? '★'.repeat(r.rating) : 'No rating'}</p>
+            <p><strong>Category:</strong> ${escapeHtml(r.category)}</p>
+            <p><strong>Page:</strong> ${escapeHtml(r.page_url || '—')}</p>
+            <p><strong>Submitted:</strong> ${new Date(r.created_at).toLocaleString()}</p>
+            <hr>
+            <p style="white-space:pre-wrap;">${escapeHtml(r.message)}</p>
+            ${r.admin_notes ? `<hr><p><strong>Admin notes:</strong><br>${escapeHtml(r.admin_notes)}</p>` : ''}
+            <small style="color:#94a3b8;">IP: ${escapeHtml(r.ip_address || '—')} | UA: ${escapeHtml((r.user_agent || '').slice(0, 60))}</small>
+        </div>
+    `;
+    if (typeof admin !== 'undefined' && admin.showModal) {
+        admin.showModal('Feedback #' + id, html);
+    } else {
+        alert(r.message);
+    }
+}
+
+async function loadFeedbackSettings() {
+    try {
+        const resp = await admin.apiCall('get_feedback_settings', 'GET', null);
+        if (!resp || !resp.success) return;
+        const s = resp.settings || {};
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.type === 'checkbox' ? (el.checked = !!v) : (el.value = v); };
+        set('fbEnabled',  s.feedback_enabled);
+        set('fbUnload',   s.feedback_show_on_unload);
+        set('fbDelay',    s.feedback_delay_minutes);
+        set('fbCooldown', s.feedback_cooldown_days);
+    } catch (e) { /* ignore */ }
+}
+
+async function saveFeedbackSettings() {
+    const payload = {
+        feedback_enabled:        document.getElementById('fbEnabled')?.checked ? 1 : 0,
+        feedback_show_on_unload: document.getElementById('fbUnload')?.checked ? 1 : 0,
+        feedback_delay_minutes:  parseInt(document.getElementById('fbDelay')?.value || '5', 10),
+        feedback_cooldown_days:  parseInt(document.getElementById('fbCooldown')?.value || '30', 10),
+    };
+    try {
+        const resp = await admin.apiCall('save_feedback_settings', 'POST', payload);
+        if (resp && resp.success) admin.showNotification?.('Feedback settings saved', 'success');
+        else alert(resp?.message || 'Failed to save');
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function loadWalkthroughSettings() {
+    try {
+        const resp = await admin.apiCall('get_walkthrough_settings', 'GET', null);
+        if (!resp || !resp.success) return;
+        const el = document.getElementById('wtEnabled');
+        if (el) el.checked = !!resp.settings?.walkthrough_enabled;
+    } catch (e) { /* ignore */ }
+}
+
+async function saveWalkthroughSettings() {
+    const enabled = document.getElementById('wtEnabled')?.checked ? 1 : 0;
+    try {
+        const resp = await admin.apiCall('save_walkthrough_settings', 'POST', { walkthrough_enabled: enabled });
+        if (resp && resp.success) admin.showNotification?.('Walkthrough settings saved', 'success');
+        else alert(resp?.message || 'Failed');
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function resetWalkthrough() {
+    const userId = parseInt(document.getElementById('wtResetUser')?.value || '0', 10);
+    const msg = userId > 0
+        ? `Reset the walkthrough for user #${userId}?`
+        : 'Reset the walkthrough for ALL users? They will see the tour again on their next visit.';
+    if (!confirm(msg)) return;
+    try {
+        const resp = await admin.apiCall('reset_walkthrough_for_user', 'POST', { user_id: userId });
+        if (resp && resp.success) admin.showNotification?.(resp.message || 'Reset complete', 'success');
+        else alert(resp?.message || 'Failed');
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// Auto-load feedback when the section becomes visible
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-section="feedback"]').forEach(link => {
+        link.addEventListener('click', () => {
+            setTimeout(() => {
+                loadFeedbackList(1);
+                loadFeedbackSettings();
+                loadWalkthroughSettings();
+            }, 150);
+        });
+    });
+});
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, s => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[s]));
+}

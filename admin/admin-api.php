@@ -460,6 +460,34 @@ try {
             handleUpdateWhatsAppBookingStatus($db);
             break;
 
+        // ── Feedback management ──
+        case 'get_feedback_list':
+            handleGetFeedbackList($db);
+            break;
+        case 'update_feedback_status':
+            handleUpdateFeedbackStatus($db);
+            break;
+        case 'delete_feedback':
+            handleDeleteFeedback($db);
+            break;
+        case 'get_feedback_settings':
+            handleGetFeedbackSettings($db);
+            break;
+        case 'save_feedback_settings':
+            handleSaveFeedbackSettings($db);
+            break;
+
+        // ── Walkthrough (onboarding tour) ──
+        case 'get_walkthrough_settings':
+            handleGetWalkthroughSettings($db);
+            break;
+        case 'save_walkthrough_settings':
+            handleSaveWalkthroughSettings($db);
+            break;
+        case 'reset_walkthrough_for_user':
+            handleResetWalkthroughForUser($db);
+            break;
+
         case 'get_system_info':
             handleGetSystemInfo($db);
             break;
@@ -9124,3 +9152,239 @@ function handleDeleteBusinessReview($db) {
         sendAdminError('Failed to delete review', 'REVIEW_DELETE_FAILED', 500);
     }
 }
+
+// =============================================================================
+// USER FEEDBACK MANAGEMENT (Admin)
+// =============================================================================
+
+function handleGetFeedbackList($db) {
+    requireSuperAdmin($db);
+    try {
+        $status   = trim((string)($_GET['status'] ?? 'all'));
+        $category = trim((string)($_GET['category'] ?? ''));
+        $page     = max(1, (int)($_GET['page'] ?? 1));
+        $perPage  = min(100, max(10, (int)($_GET['per_page'] ?? 25)));
+        $offset   = ($page - 1) * $perPage;
+
+        $where = []; $params = [];
+        if ($status !== 'all' && in_array($status, ['new','reviewed','archived'], true)) {
+            $where[] = 'f.status = ?';
+            $params[] = $status;
+        }
+        if ($category !== '') {
+            $where[] = 'f.category = ?';
+            $params[] = $category;
+        }
+        $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+        $countStmt = $db->prepare("SELECT COUNT(*) FROM user_feedback f $whereSql");
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $sql = "SELECT f.*, u.full_name AS db_user_name, u.email AS db_user_email
+                FROM user_feedback f
+                LEFT JOIN users u ON f.user_id = u.id
+                $whereSql
+                ORDER BY f.created_at DESC
+                LIMIT $perPage OFFSET $offset";
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Quick stats
+        $stats = $db->query("
+            SELECT
+              COUNT(*)                                         AS total,
+              SUM(CASE WHEN status='new'       THEN 1 ELSE 0 END) AS new_count,
+              SUM(CASE WHEN status='reviewed'  THEN 1 ELSE 0 END) AS reviewed_count,
+              SUM(CASE WHEN status='archived'  THEN 1 ELSE 0 END) AS archived_count,
+              ROUND(AVG(NULLIF(rating,0)), 2)                  AS avg_rating
+            FROM user_feedback
+        ")->fetch(PDO::FETCH_ASSOC);
+
+        echo json_encode([
+            'success'  => true,
+            'feedback' => $rows,
+            'total'    => $total,
+            'page'     => $page,
+            'per_page' => $perPage,
+            'stats'    => $stats,
+        ]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleGetFeedbackList error: ' . $e->getMessage());
+        sendAdminError('Failed to load feedback', 'FEEDBACK_LOAD_FAILED', 500);
+    }
+}
+
+function handleUpdateFeedbackStatus($db) {
+    requireSuperAdmin($db);
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST required', 'INVALID_METHOD', 405);
+    }
+    $input  = json_decode(file_get_contents('php://input'), true) ?? [];
+    $id     = (int)($input['id'] ?? 0);
+    $status = trim((string)($input['status'] ?? ''));
+    $notes  = isset($input['admin_notes']) ? trim((string)$input['admin_notes']) : null;
+
+    if ($id <= 0 || !in_array($status, ['new','reviewed','archived'], true)) {
+        sendAdminError('Invalid id or status', 'INVALID_INPUT', 400);
+    }
+    try {
+        $adminId = $_SESSION['admin_id'] ?? null;
+        $stmt = $db->prepare("
+            UPDATE user_feedback
+            SET status = ?, admin_notes = ?, reviewed_at = NOW(), reviewed_by = ?
+            WHERE id = ?
+        ");
+        $stmt->execute([$status, $notes, $adminId, $id]);
+        echo json_encode(['success' => true, 'message' => 'Feedback updated']);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleUpdateFeedbackStatus error: ' . $e->getMessage());
+        sendAdminError('Failed to update feedback', 'FEEDBACK_UPDATE_FAILED', 500);
+    }
+}
+
+function handleDeleteFeedback($db) {
+    requireSuperAdmin($db);
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST required', 'INVALID_METHOD', 405);
+    }
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $id    = (int)($input['id'] ?? 0);
+    if ($id <= 0) sendAdminError('Invalid id', 'INVALID_INPUT', 400);
+
+    try {
+        $stmt = $db->prepare("DELETE FROM user_feedback WHERE id = ?");
+        $stmt->execute([$id]);
+        echo json_encode(['success' => true, 'message' => 'Feedback deleted']);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleDeleteFeedback error: ' . $e->getMessage());
+        sendAdminError('Failed to delete feedback', 'FEEDBACK_DELETE_FAILED', 500);
+    }
+}
+
+function handleGetFeedbackSettings($db) {
+    requireSuperAdmin($db);
+    try {
+        $keys = ['feedback_enabled','feedback_delay_minutes','feedback_show_on_unload','feedback_cooldown_days'];
+        $ph = implode(',', array_fill(0, count($keys), '?'));
+        $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($ph)");
+        $stmt->execute($keys);
+        $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        echo json_encode([
+            'success'  => true,
+            'settings' => [
+                'feedback_enabled'        => ($rows['feedback_enabled'] ?? '1') !== '0',
+                'feedback_delay_minutes'  => (int)($rows['feedback_delay_minutes'] ?? 5),
+                'feedback_show_on_unload' => ($rows['feedback_show_on_unload'] ?? '1') !== '0',
+                'feedback_cooldown_days'  => (int)($rows['feedback_cooldown_days'] ?? 30),
+            ]
+        ]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleGetFeedbackSettings error: ' . $e->getMessage());
+        sendAdminError('Failed to load settings', 'FB_SETTINGS_LOAD_FAILED', 500);
+    }
+}
+
+function handleSaveFeedbackSettings($db) {
+    requireSuperAdmin($db);
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST required', 'INVALID_METHOD', 405);
+    }
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+
+    $values = [
+        'feedback_enabled'        => !empty($input['feedback_enabled']) ? '1' : '0',
+        'feedback_delay_minutes'  => max(1, min(180, (int)($input['feedback_delay_minutes'] ?? 5))),
+        'feedback_show_on_unload' => !empty($input['feedback_show_on_unload']) ? '1' : '0',
+        'feedback_cooldown_days'  => max(1, min(365, (int)($input['feedback_cooldown_days'] ?? 30))),
+    ];
+
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO site_settings (setting_key, setting_value)
+            VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+        ");
+        foreach ($values as $k => $v) {
+            $stmt->execute([$k, (string)$v]);
+        }
+        echo json_encode(['success' => true, 'message' => 'Feedback settings saved', 'settings' => $values]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleSaveFeedbackSettings error: ' . $e->getMessage());
+        sendAdminError('Failed to save settings', 'FB_SETTINGS_SAVE_FAILED', 500);
+    }
+}
+
+// =============================================================================
+// WALKTHROUGH (Onboarding Tour) Admin
+// =============================================================================
+
+function handleGetWalkthroughSettings($db) {
+    requireSuperAdmin($db);
+    try {
+        $val = $db->query("SELECT setting_value FROM site_settings WHERE setting_key='walkthrough_enabled' LIMIT 1")->fetchColumn();
+        echo json_encode([
+            'success' => true,
+            'settings' => [
+                'walkthrough_enabled' => ($val ?? '1') !== '0'
+            ]
+        ]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleGetWalkthroughSettings error: ' . $e->getMessage());
+        sendAdminError('Failed to load walkthrough settings', 'WT_LOAD_FAILED', 500);
+    }
+}
+
+function handleSaveWalkthroughSettings($db) {
+    requireSuperAdmin($db);
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST required', 'INVALID_METHOD', 405);
+    }
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $enabled = !empty($input['walkthrough_enabled']) ? '1' : '0';
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO site_settings (setting_key, setting_value)
+            VALUES ('walkthrough_enabled', ?)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+        ");
+        $stmt->execute([$enabled]);
+        echo json_encode(['success' => true, 'message' => 'Walkthrough settings saved']);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleSaveWalkthroughSettings error: ' . $e->getMessage());
+        sendAdminError('Failed to save', 'WT_SAVE_FAILED', 500);
+    }
+}
+
+function handleResetWalkthroughForUser($db) {
+    requireSuperAdmin($db);
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST required', 'INVALID_METHOD', 405);
+    }
+    $input  = json_decode(file_get_contents('php://input'), true) ?? [];
+    $userId = (int)($input['user_id'] ?? 0);
+    try {
+        if ($userId > 0) {
+            $stmt = $db->prepare("UPDATE users SET walkthrough_completed_at = NULL WHERE id = ?");
+            $stmt->execute([$userId]);
+            $msg = "Walkthrough reset for user #{$userId}";
+        } else {
+            $db->exec("UPDATE users SET walkthrough_completed_at = NULL");
+            $msg = "Walkthrough reset for ALL users";
+        }
+        echo json_encode(['success' => true, 'message' => $msg]);
+        exit();
+    } catch (Exception $e) {
+        error_log('handleResetWalkthroughForUser error: ' . $e->getMessage());
+        sendAdminError('Failed to reset walkthrough', 'WT_RESET_FAILED', 500);
+    }
+}
+

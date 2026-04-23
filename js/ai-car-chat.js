@@ -993,18 +993,16 @@ class AICarChat {
         clearTimeout(this._blockHeaderToggleTimeout);
         this._blockHeaderToggleTimeout = setTimeout(() => { this._blockHeaderToggle = false; }, 600);
         this.setInputSendingState(true, retryAttempt);
-        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 115000 : 95000);
+        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 36000 : 26000);
 
         // Show compact in-chat typing indicator
         this.showTypingIndicator();
 
         try {
             const controller = new AbortController();
-            // Generous timeouts: complex marketplace queries (car hire, dealers with
-            // multiple joins) can legitimately take 8-15s on production. Retry has
-            // more headroom so we only abort truly stuck requests.
-            const base = 80000; // 80s base timeout
-            const timeoutDuration = retryAttempt > 0 ? 100000 : base; // 100s for retries
+            // Keep waits bounded so users never sit for a minute-plus on degraded paths.
+            const base = 22000;
+            const timeoutDuration = retryAttempt > 0 ? 30000 : base;
             const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
             const response = await fetch(`${CONFIG.API_URL}?action=ai_car_chat`, {

@@ -14,6 +14,22 @@ class FooterLoader {
     async init() {
         await this.loadSettings();
         this.renderFooter();
+        this.injectFeedbackWidget();
+    }
+
+    /**
+     * Lazy-load the feedback widget on every public page that uses the footer.
+     * Skips admin, login, and auth pages internally in the widget itself.
+     */
+    injectFeedbackWidget() {
+        try {
+            if (document.getElementById('ml-feedback-widget-script')) return;
+            const s = document.createElement('script');
+            s.id = 'ml-feedback-widget-script';
+            s.src = 'js/feedback-widget.js';
+            s.defer = true;
+            document.body.appendChild(s);
+        } catch (e) { /* ignore */ }
     }
 
     async loadSettings() {
