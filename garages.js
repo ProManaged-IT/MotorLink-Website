@@ -1084,12 +1084,14 @@ function updateHeroStats(garages) {
         totalGaragesEl.textContent = garages.length + '+';
     }
 
+    let certifiedCount = 0;
     if (certifiedEl) {
         // Garages with a logo, certified, or verified flag
-        const withProfile = garages.filter(g => g.logo_url || g.certified || g.verified).length;
-        certifiedEl.textContent = withProfile + '+';
+        certifiedCount = garages.filter(g => g.logo_url || g.certified || g.verified).length;
+        certifiedEl.textContent = certifiedCount + '+';
     }
 
+    let emergencyCount = 0;
     if (emergencyEl) {
         const emergency = garages.filter(g => {
             // emergency_services comes as a pre-parsed array from the API
@@ -1098,16 +1100,27 @@ function updateHeroStats(garages) {
         }).length;
         // Fall back to phone-holding garages so the stat is never stuck at 0
         const withPhone = garages.filter(g => g.phone || g.recovery_number).length;
-        emergencyEl.textContent = (emergency > 0 ? emergency : withPhone) + '+';
+        emergencyCount = emergency > 0 ? emergency : withPhone;
+        emergencyEl.textContent = emergencyCount + '+';
     }
 
-    if (districtsEl) {
-        const districts = new Set();
-        garages.forEach(g => {
-            if (g.location && g.location.district) districts.add(g.location.district);
-        });
-        districtsEl.textContent = districts.size;
-    }
+    const districts = new Set();
+    garages.forEach(g => {
+        if (g.location && g.location.district) districts.add(g.location.district);
+    });
+    if (districtsEl) districtsEl.textContent = districts.size;
+
+    // Mobile stats strip (garages.html — visible on mobile/tablet only)
+    const gmsStrip     = document.getElementById('garagesMobileStats');
+    const gmsTotal     = document.getElementById('gmsTotal');
+    const gmsCertified = document.getElementById('gmsCertified');
+    const gmsEmergency = document.getElementById('gmsEmergency');
+    const gmsDistricts = document.getElementById('gmsDistricts');
+    if (gmsTotal)     gmsTotal.textContent     = garages.length + '+';
+    if (gmsCertified) gmsCertified.textContent = certifiedCount + '+';
+    if (gmsEmergency) gmsEmergency.textContent = emergencyCount + '+';
+    if (gmsDistricts) gmsDistricts.textContent = districts.size;
+    if (gmsStrip)     gmsStrip.classList.toggle('ch-ms-loaded', garages.length > 0);
 }
 
 function displayGarages(garages) {

@@ -3089,6 +3089,18 @@ updateHeroStats(dealers) {
     if (totalCarsElement)       totalCarsElement.textContent       = totalCars > 0 ? totalCars + '+' : '0';
     if (totalCitiesElement)     totalCitiesElement.textContent     = uniqueCities;
     if (featuredDealersElement) featuredDealersElement.textContent = withProfile + '+';
+
+    // Mobile stats strip (dealers.html — visible on mobile/tablet only)
+    const dmsStrip    = document.getElementById('dealersMobileStats');
+    const dmsDealers  = document.getElementById('dmsDealers');
+    const dmsCars     = document.getElementById('dmsCars');
+    const dmsCities   = document.getElementById('dmsCities');
+    const dmsFeatured = document.getElementById('dmsFeatured');
+    if (dmsDealers)  dmsDealers.textContent  = totalDealers + '+';
+    if (dmsCars)     dmsCars.textContent     = totalCars > 0 ? totalCars + '+' : '0';
+    if (dmsCities)   dmsCities.textContent   = uniqueCities;
+    if (dmsFeatured) dmsFeatured.textContent = withProfile + '+';
+    if (dmsStrip)    dmsStrip.classList.toggle('ch-ms-loaded', totalDealers > 0);
 }
 
 populateLocationFilter() {

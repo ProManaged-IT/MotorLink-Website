@@ -822,5 +822,16 @@
     <!-- Feedback Widget & Walkthrough -->
     <script id="ml-feedback-widget-script" src="js/feedback-widget.js" defer></script>
     <script src="js/walkthrough.js" defer></script>
+
+    <!-- PWA Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                // Use a relative path so it works on both localhost and /motorlink/ on production
+                navigator.serviceWorker.register('sw.js')
+                    .catch(() => { /* silent fail — SW is a progressive enhancement */ });
+            });
+        }
+    </script>
 </body>
 </html>

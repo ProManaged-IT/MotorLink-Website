@@ -104,7 +104,7 @@
     }
 }
 
-/* Show floating FAB on mobile - positioned above back-to-top button */
+/* Show floating FAB on mobile - icon-only: no dark background */
 @media (max-width: 768px) {
     .mobile-filter-fab {
         display: flex !important;
@@ -112,6 +112,28 @@
         justify-content: center;
         bottom: 80px; /* Above back-to-top button */
         right: 16px;
+        /* Strip the black carbon-fiber background */
+        background: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    .mobile-filter-fab::before,
+    .mobile-filter-fab::after {
+        display: none !important;  /* remove texture + metallic shine */
+    }
+
+    .mobile-filter-fab i {
+        color: #00c853 !important;
+        font-size: 22px !important;
+        filter: drop-shadow(0 2px 8px rgba(0, 200, 83, 0.7)) !important;
+        animation: none !important;
+    }
+
+    .mobile-filter-fab:active {
+        transform: scale(0.88) !important;
+        background: rgba(0, 200, 83, 0.12) !important;
+        box-shadow: none !important;
     }
 }
 

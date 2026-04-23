@@ -2320,7 +2320,19 @@ a.car-hire-stat:hover {
         height: 45px;
         bottom: 20px;
         right: 20px;
-        font-size: 18px;
+        font-size: 22px;
+        /* Icon-only — no background, green arrow for visibility */
+        background: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+        color: #00c853 !important;
+        filter: drop-shadow(0 2px 6px rgba(0, 200, 83, 0.6));
+    }
+
+    .back-to-top:hover,
+    .back-to-top:active {
+        transform: scale(1.1);
+        box-shadow: none !important;
     }
 }
 
@@ -3177,7 +3189,7 @@ body.has-hero .header.scrolled .mobile-menu-toggle {
 
     .header-container {
         height: 64px !important;
-        padding: 0 16px !important;
+        padding: 0 !important;        /* parent .container gives 8px — no extra inner padding */
         display: flex !important;
         align-items: center !important;
         gap: 8px !important;

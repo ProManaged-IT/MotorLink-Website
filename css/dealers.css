@@ -474,3 +474,31 @@
     }
 }
 
+
+/* ── Mobile/Tablet Stats Strip (dealers page) ─────────────────────────────── */
+.ch-mobile-stats { display: none; }
+
+@media (max-width: 860px) {
+    .ch-mobile-stats {
+        display: flex;
+        align-items: stretch;
+        justify-content: space-around;
+        background: linear-gradient(135deg, #1a7431 0%, #145a27 100%);
+        padding: 10px 8px;
+        gap: 0;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+        position: relative; z-index: 2;
+        opacity: 0; transform: translateY(-6px);
+        transition: opacity 0.35s ease, transform 0.35s ease;
+        pointer-events: none;
+    }
+    .ch-mobile-stats.ch-ms-loaded {
+        opacity: 1; transform: translateY(0); pointer-events: auto;
+    }
+    .ch-ms-item { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; padding: 5px 4px; text-align: center; min-width: 0; }
+    .ch-ms-num { font-size: 0.9rem; font-weight: 700; color: #ffffff; line-height: 1.1; letter-spacing: -0.02em; }
+    .ch-ms-available .ch-ms-num { font-size: 1.0rem; color: #b9fbc0; text-shadow: 0 1px 6px rgba(0,200,83,0.35); }
+    .ch-ms-lbl { font-size: 0.52rem; color: rgba(255,255,255,0.82); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70px; }
+    .ch-ms-lbl i { margin-right: 2px; }
+    .ch-ms-divider { width: 1px; background: rgba(255,255,255,0.18); align-self: stretch; margin: 8px 0; }
+}

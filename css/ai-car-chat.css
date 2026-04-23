@@ -1338,10 +1338,19 @@
 
 /* ── Mobile (≤768px) — full-screen when open ────────────────────────────── */
 @media (max-width: 768px) {
-    /* Minimised FAB position */
+    /* Minimised FAB — draggable; CSS default anchors first render, JS takes over after first drag */
     .ai-car-chat-widget.minimized {
-        bottom: 12px;
+        bottom: 12px;   /* default bottom-left position before first drag */
         left: 10px;
+        cursor: grab;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
+    /* Suppress ring-pulse while the JS snap-transition is running */
+    .ai-car-chat-widget.minimized[style*="transition:"],
+    .ai-car-chat-widget.minimized[style*="transition :"] {
+        animation: none !important;
     }
 
     /* Full-screen open state */
@@ -1420,12 +1429,32 @@
         min-width: 46px;
     }
 
+    /* Minimised FAB — icon-only on mobile: no background, just the green chat icon */
     .ai-chat-minimized {
-        width: 50px;
-        height: 50px;
+        width: 44px !important;
+        height: 44px !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+        animation: none !important;
     }
+
+    .ai-chat-minimized::before {
+        display: none !important;  /* no shine sweep */
+    }
+
     .ai-chat-minimized .ai-min-icon i,
-    .ai-chat-minimized > i { font-size: 22px; }
+    .ai-chat-minimized > i {
+        font-size: 28px !important;
+        color: #00c853 !important;
+        filter: drop-shadow(0 2px 8px rgba(0, 200, 83, 0.7)) !important;
+    }
+
+    .ai-chat-minimized:active {
+        background: rgba(0, 200, 83, 0.12) !important;
+        box-shadow: none !important;
+        transform: scale(0.9) !important;
+    }
 }
 
 @keyframes chatFullScreenIn {

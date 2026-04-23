@@ -600,88 +600,177 @@ class AICarChat {
     }
 
     initDrag() {
-        // Drag is desktop-only — on mobile/tablet the widget is full-screen when open
-        // so there is nothing to drag. FAB reposition is also disabled on touch to
-        // keep the bubble anchored in its CSS bottom-left position.
-        if (window.innerWidth <= 1024) return;
-
         const widget = document.getElementById('aiCarChatWidget');
         const header = document.getElementById('aiChatHeader');
         const fabBtn = document.getElementById('aiChatMinimized');
-        if (!widget || !header) return;
+        if (!widget) return;
 
-        let dragging = false;
-        let hasMoved = false;
-        let startX, startY, startLeft, startTop;
+        const EDGE_GAP   = 12;  // px gap kept between FAB and screen edge when snapping
+        const HEADER_H   = 64; // reserved top clearance (header bar)
+        const MOVE_THRESH = 4;  // px movement before a drag is recognised
 
-        const beginDrag = (e, el) => {
-            if (e.button !== undefined && e.button !== 0) return;
-            if (el === header && e.target.closest('.ai-chat-header-actions')) return;
-
-            const rect = widget.getBoundingClientRect();
-            startLeft = rect.left;
-            startTop  = rect.top;
-            startX    = e.clientX;
-            startY    = e.clientY;
-            dragging  = true;
-            hasMoved  = false;
-
-            widget.style.bottom = 'auto';
-            widget.style.right  = 'auto';
-            widget.style.left   = startLeft + 'px';
-            widget.style.top    = startTop  + 'px';
-            widget.classList.add('dragging');
-
-            // Capture so events keep coming even when pointer leaves the element
-            try { el.setPointerCapture(e.pointerId); } catch(_) {}
-
-            // Also attach document-level handlers as a reliable fallback
-            document.addEventListener('pointermove', onDocMove);
-            document.addEventListener('pointerup',   onDocUp);
-            document.addEventListener('pointercancel', onDocUp);
-        };
-
-        const onDocMove = (e) => {
-            if (!dragging) return;
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
-            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved = true;
-            if (!hasMoved) return;
-
-            const vw = window.innerWidth;
-            const vh = window.innerHeight;
-            widget.style.left = Math.max(0, Math.min(startLeft + dx, vw - widget.offsetWidth))  + 'px';
-            widget.style.top  = Math.max(0, Math.min(startTop  + dy, vh - widget.offsetHeight)) + 'px';
-        };
-
-        const onDocUp = () => {
-            if (!dragging) return;
-            dragging = false;
-            widget.classList.remove('dragging');
-            document.removeEventListener('pointermove',   onDocMove);
-            document.removeEventListener('pointerup',     onDocUp);
-            document.removeEventListener('pointercancel', onDocUp);
-
-            if (hasMoved) {
-                // Persist position so it survives open/close and page reloads
-                const key = this.getStorageKey('widget_pos');
-                sessionStorage.setItem(key, JSON.stringify({
-                    left: parseInt(widget.style.left, 10),
-                    top:  parseInt(widget.style.top,  10)
-                }));
-                this._lastDragWasMove = true;
-                setTimeout(() => { this._lastDragWasMove = false; }, 200);
-                this._fabDragWasMove = true;
-                setTimeout(() => { this._fabDragWasMove = false; }, 200);
-            }
-        };
-
-        // Header drag (all screen sizes)
-        header.addEventListener('pointerdown', (e) => beginDrag(e, header));
-
-        // FAB drag (all screen sizes — user expects to reposition the bubble too)
+        // ── FAB DRAG — works on ALL screen sizes ─────────────────────────────
         if (fabBtn) {
-            fabBtn.addEventListener('pointerdown', (e) => beginDrag(e, fabBtn));
+            let fabDragging = false;
+            let fabMoved    = false;
+            let fabStartPX, fabStartPY, fabStartLeft, fabStartTop;
+
+            const onFabDown = (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                const rect = widget.getBoundingClientRect();
+                fabStartLeft = rect.left;
+                fabStartTop  = rect.top;
+                fabStartPX   = e.clientX;
+                fabStartPY   = e.clientY;
+                fabDragging  = true;
+                fabMoved     = false;
+
+                widget.style.bottom     = 'auto';
+                widget.style.right      = 'auto';
+                widget.style.left       = fabStartLeft + 'px';
+                widget.style.top        = fabStartTop  + 'px';
+                widget.style.transition = 'none'; // kill any snap transition
+
+                try { fabBtn.setPointerCapture(e.pointerId); } catch (_) {}
+                document.addEventListener('pointermove',   onFabMove);
+                document.addEventListener('pointerup',     onFabUp);
+                document.addEventListener('pointercancel', onFabUp);
+            };
+
+            const onFabMove = (e) => {
+                if (!fabDragging) return;
+                const dx = e.clientX - fabStartPX;
+                const dy = e.clientY - fabStartPY;
+                if (Math.abs(dx) > MOVE_THRESH || Math.abs(dy) > MOVE_THRESH) fabMoved = true;
+                if (!fabMoved) return;
+
+                const vw   = window.innerWidth;
+                const vh   = window.innerHeight;
+                const fabW = widget.offsetWidth  || 50;
+                const fabH = widget.offsetHeight || 50;
+
+                widget.style.left = Math.max(EDGE_GAP, Math.min(fabStartLeft + dx, vw - fabW - EDGE_GAP)) + 'px';
+                widget.style.top  = Math.max(HEADER_H, Math.min(fabStartTop  + dy, vh - fabH - EDGE_GAP)) + 'px';
+            };
+
+            const onFabUp = () => {
+                if (!fabDragging) return;
+                fabDragging = false;
+                document.removeEventListener('pointermove',   onFabMove);
+                document.removeEventListener('pointerup',     onFabUp);
+                document.removeEventListener('pointercancel', onFabUp);
+
+                if (fabMoved) {
+                    const isMobile = window.innerWidth <= 1024;
+
+                    if (isMobile) {
+                        // ── Edge-snap: spring the FAB to the nearest side ──
+                        const vw   = window.innerWidth;
+                        const vh   = window.innerHeight;
+                        const fabW = widget.offsetWidth  || 50;
+                        const fabH = widget.offsetHeight || 50;
+
+                        const curLeft   = parseFloat(widget.style.left) || 0;
+                        const curTop    = parseFloat(widget.style.top)  || 0;
+                        const midX      = curLeft + fabW / 2;
+                        const snapLeft  = midX < vw / 2
+                            ? EDGE_GAP
+                            : vw - fabW - EDGE_GAP;
+                        const snapTop   = Math.max(HEADER_H, Math.min(curTop, vh - fabH - EDGE_GAP));
+
+                        // Apply spring transition before updating coordinates
+                        widget.style.transition = 'left 0.3s cubic-bezier(0.34,1.56,0.64,1), top 0.2s ease';
+                        widget.style.left = snapLeft + 'px';
+                        widget.style.top  = snapTop  + 'px';
+                        setTimeout(() => { widget.style.transition = ''; }, 350);
+
+                        // Persist snapped position
+                        const key = this.getStorageKey('widget_pos');
+                        sessionStorage.setItem(key, JSON.stringify({ left: snapLeft, top: snapTop }));
+                    } else {
+                        // Desktop: free-position, no snap
+                        const key = this.getStorageKey('widget_pos');
+                        sessionStorage.setItem(key, JSON.stringify({
+                            left: parseInt(widget.style.left, 10),
+                            top:  parseInt(widget.style.top,  10)
+                        }));
+                    }
+
+                    this._fabDragWasMove  = true;
+                    this._lastDragWasMove = true;
+                    setTimeout(() => {
+                        this._fabDragWasMove  = false;
+                        this._lastDragWasMove = false;
+                    }, isMobile ? 400 : 200);
+                }
+            };
+
+            fabBtn.addEventListener('pointerdown', onFabDown);
+        }
+
+        // ── HEADER DRAG — desktop only (widget is full-screen on mobile/tablet) ──
+        if (header && window.innerWidth > 1024) {
+            let hDragging = false;
+            let hMoved    = false;
+            let hStartPX, hStartPY, hStartLeft, hStartTop;
+
+            const onHdrDown = (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                if (e.target.closest('.ai-chat-header-actions')) return;
+
+                const rect = widget.getBoundingClientRect();
+                hStartLeft = rect.left;
+                hStartTop  = rect.top;
+                hStartPX   = e.clientX;
+                hStartPY   = e.clientY;
+                hDragging  = true;
+                hMoved     = false;
+
+                widget.style.bottom = 'auto';
+                widget.style.right  = 'auto';
+                widget.style.left   = hStartLeft + 'px';
+                widget.style.top    = hStartTop  + 'px';
+                widget.classList.add('dragging');
+
+                try { header.setPointerCapture(e.pointerId); } catch (_) {}
+                document.addEventListener('pointermove',   onHdrMove);
+                document.addEventListener('pointerup',     onHdrUp);
+                document.addEventListener('pointercancel', onHdrUp);
+            };
+
+            const onHdrMove = (e) => {
+                if (!hDragging) return;
+                const dx = e.clientX - hStartPX;
+                const dy = e.clientY - hStartPY;
+                if (Math.abs(dx) > MOVE_THRESH || Math.abs(dy) > MOVE_THRESH) hMoved = true;
+                if (!hMoved) return;
+
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                widget.style.left = Math.max(0, Math.min(hStartLeft + dx, vw - widget.offsetWidth))  + 'px';
+                widget.style.top  = Math.max(0, Math.min(hStartTop  + dy, vh - widget.offsetHeight)) + 'px';
+            };
+
+            const onHdrUp = () => {
+                if (!hDragging) return;
+                hDragging = false;
+                widget.classList.remove('dragging');
+                document.removeEventListener('pointermove',   onHdrMove);
+                document.removeEventListener('pointerup',     onHdrUp);
+                document.removeEventListener('pointercancel', onHdrUp);
+
+                if (hMoved) {
+                    const key = this.getStorageKey('widget_pos');
+                    sessionStorage.setItem(key, JSON.stringify({
+                        left: parseInt(widget.style.left, 10),
+                        top:  parseInt(widget.style.top,  10)
+                    }));
+                    this._lastDragWasMove = true;
+                    setTimeout(() => { this._lastDragWasMove = false; }, 200);
+                }
+            };
+
+            header.addEventListener('pointerdown', onHdrDown);
         }
     }
 

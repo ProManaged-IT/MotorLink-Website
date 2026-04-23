@@ -36,18 +36,21 @@
         },
         {
             selector: 'a[href*="car-hire"]',
+            mobileSelector: 'a[href="car-hire.html"].service-card',
             title: 'Car Hire Services',
             body:  'Need wheels for a wedding, trip, or business? Book instantly via WhatsApp with verified hire companies.',
             icon:  'fa-key'
         },
         {
             selector: 'a[href*="dealers"]',
+            mobileSelector: 'a[href="dealers.html"].service-card',
             title: 'Trusted Dealers',
             body:  'Browse certified dealers, see their ratings and full inventory in one tap.',
             icon:  'fa-store'
         },
         {
             selector: 'a[href*="garages"]',
+            mobileSelector: 'a[href="garages.html"].service-card',
             title: 'Find a Garage',
             body:  'Service, repairs, or a breakdown? Find a nearby garage that covers exactly what you need.',
             icon:  'fa-wrench'
@@ -60,6 +63,7 @@
         },
         {
             selector: 'a[href*="sell"]',
+            mobileSelector: 'a[href="sell.html"].service-card',
             title: 'Sell Your Car',
             body:  'List your car in minutes and reach thousands of serious buyers across the country.',
             icon:  'fa-tag'
@@ -248,8 +252,10 @@
                 }
                 .wt-arrow { display: none; }
                 #ml-wt-spot {
-                    /* Keep spotlight visible above the bottom-docked card */
-                    max-height: calc(100vh - 220px);
+                    /* Keep spotlight visible above the bottom-docked card.
+                       Service cards can be tall — cap their spotlight height  */
+                    max-height: calc(100vh - 240px);
+                    overflow: hidden;
                 }
                 .wt-body {
                     font-size: 0.88rem;
@@ -334,13 +340,45 @@
         return window.innerWidth <= 860;
     }
 
+    /**
+     * Returns true only if el is rendered and visible in the current viewport.
+     * Elements inside a closed mobile hamburger drawer have display:none or
+     * are clipped by their parent — both result in offsetParent === null.
+     */
+    function isElementVisible(el) {
+        if (!el) return false;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) return false;
+        // offsetParent is null for fixed elements (valid) AND hidden elements.
+        // Fixed elements are handled: they still have getBoundingClientRect dimensions.
+        if (el.offsetParent === null && cs.position !== 'fixed') return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    }
+
+    /**
+     * Resolves the best visible DOM target for a step.
+     * On mobile the primary selector often points to a nav link hidden inside
+     * the hamburger drawer. In that case we fall back to mobileSelector which
+     * points to the always-visible service card on the homepage.
+     */
+    function resolveTarget(s) {
+        const primary = document.querySelector(s.selector);
+        if (isElementVisible(primary)) return primary;
+        if (s.mobileSelector) {
+            const fallback = document.querySelector(s.mobileSelector);
+            if (isElementVisible(fallback)) return fallback;
+        }
+        return primary; // null or invisible — caller decides how to handle
+    }
+
     function showStep(index, animate) {
         if (index < 0) return;
         if (index >= STEPS.length) { finish(true); return; }
 
         const s = STEPS[index];
-        const target = document.querySelector(s.selector);
-        if (!target) { showStep(index + 1, animate); return; }
+        const target = resolveTarget(s);
+        if (!target || !isElementVisible(target)) { showStep(index + 1, animate); return; }
 
         step = index;
 
@@ -362,8 +400,8 @@
 
     function renderStep(index) {
         const s = STEPS[index];
-        const target = document.querySelector(s.selector);
-        if (!target) { showStep(index + 1, false); return; }
+        const target = resolveTarget(s);
+        if (!target || !isElementVisible(target)) { showStep(index + 1, false); return; }
 
         const rect = target.getBoundingClientRect();
         const pad = 8;
@@ -408,7 +446,7 @@
     function positionCurrentStep() {
         if (step < 0 || step >= STEPS.length) return;
         const s = STEPS[step];
-        const target = document.querySelector(s.selector);
+        const target = resolveTarget(s);
         if (!target) return;
         const pad = 8;
         const rect = target.getBoundingClientRect();
@@ -478,15 +516,15 @@
 
     // ── Build card HTML ──────────────────────────────────────────────────
     function buildCardHTML(index, s) {
-        const total = STEPS.filter(st => document.querySelector(st.selector)).length;
-        const localIdx = STEPS.slice(0, index + 1).filter(st => document.querySelector(st.selector)).length - 1;
+        const total = STEPS.filter(st => isElementVisible(resolveTarget(st))).length;
+        const localIdx = STEPS.slice(0, index + 1).filter(st => isElementVisible(resolveTarget(st))).length - 1;
         const dots = STEPS
-            .filter(st => document.querySelector(st.selector))
+            .filter(st => isElementVisible(resolveTarget(st)))
             .map((_, i) => `<span class="wt-dot${i === localIdx ? ' on' : ''}"></span>`)
             .join('');
 
-        const isLast = STEPS.slice(index + 1).every(st => !document.querySelector(st.selector));
-        const isFirst = STEPS.slice(0, index).every(st => !document.querySelector(st.selector));
+        const isLast  = STEPS.slice(index + 1).every(st => !isElementVisible(resolveTarget(st)));
+        const isFirst = STEPS.slice(0, index).every(st => !isElementVisible(resolveTarget(st)));
 
         return `
             <div class="wt-card-inner">

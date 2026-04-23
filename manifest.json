@@ -1,4 +1,5 @@
 {
+    "id": "/motorlink/",
     "name": "MotorLink — Malawi Car Marketplace",
     "short_name": "MotorLink",
     "description": "Malawi's #1 car marketplace. Buy, sell, find dealers, garages and car hire services.",
@@ -6,8 +7,8 @@
     "scope": "/motorlink/",
     "display": "standalone",
     "orientation": "portrait",
-    "background_color": "#ffffff",
-    "theme_color": "#1a7431",
+    "background_color": "#0a1f13",
+    "theme_color": "#00c853",
     "lang": "en-MW",
     "categories": ["automotive", "shopping"],
     "icons": [
@@ -15,7 +16,13 @@
             "src": "assets/images/favicon.svg",
             "sizes": "any",
             "type": "image/svg+xml",
-            "purpose": "any maskable"
+            "purpose": "any"
+        },
+        {
+            "src": "assets/images/favicon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "maskable"
         }
     ],
     "screenshots": [
@@ -23,7 +30,8 @@
             "src": "motorlink-ad-banner.png",
             "sizes": "1200x630",
             "type": "image/png",
-            "label": "MotorLink Car Marketplace"
+            "form_factor": "wide",
+            "label": "MotorLink Car Marketplace — Browse cars for sale"
         }
     ],
     "shortcuts": [
