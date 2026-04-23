@@ -6800,6 +6800,44 @@ async function sendWhatsAppTest() {
     }
 }
 
+async function sendWhatsAppBookingTemplateTest() {
+    const btn      = document.getElementById('waBookingTestBtn');
+    const resultEl = document.getElementById('waBookingTestResult');
+    const phoneEl  = document.getElementById('waBookingTestPhone');
+    const phone    = (phoneEl?.value || '').trim().replace(/[^0-9]/g, '');
+
+    if (!phone) {
+        resultEl.style.cssText = 'display:block;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.84rem;background:#fff1f1;border:1px solid #f5c2c2;color:#c0392b;';
+        resultEl.textContent   = 'Enter a phone number with country code (digits only, no + or spaces).';
+        return;
+    }
+
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…'; }
+    resultEl.style.display = 'none';
+
+    try {
+        const response = await admin.apiCall('test_wa_booking_template', 'POST', { test_phone: phone });
+        resultEl.style.display = 'block';
+
+        if (response.success) {
+            resultEl.style.cssText = 'display:block;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.84rem;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;';
+            resultEl.innerHTML     = `<i class="fas fa-check-circle"></i> <strong>Success!</strong> ${response.message || 'Booking template sent.'}`
+                                   + (response.wamid ? `<br><small style="opacity:0.7;">wamid: ${response.wamid}</small>` : '');
+        } else {
+            resultEl.style.cssText = 'display:block;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.84rem;background:#fff1f1;border:1px solid #f5c2c2;color:#c0392b;';
+            const errMsg  = response.error || response.message || 'API returned an error.';
+            const apiCode = response.api_code ? ` (Code: ${response.api_code})` : '';
+            resultEl.innerHTML = `<i class="fas fa-times-circle"></i> <strong>Failed:</strong> ${errMsg}${apiCode}<br><small style="opacity:0.7;">HTTP ${response.http_code || '—'}</small>`;
+        }
+    } catch (error) {
+        resultEl.style.display = 'block';
+        resultEl.style.cssText = 'display:block;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:0.84rem;background:#fff1f1;border:1px solid #f5c2c2;color:#c0392b;';
+        resultEl.textContent   = 'Network error: ' + error.message;
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-check"></i> Test Booking Template'; }
+    }
+}
+
 async function loadWhatsAppBookingStats() {
     try {
         const response = await admin.apiCall('get_whatsapp_bookings', 'GET', null);

@@ -2842,6 +2842,71 @@ function sendWhatsAppMessage($settings, string $toNumber, string $messageBody): 
 }
 
 /**
+ * Send a WhatsApp template message via Meta Cloud API.
+ * $params: ordered array of body parameter values.
+ * Returns same shape as sendWhatsAppMessage().
+ */
+function sendWhatsAppTemplate($settings, string $toNumber, string $templateName, array $params): array {
+    $toNumber = preg_replace('/[^0-9]/', '', $toNumber);
+    if (empty($toNumber)) {
+        return ['success' => false, 'wamid' => null, 'error' => 'Invalid recipient number'];
+    }
+
+    $bodyParams = array_map(fn($v) => ['type' => 'text', 'text' => (string)$v], $params);
+    $url = "https://graph.facebook.com/{$settings['api_version']}/{$settings['phone_number_id']}/messages";
+    $payload = json_encode([
+        'messaging_product' => 'whatsapp',
+        'to'                => $toNumber,
+        'type'              => 'template',
+        'template'          => [
+            'name'       => $templateName,
+            'language'   => ['code' => 'en_US'],
+            'components' => [
+                ['type' => 'body', 'parameters' => $bodyParams],
+            ],
+        ],
+    ]);
+
+    $_waHost      = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+    $_waLocalhost = in_array($_waHost, ['localhost', '127.0.0.1', '::1'], true)
+                 || strpos($_waHost, 'localhost:') === 0
+                 || strpos($_waHost, '127.0.0.1:') === 0
+                 || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $_waHost);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER  => true,
+        CURLOPT_POST            => true,
+        CURLOPT_POSTFIELDS      => $payload,
+        CURLOPT_TIMEOUT         => 15,
+        CURLOPT_SSL_VERIFYPEER  => !$_waLocalhost,
+        CURLOPT_SSL_VERIFYHOST  => $_waLocalhost ? 0 : 2,
+        CURLOPT_HTTPHEADER      => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $settings['api_token'],
+        ],
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlError) {
+        error_log("WhatsApp template cURL error: $curlError");
+        return ['success' => false, 'wamid' => null, 'error' => $curlError];
+    }
+
+    $decoded = json_decode($response, true);
+    if ($httpCode === 200 && !empty($decoded['messages'][0]['id'])) {
+        return ['success' => true, 'wamid' => $decoded['messages'][0]['id'], 'error' => null];
+    }
+
+    $errMsg = $decoded['error']['message'] ?? "HTTP $httpCode";
+    error_log("WhatsApp template error ($templateName): $errMsg — $response");
+    return ['success' => false, 'wamid' => null, 'error' => $errMsg];
+}
+
+/**
  * Build the WhatsApp booking notification message for the owner.
  * Includes structured booking details + numbered reply options (bot-like).
  */
@@ -3073,8 +3138,19 @@ function carHireBookWhatsapp($db) {
 
     if ($waSettings['enabled'] && !empty($waSettings['api_token']) && !empty($waSettings['phone_number_id'])) {
         if ($ownerWhatsApp) {
-            $message = buildOwnerBookingMessage($bookingData, $currency);
-            $result  = sendWhatsAppMessage($waSettings, $ownerWhatsApp, $message);
+            // Try approved template first; fall back to free-form text
+            $result = sendWhatsAppTemplate($waSettings, $ownerWhatsApp, 'motorlink_booking', [
+                $vehicleName,
+                $renterName,
+                $renterPhone,
+                $startDate,
+                $endDate,
+            ]);
+            if (!$result['success']) {
+                // Template not approved yet — fall back to free-form
+                $message = buildOwnerBookingMessage($bookingData, $currency);
+                $result  = sendWhatsAppMessage($waSettings, $ownerWhatsApp, $message);
+            }
             $waSent  = $result['success'];
             $wamid   = $result['wamid'];
             $waError = $result['error'];

@@ -448,6 +448,10 @@ try {
             handleTestWhatsAppMessage($db);
             break;
 
+        case 'test_wa_booking_template':
+            handleTestWaBookingTemplate($db);
+            break;
+
         case 'get_whatsapp_bookings':
             handleGetWhatsAppBookings($db);
             break;
@@ -8580,6 +8584,123 @@ function handleTestWhatsAppMessage($db) {
             'error'      => $errMsg,
             'api_code'   => $errCode,
             'http_code'  => $httpCode,
+        ]);
+    }
+    exit();
+}
+
+/**
+ * Send a test motorlink_booking template message.
+ * POST ?action=test_wa_booking_template  body: { test_phone }
+ */
+function handleTestWaBookingTemplate($db) {
+    requireSuperAdmin($db);
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendAdminError('POST method required', 'INVALID_METHOD', 405);
+    }
+
+    $input     = json_decode(file_get_contents('php://input'), true);
+    $testPhone = trim(preg_replace('/[^0-9+]/', '', (string)($input['test_phone'] ?? '')));
+    $toNumber  = preg_replace('/[^0-9]/', '', $testPhone);
+
+    if (strlen($toNumber) < 7) {
+        sendAdminError('A valid test phone number is required (digits, including country code)', 'WA_TEST_PHONE_REQUIRED', 400);
+    }
+
+    $keys = ['wa_api_token', 'wa_phone_number_id', 'wa_api_version'];
+    $placeholders = implode(',', array_fill(0, count($keys), '?'));
+    $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
+    $stmt->execute($keys);
+    $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    $token      = $rows['wa_api_token']       ?? '';
+    $phoneNumId = $rows['wa_phone_number_id'] ?? '';
+    $apiVersion = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v25.0';
+
+    if (empty($token))      sendAdminError('WhatsApp API token not configured', 'WA_TEST_NO_TOKEN', 400);
+    if (empty($phoneNumId)) sendAdminError('WhatsApp Phone Number ID not configured', 'WA_TEST_NO_PHONE_ID', 400);
+
+    $url     = "https://graph.facebook.com/{$apiVersion}/{$phoneNumId}/messages";
+    $payload = json_encode([
+        'messaging_product' => 'whatsapp',
+        'to'                => $toNumber,
+        'type'              => 'template',
+        'template'          => [
+            'name'       => 'motorlink_booking',
+            'language'   => ['code' => 'en_US'],
+            'components' => [
+                [
+                    'type'       => 'body',
+                    'parameters' => [
+                        ['type' => 'text', 'text' => 'Toyota Hilux Double Cab 2023'],
+                        ['type' => 'text', 'text' => 'Sample Customer'],
+                        ['type' => 'text', 'text' => '+' . $toNumber],
+                        ['type' => 'text', 'text' => date('d M Y', strtotime('+1 day'))],
+                        ['type' => 'text', 'text' => date('d M Y', strtotime('+4 days'))],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $_waHost      = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+    $_waLocalhost = in_array($_waHost, ['localhost', '127.0.0.1', '::1'], true)
+                 || strpos($_waHost, 'localhost:') === 0
+                 || strpos($_waHost, '127.0.0.1:') === 0
+                 || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $_waHost);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER  => true,
+        CURLOPT_POST            => true,
+        CURLOPT_POSTFIELDS      => $payload,
+        CURLOPT_TIMEOUT         => 15,
+        CURLOPT_SSL_VERIFYPEER  => !$_waLocalhost,
+        CURLOPT_SSL_VERIFYHOST  => $_waLocalhost ? 0 : 2,
+        CURLOPT_HTTPHEADER      => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $token,
+        ],
+    ]);
+
+    $response  = curl_exec($ch);
+    $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlError) {
+        echo json_encode(['success' => false, 'error' => "Network error: $curlError", 'http_code' => 0]);
+        exit();
+    }
+
+    $decoded = json_decode($response, true);
+    $wamid   = $decoded['messages'][0]['id'] ?? null;
+
+    if ($httpCode === 200 && $wamid) {
+        logActivity($db, 'wa_booking_template_test',
+            'Booking template test sent',
+            "To: {$toNumber}, wamid: {$wamid}", $_SESSION['admin_id'] ?? null);
+
+        echo json_encode([
+            'success'   => true,
+            'message'   => "Booking template sent to +{$toNumber}. Check WhatsApp — you should receive a formatted booking card.",
+            'wamid'     => $wamid,
+            'http_code' => $httpCode,
+        ]);
+    } else {
+        $errMsg  = $decoded['error']['message'] ?? "HTTP {$httpCode}";
+        $errCode = $decoded['error']['code']    ?? null;
+        $uiHint  = '';
+        // Common: template not approved yet
+        if ($errCode == 132001 || strpos($errMsg, 'template') !== false) {
+            $uiHint = ' Template may still be pending approval in Meta — check WhatsApp Manager.';
+        }
+        echo json_encode([
+            'success'   => false,
+            'error'     => $errMsg . $uiHint,
+            'api_code'  => $errCode,
+            'http_code' => $httpCode,
         ]);
     }
     exit();
