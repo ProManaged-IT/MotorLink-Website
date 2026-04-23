@@ -35,7 +35,7 @@
 .main-image {
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    object-fit: cover;
     transition: transform 0.3s ease;
     display: none;
 }
@@ -719,13 +719,16 @@
     }
 
     .thumbnail-strip {
-        grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
-        gap: 8px;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
         padding: 12px;
     }
 
     .thumbnail {
-        height: 50px;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
     }
 
     .gallery-nav {
@@ -758,11 +761,16 @@
     }
 
     .thumbnail-strip {
-        grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+        padding: 10px;
     }
 
     .thumbnail {
-        height: 45px;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
     }
 
     .car-info {
@@ -855,14 +863,25 @@
     }
 
     .showroom-card {
-        flex-direction: row !important;
+        flex-direction: column !important;
         height: auto !important;
     }
 
     .showroom-card-image {
-        width: 120px !important;
-        height: 120px !important;
+        width: 100% !important;
+        height: 220px !important;
+        position: relative !important;
+        overflow: hidden !important;
+        background: var(--bg-light, #f3f4f6);
         flex-shrink: 0;
+    }
+
+    .showroom-card-image img {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
     }
 
     .showroom-card-content {
