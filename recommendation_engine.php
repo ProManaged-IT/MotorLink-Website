@@ -1017,7 +1017,7 @@ try {
                         cl.title, cl.make, cl.model, cl.year, cl.price, cl.mileage,
                         cl.fuel_type, cl.transmission, cl.location_id,
                         l.name AS location_name,
-                        (SELECT image_url FROM car_listing_images WHERE listing_id = cl.id AND is_primary = 1 LIMIT 1) AS image_url
+                        (SELECT id FROM car_listing_images WHERE listing_id = cl.id AND is_primary = 1 LIMIT 1) AS primary_image_id
                     FROM viewing_history vh
                     JOIN car_listings cl ON cl.id = vh.listing_id AND cl.status = 'active'
                     LEFT JOIN locations l ON l.id = cl.location_id
@@ -1035,7 +1035,7 @@ try {
                             cl.title, cl.make, cl.model, cl.year, cl.price, cl.mileage,
                             cl.fuel_type, cl.transmission, cl.location_id,
                             l.name AS location_name,
-                            (SELECT image_url FROM car_listing_images WHERE listing_id = cl.id AND is_primary = 1 LIMIT 1) AS image_url
+                            (SELECT id FROM car_listing_images WHERE listing_id = cl.id AND is_primary = 1 LIMIT 1) AS primary_image_id
                         FROM guest_viewing_history gvh
                         JOIN car_listings cl ON cl.id = gvh.listing_id AND cl.status = 'active'
                         LEFT JOIN locations l ON l.id = cl.location_id
@@ -1067,7 +1067,7 @@ try {
                     'fuel_type'     => $r['fuel_type'],
                     'transmission'  => $r['transmission'],
                     'location_name' => $r['location_name'],
-                    'image_url'     => $r['image_url'] ?: null,
+                    'primary_image_id' => $r['primary_image_id'] ? (int)$r['primary_image_id'] : null,
                     'last_viewed'   => $r['last_viewed'],
                 ];
             }, $rows);

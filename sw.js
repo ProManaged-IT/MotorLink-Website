@@ -7,8 +7,8 @@
  *     (critical in Malawi where signal/load-shedding drops are frequent).
  */
 
-const STATIC_CACHE  = 'motorlink-static-v2';
-const API_CACHE     = 'motorlink-api-v2';
+const STATIC_CACHE  = 'motorlink-static-v3';
+const API_CACHE     = 'motorlink-api-v3';
 const API_CACHE_MAX = 40; // keep the last N GET API responses
 
 // GET actions that are safe to cache offline (read-only data)
@@ -93,10 +93,14 @@ self.addEventListener('fetch', event => {
     if (request.method !== 'GET') return;
     if (url.origin !== self.location.origin) return;
 
-    // 2. PHP/API requests — network-first with stale cache fallback for read actions
+    // 2. Never intercept image-serving requests — pass straight to network to
+    //    avoid infinite-loop / 508 issues with the PHP image proxy.
+    const action = (url.searchParams.get('action') || '').toLowerCase();
+    if (action === 'image') return;
+
+    // 3. PHP/API requests — network-first with stale cache fallback for read actions
     const isApi = url.pathname.endsWith('.php') || url.pathname.includes('/api');
     if (isApi) {
-        const action = (url.searchParams.get('action') || '').toLowerCase();
         const isCacheableRead = CACHEABLE_API_ACTIONS.has(action);
 
         event.respondWith((async () => {

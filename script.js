@@ -539,8 +539,12 @@ class MotorLink {
                 ? (CONFIG.CURRENCY_CODE || 'MWK') + ' ' + Number(l.price).toLocaleString()
                 : 'Price on request';
             const meta  = [l.year, l.location_name].filter(Boolean).join(' · ');
-            const img   = l.image_url
-                ? `<img class="rv-card-img" src="${this.escapeHtml(l.image_url)}" alt="${title}" loading="lazy" onerror="this.parentNode.innerHTML='<div class=\\'rv-card-img-placeholder\\'><i class=\\'fas fa-car\\'></i></div>'">`
+            // Use image-proxy endpoint; falls back to placeholder if no primary image
+            const imgSrc = l.primary_image_id
+                ? `${CONFIG.API_URL}?action=image&id=${l.primary_image_id}`
+                : null;
+            const img   = imgSrc
+                ? `<img class="rv-card-img" src="${imgSrc}" alt="${title}" loading="lazy" onerror="this.parentNode.innerHTML='<div class=\\'rv-card-img-placeholder\\'><i class=\\'fas fa-car\\'></i></div>'">`
                 : `<div class="rv-card-img-placeholder"><i class="fas fa-car"></i></div>`;
             return `
                 <a href="car.html?id=${Number(l.id)}" class="rv-card" role="listitem" aria-label="${title}">
