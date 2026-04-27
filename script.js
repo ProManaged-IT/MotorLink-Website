@@ -1056,11 +1056,8 @@ class MotorLink {
         const nav = document.getElementById('mainNav');
         if (!nav) return;
 
-        // Remove existing dashboard link if any
-        const existingDashboard = nav.querySelector('.dashboard-link');
-        if (existingDashboard) {
-            existingDashboard.remove();
-        }
+        // Remove ALL existing dashboard links before re-rendering
+        nav.querySelectorAll('.dashboard-link').forEach(el => el.remove());
 
         const dashboardMap = {
             dealer: { url: 'dealer-dashboard.html', text: 'My Showroom', icon: 'fas fa-store' },
