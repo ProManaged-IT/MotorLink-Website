@@ -1,7 +1,21 @@
 /**
  * reviews.js — Shared 5-star review rendering + submission module.
- * Depends on: CONFIG (config.js), script.js (authState / fetchJsonWithRetry)
+ * Depends on: CONFIG (config.js) only — fully self-contained fetch helper included.
  */
+
+/* ------------------------------------------------------------------ */
+/* Private fetch helper — self-contained, no external dependency       */
+/* ------------------------------------------------------------------ */
+
+async function _rvFetch(url, options = {}) {
+    const defaults = { credentials: 'include' };
+    const merged   = Object.assign({}, defaults, options);
+    const resp = await fetch(url, merged);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const ct = resp.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) throw new Error('Non-JSON response');
+    return resp.json();
+}
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
@@ -59,7 +73,7 @@ async function rvRenderSection(container, businessType, businessId, businessName
 
     let data;
     try {
-        data = await fetchJsonWithRetry(`${CONFIG.API_URL}?action=get_reviews&business_type=${businessType}&business_id=${businessId}`);
+        data = await _rvFetch(`${CONFIG.API_URL}?action=get_reviews&business_type=${businessType}&business_id=${businessId}`);
     } catch (e) {
         container.innerHTML = `<p class="rv-error">Could not load reviews.</p>`;
         return;
@@ -75,14 +89,14 @@ async function rvRenderSection(container, businessType, businessId, businessName
     // Check if current user can submit
     let authUser = null;
     try {
-        const authData = await fetchJsonWithRetry(`${CONFIG.API_URL}?action=check_auth`);
+        const authData = await _rvFetch(`${CONFIG.API_URL}?action=check_auth`);
         if (authData.authenticated) authUser = authData.user;
     } catch (_) {}
 
     let existingReview = null;
     if (authUser) {
         try {
-            const chk = await fetchJsonWithRetry(`${CONFIG.API_URL}?action=check_user_review&business_type=${businessType}&business_id=${businessId}`);
+            const chk = await _rvFetch(`${CONFIG.API_URL}?action=check_user_review&business_type=${businessType}&business_id=${businessId}`);
             existingReview = chk.existing_review || null;
         } catch (_) {}
     }
