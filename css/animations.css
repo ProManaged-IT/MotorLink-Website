@@ -634,11 +634,15 @@ body {
 .hero,
 .hero-stat,
 .card-loading,
-.interactive-card,
-.service-card {
+.interactive-card {
     will-change: transform;
     backface-visibility: hidden;
     -webkit-font-smoothing: antialiased;
+}
+
+/* Service cards: keep text crisp — no GPU layer promotion */
+.service-card {
+    -webkit-font-smoothing: auto;
 }
 
 /* Reduce motion for accessibility */
