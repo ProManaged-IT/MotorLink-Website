@@ -1321,3 +1321,263 @@ body.header-force-mobile .logo {
 }
 
 }
+
+/* ============================================================================
+   RESPONSIVE HEADER SAFETY NET - TABLET THROUGH COMPACT DESKTOP
+   Keeps the public header single-line when it can fit and hands off to the
+   measured drawer fallback before links or account controls collide.
+   ============================================================================ */
+@media (min-width: 1025px) and (max-width: 1280px) {
+    .header .container {
+        max-width: none !important;
+        width: 100% !important;
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+    }
+
+    .header-container {
+        height: 68px !important;
+        min-height: 68px !important;
+        gap: 8px !important;
+        min-width: 0 !important;
+        overflow: visible !important;
+    }
+
+    .header-container .logo {
+        max-width: 210px !important;
+        font-size: 22px !important;
+        gap: 7px !important;
+    }
+
+    .header-container .logo i {
+        font-size: 20px !important;
+    }
+
+    .header-container .nav {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        justify-content: center !important;
+        gap: 6px !important;
+        overflow: hidden !important;
+    }
+
+    .header-container .nav a,
+    .header-container .nav .dashboard-link {
+        max-width: 142px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        font-size: 12px !important;
+        padding: 7px 8px !important;
+        letter-spacing: 0 !important;
+        flex: 0 1 auto !important;
+    }
+
+    .header-container .nav a[href="guest-manage.html"] {
+        max-width: 124px !important;
+    }
+
+    .header-container .user-menu,
+    .header-container .user-menu #guestMenu,
+    .header-container .user-menu #userInfo {
+        flex: 0 0 auto !important;
+        gap: 6px !important;
+    }
+
+    .header-container .user-menu .btn {
+        min-height: 34px !important;
+        padding: 7px 9px !important;
+        font-size: 11px !important;
+        gap: 4px !important;
+    }
+
+    .tablet-user-menu-toggle {
+        display: none !important;
+    }
+}
+
+@media (min-width: 1025px) and (max-width: 1120px) {
+    .header-container .logo {
+        max-width: 178px !important;
+        font-size: 20px !important;
+    }
+
+    .header-container .nav {
+        gap: 4px !important;
+    }
+
+    .header-container .nav a,
+    .header-container .nav .dashboard-link {
+        max-width: 118px !important;
+        font-size: 11.5px !important;
+        padding: 7px 7px !important;
+    }
+
+    .header-container .nav a[href="guest-manage.html"] {
+        max-width: 106px !important;
+    }
+
+    .header-container .user-menu .btn-label {
+        display: none !important;
+    }
+}
+
+@media (min-width: 1281px) and (max-width: 1440px) {
+    .header .container {
+        max-width: 1320px !important;
+        width: 100% !important;
+        padding-left: 24px !important;
+        padding-right: 24px !important;
+    }
+
+    .header-container {
+        gap: 12px !important;
+        min-width: 0 !important;
+    }
+
+    .header-container .logo {
+        max-width: 220px !important;
+    }
+
+    .header-container .nav {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 10px !important;
+        justify-content: center !important;
+    }
+
+    .header-container .nav a,
+    .header-container .nav .dashboard-link {
+        font-size: 13px !important;
+        padding: 8px 10px !important;
+        white-space: nowrap !important;
+    }
+
+    .header-container .user-menu,
+    .header-container .user-menu #guestMenu,
+    .header-container .user-menu #userInfo {
+        flex: 0 0 auto !important;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1440px) {
+    body.header-force-mobile .header {
+        overflow: visible !important;
+    }
+
+    body.header-force-mobile .header .container {
+        max-width: none !important;
+        width: 100% !important;
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+    }
+
+    body.header-force-mobile .header-container {
+        display: flex !important;
+        align-items: center !important;
+        height: 70px !important;
+        min-height: 70px !important;
+        gap: 8px !important;
+        padding: 0 !important;
+        flex-wrap: nowrap !important;
+        overflow: visible !important;
+    }
+
+    body.header-force-mobile .logo,
+    body.header-force-mobile .header-container .logo {
+        max-width: min(64vw, 280px) !important;
+        flex: 0 1 auto !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    body.header-force-mobile .mobile-menu-toggle {
+        display: flex !important;
+        margin-left: auto !important;
+        order: 30 !important;
+    }
+
+    body.header-force-mobile .tablet-user-menu-toggle,
+    body.header-force-mobile .user-menu {
+        display: none !important;
+    }
+
+    body.header-force-mobile .nav:not(.active):not(.mobile-active) {
+        display: none !important;
+    }
+
+    body.header-force-mobile .nav.active,
+    body.header-force-mobile .nav.mobile-active {
+        display: flex !important;
+        position: fixed !important;
+        top: 70px !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
+        flex-direction: column !important;
+        flex-wrap: nowrap !important;
+        background: #ffffff !important;
+        padding: 18px 20px 28px !important;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14) !important;
+        z-index: 11001 !important;
+        max-height: calc(100dvh - 70px) !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        gap: 2px !important;
+        border-radius: 0 0 20px 20px !important;
+        margin: 0 !important;
+        transform: none !important;
+    }
+
+    body.header-force-mobile .nav.active a,
+    body.header-force-mobile .nav.mobile-active a,
+    body.header-force-mobile .nav.active .mobile-dash-link,
+    body.header-force-mobile .nav.mobile-active .mobile-dash-link {
+        display: flex !important;
+        visibility: visible !important;
+        width: 100% !important;
+        max-width: none !important;
+        justify-content: flex-start !important;
+        padding: 13px 14px !important;
+        border: none !important;
+        border-radius: 12px !important;
+        font-size: 15px !important;
+        line-height: 1.25 !important;
+        white-space: normal !important;
+        min-height: 44px !important;
+    }
+
+    body.header-force-mobile .nav.active > .dashboard-link,
+    body.header-force-mobile .nav.mobile-active > .dashboard-link {
+        display: none !important;
+    }
+
+    body.header-force-mobile .nav.active #guestMenuMobile,
+    body.header-force-mobile .nav.active #userInfoMobile,
+    body.header-force-mobile .nav.mobile-active #guestMenuMobile,
+    body.header-force-mobile .nav.mobile-active #userInfoMobile,
+    body.header-force-mobile .nav.active .mobile-dashboard-links,
+    body.header-force-mobile .nav.mobile-active .mobile-dashboard-links {
+        display: flex !important;
+        visibility: visible !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+        padding: 12px 0 0 !important;
+        border-top: 1px solid #eef4ef !important;
+        border-bottom: none !important;
+        margin: 10px 0 0 !important;
+    }
+
+    body.header-force-mobile .nav.active #guestMenuMobile .btn,
+    body.header-force-mobile .nav.active #userInfoMobile .btn,
+    body.header-force-mobile .nav.mobile-active #guestMenuMobile .btn,
+    body.header-force-mobile .nav.mobile-active #userInfoMobile .btn {
+        display: flex !important;
+        visibility: visible !important;
+        width: 100% !important;
+        justify-content: center !important;
+        min-height: 44px !important;
+    }
+}

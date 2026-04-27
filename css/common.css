@@ -177,6 +177,10 @@ body > div:not(.footer):not(.header) {
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
+.header .container {
+    min-width: 0;
+}
+
 .header-container {
     display: flex;
     align-items: center;
@@ -184,6 +188,12 @@ body > div:not(.footer):not(.header) {
     height: 70px;
     gap: 8px;
     flex-wrap: nowrap;
+    min-width: 0;
+    overflow: visible;
+}
+
+.header-container > * {
+    min-width: 0;
 }
 
 @media (min-width: 768px) {
@@ -454,8 +464,17 @@ body > div:not(.footer):not(.header) {
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
-    letter-spacing: -0.5px;
+    min-width: 0;
+    max-width: min(42vw, 260px);
+    letter-spacing: 0;
     transition: all 0.2s ease;
+}
+
+.logo-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .logo:hover {
@@ -489,6 +508,8 @@ body > div:not(.footer):not(.header) {
         max-height: none;
         overflow-y: visible;
         flex-wrap: nowrap;
+        min-width: 0;
+        flex: 1 1 auto;
     }
 }
 

@@ -244,11 +244,16 @@ function initMobileMenu() {
     // Highlight active page in navigation
     highlightActivePage(nav);
 
-    // Cleanup any existing clones before adding new ones
-    cleanupMobileMenuClones(nav);
+    const syncMobileMenuClones = () => {
+        if (!nav) return;
 
-    // Clone user menu items into nav for mobile drawer only
-    if (userMenu && (isMobileViewport() || document.body.classList.contains('header-force-mobile'))) {
+        const shouldHaveMobileClones = userMenu && (isMobileViewport() || document.body.classList.contains('header-force-mobile'));
+        cleanupMobileMenuClones(nav);
+
+        if (!shouldHaveMobileClones) {
+            return;
+        }
+
         const userInfo = userMenu.querySelector('#userInfo');
         const guestMenu = userMenu.querySelector('#guestMenu');
 
@@ -272,10 +277,6 @@ function initMobileMenu() {
             if (existingDashboardLinks) {
                 existingDashboardLinks.remove();
             }
-
-            // Remove any existing dashboard-link elements from desktop nav that got cloned
-            const desktopDashboardLinks = nav.querySelectorAll('.dashboard-link');
-            desktopDashboardLinks.forEach(link => link.remove());
 
             // Add user dashboard links to mobile menu when logged in
             const dashboardLinks = document.createElement('div');
@@ -364,7 +365,10 @@ function initMobileMenu() {
             clone.id = 'guestMenuMobile';
             nav.appendChild(clone);
         }
-    }
+    };
+
+    window.motorLinkSyncMobileMenuClones = syncMobileMenuClones;
+    syncMobileMenuClones();
 
     // Toggle menu on button click
     toggle.addEventListener('click', function(e) {
@@ -407,11 +411,11 @@ function initMobileMenu() {
             
             // Cleanup mobile clones when switching to desktop
             // CSS will handle hiding them, but we remove from DOM to prevent conflicts
-            if (isDesktop) {
+            if (isDesktop && !document.body.classList.contains('header-force-mobile')) {
                 cleanupMobileMenuClones(nav);
+            } else {
+                syncMobileMenuClones();
             }
-            // Note: Mobile clones are only added once on init, not on resize
-            // They remain in DOM but are hidden by CSS on desktop
         }, 150);
     });
 
@@ -426,6 +430,7 @@ function initMobileMenu() {
     });
 
     function openMenu() {
+        syncMobileMenuClones();
         nav.classList.add('active');
         toggle.classList.add('active');
         if (userMenu) {
@@ -448,7 +453,7 @@ function initMobileMenu() {
         backdrop.id = 'menu-backdrop';
         backdrop.style.cssText = `
             position: fixed;
-            top: 64px;
+            top: ${document.body.classList.contains('header-force-mobile') && window.innerWidth > MOBILE_MAX_WIDTH ? '70px' : '64px'};
             left: 0;
             right: 0;
             bottom: 0;
@@ -501,6 +506,7 @@ function initMobileMenu() {
 
         // Restore body scroll
         document.body.style.overflow = '';
+        window.dispatchEvent(new CustomEvent('motorlink:header-menu-closed'));
         
     }
 
@@ -711,7 +717,7 @@ function initHeaderOverflowWatcher() {
 
     const FORCE_CLASS = 'header-force-mobile';
     const MOBILE_MAX_WIDTH = 768;
-    const FORCE_MAX_WIDTH = 1024;
+    const FORCE_MAX_WIDTH = 1440;
     const RELEASE_BUFFER = 32;
 
     /* containerWidthAtForce = the header container clientWidth recorded the
@@ -723,6 +729,11 @@ function initHeaderOverflowWatcher() {
     let rafId = null;
 
     const ensureMobileClones = () => {
+        if (typeof window.motorLinkSyncMobileMenuClones === 'function') {
+            window.motorLinkSyncMobileMenuClones();
+            return;
+        }
+
         if (!nav || !userMenu) return;
         if (nav.querySelector('#guestMenuMobile') || nav.querySelector('#userInfoMobile')) return;
 
@@ -804,6 +815,11 @@ function initHeaderOverflowWatcher() {
 
         /* Forced — release only when container clearly has more space than
            when we first forced.  Never toggle the class to re-measure.     */
+        if (containerWidthAtForce === 0) {
+            reevaluateSync();
+            return;
+        }
+
         if (containerWidthAtForce > 0 && available >= containerWidthAtForce + RELEASE_BUFFER) {
             document.body.classList.remove(FORCE_CLASS);
             if (wasForcedMobile) {
@@ -869,6 +885,8 @@ function initHeaderOverflowWatcher() {
         rafId = requestAnimationFrame(update);
     };
 
+    window.motorLinkEvaluateHeaderOverflow = schedule;
+
     /* Invalidate recorded width when nav/user-menu children change (dashboard
        link added on login, clones added/removed).  Run the synchronous
        re-evaluation inside the mutation microtask so any class change is
@@ -881,6 +899,7 @@ function initHeaderOverflowWatcher() {
     schedule();
     window.addEventListener('load', schedule);
     window.addEventListener('resize', schedule, { passive: true });
+    window.addEventListener('motorlink:header-menu-closed', schedule);
 
     /* ResizeObserver on the header container only — NOT its children.
        Observing children fires on every inline style mutation (e.g.
