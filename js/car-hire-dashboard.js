@@ -1,6 +1,8 @@
 class CarHireDashboard {
     constructor() {
         this.companyInfo = null;
+        this.companies = [];
+        this.selectedCompanyId = localStorage.getItem('motorlink_selected_car_hire_company_id') || '';
         this.fleet = [];
         this.rentals = [];
         this.currentUser = null;
@@ -51,12 +53,14 @@ class CarHireDashboard {
 
     async loadCompanyInfo() {
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=get_car_hire_company_info`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=get_car_hire_company_info${this.getSelectedCompanyQuery()}`, {
                 credentials: 'include'
             });
             const data = await response.json();
 
             if (data.success && data.company) {
+                this.syncCompanySelection(data.companies || [], data.selected_company_id || data.company.id);
+                this.renderCompanySwitcher();
                 this.companyInfo = data.company;
                 this.populateCompanyForm();
             }
@@ -64,11 +68,68 @@ class CarHireDashboard {
         }
     }
 
+    getSelectedCompanyQuery() {
+        return this.selectedCompanyId ? `&company_id=${encodeURIComponent(this.selectedCompanyId)}` : '';
+    }
+
+    appendSelectedCompany(formData) {
+        if (this.selectedCompanyId) {
+            formData.set('company_id', this.selectedCompanyId);
+        }
+    }
+
+    syncCompanySelection(companies, selectedId) {
+        this.companies = Array.isArray(companies) ? companies : [];
+        const ids = this.companies.map(company => String(company.id));
+        const preferredId = selectedId ? String(selectedId) : this.selectedCompanyId;
+        this.selectedCompanyId = ids.includes(preferredId) ? preferredId : (ids[0] || preferredId || '');
+
+        if (this.selectedCompanyId) {
+            localStorage.setItem('motorlink_selected_car_hire_company_id', this.selectedCompanyId);
+        }
+    }
+
+    renderCompanySwitcher() {
+        const existing = document.getElementById('carHireBusinessSwitcher');
+        if (this.companies.length <= 1) {
+            if (existing) existing.remove();
+            return;
+        }
+
+        const header = document.querySelector('.dashboard-header');
+        if (!header) return;
+
+        const switcher = existing || document.createElement('div');
+        switcher.id = 'carHireBusinessSwitcher';
+        switcher.className = 'dashboard-business-switcher';
+        switcher.innerHTML = `
+            <label for="carHireBusinessSelect">Managing</label>
+            <select id="carHireBusinessSelect" aria-label="Select car hire company">
+                ${this.companies.map(company => `
+                    <option value="${company.id}" ${String(company.id) === String(this.selectedCompanyId) ? 'selected' : ''}>${company.name || 'Car Hire'}</option>
+                `).join('')}
+            </select>
+        `;
+
+        if (!existing) header.appendChild(switcher);
+
+        const select = document.getElementById('carHireBusinessSelect');
+        if (select) {
+            select.onchange = async () => {
+                this.selectedCompanyId = select.value;
+                localStorage.setItem('motorlink_selected_car_hire_company_id', this.selectedCompanyId);
+                await this.loadCompanyInfo();
+                await this.loadFleet();
+                await this.loadRentals();
+            };
+        }
+    }
+
     populateCompanyForm() {
         if (!this.companyInfo) return;
 
         const fields = {
-            'companyNameInput': 'company_name',
+            'companyNameInput': 'business_name',
             'companyDescription': 'description',
             'companyPhone': 'phone',
             'companyWhatsApp': 'whatsapp',
@@ -158,7 +219,7 @@ class CarHireDashboard {
 
     async loadFleet() {
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=get_car_hire_fleet`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=get_car_hire_fleet${this.getSelectedCompanyQuery()}`, {
                 credentials: 'include'
             });
             const data = await response.json();
@@ -281,7 +342,7 @@ class CarHireDashboard {
 
     async loadRentals() {
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=get_car_hire_rentals`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=get_car_hire_rentals${this.getSelectedCompanyQuery()}`, {
                 credentials: 'include'
             });
             const data = await response.json();
@@ -457,6 +518,7 @@ class CarHireDashboard {
 
         const formData = new FormData(e.target);
         formData.append('action', 'update_car_hire_company');
+        this.appendSelectedCompany(formData);
 
         // Collect event_types checkboxes into JSON
         const eventCheckboxes = document.querySelectorAll('input[name="event_types[]"]:checked');
@@ -490,6 +552,7 @@ class CarHireDashboard {
 
         const formData = new FormData(e.target);
         formData.append('action', 'add_car_hire_vehicle');
+        this.appendSelectedCompany(formData);
 
         // Ensure event_suitable is always sent (checkbox sends nothing when unchecked)
         if (!formData.has('event_suitable')) {
@@ -552,6 +615,7 @@ class CarHireDashboard {
         // Upload
         const formData = new FormData();
         formData.append('action', 'upload_car_hire_logo');
+        this.appendSelectedCompany(formData);
         formData.append('logo', file);
 
         try {
@@ -634,7 +698,7 @@ class CarHireDashboard {
     async editVehicle(vehicleId) {
         try {
             // Fetch vehicle details from API
-            const response = await fetch(`${CONFIG.API_URL}?action=get_vehicle&id=${vehicleId}`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=get_vehicle&id=${vehicleId}${this.getSelectedCompanyQuery()}`, {
                 credentials: 'include'
             });
             const data = await response.json();
@@ -762,6 +826,7 @@ class CarHireDashboard {
         e.preventDefault();
         const formData = new FormData(e.target);
         formData.append('action', 'update_vehicle');
+        this.appendSelectedCompany(formData);
 
         // Ensure event_suitable is always sent
         if (!formData.has('event_suitable')) {
@@ -793,7 +858,7 @@ class CarHireDashboard {
         const newStatus = currentStatus === 'available' ? 'rented' : 'available';
 
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=update_vehicle_status&vehicle_id=${vehicleId}&status=${newStatus}`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=update_vehicle_status&vehicle_id=${vehicleId}&status=${newStatus}${this.getSelectedCompanyQuery()}`, {
                 method: 'POST',
                 credentials: 'include'
             });
@@ -817,7 +882,7 @@ class CarHireDashboard {
         }
 
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=update_vehicle_status&vehicle_id=${vehicleId}&status=maintenance`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=update_vehicle_status&vehicle_id=${vehicleId}&status=maintenance${this.getSelectedCompanyQuery()}`, {
                 method: 'POST',
                 credentials: 'include'
             });
@@ -841,7 +906,7 @@ class CarHireDashboard {
         }
 
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=delete_car_hire_vehicle&vehicle_id=${vehicleId}`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=delete_car_hire_vehicle&vehicle_id=${vehicleId}${this.getSelectedCompanyQuery()}`, {
                 method: 'POST',
                 credentials: 'include'
             });

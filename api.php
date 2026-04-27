@@ -1191,6 +1191,15 @@ if (!function_exists('getCurrentUser')) {
         ];
 
         if (!empty($user['id'])) {
+            try {
+                $db = getDB();
+                $user['business_types'] = getUserBusinessTypes($db, (int)$user['id']);
+                $user['businesses'] = getUserBusinesses($db, (int)$user['id']);
+            } catch (Exception $e) {
+                error_log('Current user business lookup warning: ' . $e->getMessage());
+                $user['business_types'] = [];
+                $user['businesses'] = [];
+            }
             return $user;
         }
 
@@ -1204,9 +1213,9 @@ if (!function_exists('getCurrentUser')) {
 
 function getBusinessTypeMap() {
     return [
-        'dealer' => ['table' => 'car_dealers', 'label' => 'Dealer'],
-        'garage' => ['table' => 'garages', 'label' => 'Garage'],
-        'car_hire' => ['table' => 'car_hire_companies', 'label' => 'Car Hire']
+        'dealer' => ['table' => 'car_dealers', 'label' => 'Dealer', 'name_field' => 'business_name', 'request_key' => 'dealer_id'],
+        'garage' => ['table' => 'garages', 'label' => 'Garage', 'name_field' => 'name', 'request_key' => 'garage_id'],
+        'car_hire' => ['table' => 'car_hire_companies', 'label' => 'Car Hire', 'name_field' => 'business_name', 'request_key' => 'company_id']
     ];
 }
 
@@ -1226,6 +1235,39 @@ function getUserBusinessTypes($db, $userId) {
     return $types;
 }
 
+function getUserBusinesses($db, $userId, $type = null) {
+    $userId = (int)$userId;
+    if ($userId <= 0) return [];
+
+    $businesses = [];
+    foreach (getBusinessTypeMap() as $businessType => $info) {
+        if ($type !== null && $businessType !== $type) {
+            continue;
+        }
+
+        $stmt = $db->prepare("
+            SELECT id, {$info['name_field']} AS name, status, location_id
+            FROM {$info['table']}
+            WHERE user_id = ?
+            AND (status IS NULL OR status != 'deleted')
+            ORDER BY FIELD(status, 'active', 'pending_approval', 'suspended'), id ASC
+        ");
+        $stmt->execute([$userId]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $businesses[] = [
+                'id' => (int)$row['id'],
+                'type' => $businessType,
+                'label' => $info['label'],
+                'name' => $row['name'] ?? $info['label'],
+                'status' => $row['status'] ?? null,
+                'location_id' => isset($row['location_id']) ? (int)$row['location_id'] : null
+            ];
+        }
+    }
+
+    return $businesses;
+}
+
 function userOwnsBusinessType($db, $userId, $type) {
     $map = getBusinessTypeMap();
     if (!isset($map[$type])) return false;
@@ -1242,6 +1284,52 @@ function requireBusinessDashboardAccess($db, $type, $label) {
     }
 
     return $user;
+}
+
+function getRequestedBusinessId($type) {
+    $map = getBusinessTypeMap();
+    $key = $map[$type]['request_key'] ?? 'business_id';
+    return (int)($_GET[$key] ?? $_POST[$key] ?? $_GET['business_id'] ?? $_POST['business_id'] ?? 0);
+}
+
+function resolveUserBusiness($db, $type, $label, $requestedId = 0) {
+    $user = requireBusinessDashboardAccess($db, $type, $label);
+    $map = getBusinessTypeMap();
+    if (!isset($map[$type])) {
+        sendError('Invalid business type', 400);
+    }
+
+    $info = $map[$type];
+    $businesses = getUserBusinesses($db, (int)$user['id'], $type);
+    $requestedId = (int)$requestedId;
+
+    if ($requestedId > 0) {
+        $stmt = $db->prepare("
+            SELECT *
+            FROM {$info['table']}
+            WHERE id = ? AND user_id = ?
+            AND (status IS NULL OR status != 'deleted')
+            LIMIT 1
+        ");
+        $stmt->execute([$requestedId, (int)$user['id']]);
+    } else {
+        $stmt = $db->prepare("
+            SELECT *
+            FROM {$info['table']}
+            WHERE user_id = ?
+            AND (status IS NULL OR status != 'deleted')
+            ORDER BY FIELD(status, 'active', 'pending_approval', 'suspended'), id ASC
+            LIMIT 1
+        ");
+        $stmt->execute([(int)$user['id']]);
+    }
+
+    $business = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$business) {
+        sendError("{$label} record not found or access denied", 404);
+    }
+
+    return [$user, $business, $businesses];
 }
 
 /**
@@ -1986,15 +2074,26 @@ function getListings($db) {
         // Seller type filter - filter by user_type (private seller vs dealer)
         if (!empty($_GET['seller_type']) && $_GET['seller_type'] !== 'all') {
             if ($_GET['seller_type'] === 'dealer') {
-                $whereConditions[] = "EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id AND u.user_type IN ('dealer', 'garage', 'car_hire'))";
+                $whereConditions[] = "(
+                    l.dealer_id IS NOT NULL
+                    OR EXISTS (SELECT 1 FROM car_dealers cd WHERE cd.user_id = l.user_id)
+                    OR EXISTS (SELECT 1 FROM garages g WHERE g.user_id = l.user_id)
+                    OR EXISTS (SELECT 1 FROM car_hire_companies chc WHERE chc.user_id = l.user_id)
+                )";
             } elseif ($_GET['seller_type'] === 'private') {
-                $whereConditions[] = "EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id AND (u.user_type = 'individual' OR u.user_type IS NULL))";
+                $whereConditions[] = "(
+                    l.dealer_id IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM car_dealers cd WHERE cd.user_id = l.user_id)
+                    AND NOT EXISTS (SELECT 1 FROM garages g WHERE g.user_id = l.user_id)
+                    AND NOT EXISTS (SELECT 1 FROM car_hire_companies chc WHERE chc.user_id = l.user_id)
+                )";
             }
         }
         
-        // Dealer filter - join with users to get dealer's user_id
+        // Dealer filter - use the listing dealer_id first, with a legacy fallback for older rows.
         if (!empty($_GET['dealer_id']) && is_numeric($_GET['dealer_id'])) {
-            $whereConditions[] = "EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id AND u.business_id = ? AND u.user_type = 'dealer')";
+            $whereConditions[] = "(l.dealer_id = ? OR (l.dealer_id IS NULL AND EXISTS (SELECT 1 FROM car_dealers cd WHERE cd.id = ? AND cd.user_id = l.user_id)))";
+            $params[] = (int)$_GET['dealer_id'];
             $params[] = (int)$_GET['dealer_id'];
         }
         
@@ -2052,7 +2151,8 @@ function getListings($db) {
                 l.premium_until,
                 m.name as make_name, mo.name as model_name, mo.body_type,
                 loc.name as location_name, loc.region,
-                u.user_type as seller_type,
+                CASE WHEN l.dealer_id IS NOT NULL THEN 'dealer' ELSE u.user_type END as seller_type,
+                cd.business_name as seller_business_name,
                 l.featured_image_id,
                 (SELECT COUNT(*) FROM car_listing_images WHERE listing_id = l.id) as image_count,
                 COALESCE(
@@ -2065,6 +2165,7 @@ function getListings($db) {
             INNER JOIN car_models mo ON l.model_id = mo.id
             INNER JOIN locations loc ON l.location_id = loc.id
             LEFT JOIN users u ON l.user_id = u.id
+            LEFT JOIN car_dealers cd ON cd.id = l.dealer_id
             WHERE {$whereClause}
             ORDER BY COALESCE(l.is_premium, 0) DESC, COALESCE(l.is_featured, 0) DESC, {$orderBy}
             LIMIT ? OFFSET ?
@@ -2161,13 +2262,16 @@ function getListing($db) {
             SELECT l.*, m.name as make_name, mo.name as model_name, mo.body_type,
                    loc.name as location_name, loc.region,
                    u.full_name as seller_name, u.phone as seller_phone,
-                   u.email as seller_email, u.user_type as seller_type,
-                   u.business_id, u.business_name as user_business_name
+                                     u.email as seller_email,
+                                     CASE WHEN l.dealer_id IS NOT NULL THEN 'dealer' ELSE u.user_type END as seller_type,
+                                     u.business_id, u.business_name as user_business_name,
+                                     cd.business_name as dealer_business_name
             FROM car_listings l
             INNER JOIN car_makes m ON l.make_id = m.id
             INNER JOIN car_models mo ON l.model_id = mo.id
             INNER JOIN locations loc ON l.location_id = loc.id
             LEFT JOIN users u ON l.user_id = u.id
+            LEFT JOIN car_dealers cd ON cd.id = l.dealer_id
             WHERE l.id = ? AND l.status = 'active' AND l.approval_status = 'approved'
         ");
         $stmt->execute([$id]);
@@ -2177,11 +2281,11 @@ function getListing($db) {
             sendError('Listing not found', 404);
         }
 
-        // Try to get business info if user has business_id
-        $listing['business_name'] = null;
-        $listing['dealer_id'] = null;
+        $listingDealerId = !empty($listing['dealer_id']) ? (int)$listing['dealer_id'] : 0;
+        $listing['business_name'] = $listing['dealer_business_name'] ?? null;
+        $listing['dealer_id'] = $listingDealerId ?: null;
 
-        if (!empty($listing['business_id']) && !empty($listing['seller_type'])) {
+        if (empty($listing['business_name']) && !empty($listing['business_id']) && !empty($listing['seller_type'])) {
             try {
                 if ($listing['seller_type'] === 'dealer') {
                     $bizStmt = $db->prepare("SELECT id, business_name FROM car_dealers WHERE id = ?");
@@ -2588,8 +2692,7 @@ function getDealers($db) {
             SELECT d.*, loc.name as location_name, loc.region, loc.district,
                    (SELECT COUNT(*) 
                     FROM car_listings cl 
-                    INNER JOIN users u ON cl.user_id = u.id 
-                    WHERE u.business_id = d.id AND u.user_type = 'dealer' 
+                    WHERE (cl.dealer_id = d.id OR (cl.dealer_id IS NULL AND cl.user_id = d.user_id))
                     AND cl.status = 'active' AND cl.approval_status = 'approved') as total_cars,
                    (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
                     WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as avg_rating,
@@ -2625,9 +2728,9 @@ function getDealerShowroom($db) {
     }
     
     try {
-        // Get dealer info and associated user_id
+        // Get dealer info and associated owner user_id
         $stmt = $db->prepare("
-            SELECT d.*, loc.name as location_name, loc.region, u.id as user_id
+            SELECT d.*, loc.name as location_name, loc.region, COALESCE(d.user_id, u.id) as owner_user_id
             FROM car_dealers d
             INNER JOIN locations loc ON d.location_id = loc.id
             LEFT JOIN users u ON u.business_id = d.id AND u.user_type = 'dealer'
@@ -2649,10 +2752,11 @@ function getDealerShowroom($db) {
             FROM car_listings l
             INNER JOIN car_makes m ON l.make_id = m.id
             INNER JOIN car_models mo ON l.model_id = mo.id
-            WHERE l.user_id = ? AND l.status = 'active' AND l.approval_status = 'approved'
+            WHERE (l.dealer_id = ? OR (l.dealer_id IS NULL AND l.user_id = ?))
+              AND l.status = 'active' AND l.approval_status = 'approved'
             ORDER BY l.listing_type DESC, l.created_at DESC
         ");
-        $stmt->execute([$dealer['user_id']]);
+        $stmt->execute([(int)$dealerId, (int)($dealer['owner_user_id'] ?? 0)]);
         $cars = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $uploadBase = rtrim(getRuntimeBaseUrl(), '/') . '/uploads/';
@@ -3477,15 +3581,12 @@ function handleLogin($db) {
             $updateStmt = $db->prepare("UPDATE admin_users SET last_login = NOW() WHERE id = ?");
             $updateStmt->execute([$admin['id']]);
             
+            $sessionUser = getCurrentUser(false);
+            $sessionUser['role'] = $admin['role'] ?? 'admin';
+
             sendSuccess([
                 'message' => 'Admin login successful',
-                'user' => [
-                    'id' => $admin['id'],
-                    'name' => $admin['full_name'],
-                    'email' => $admin['email'],
-                    'type' => 'admin',
-                    'role' => $admin['role'] ?? 'admin'
-                ]
+                'user' => $sessionUser
             ]);
             return;
         }
@@ -3523,12 +3624,7 @@ function handleLogin($db) {
             
             sendSuccess([
                 'message' => 'Login successful',
-                'user' => [
-                    'id' => $user['id'],
-                    'name' => $user['full_name'],
-                    'email' => $user['email'],
-                    'type' => $user['user_type']
-                ]
+                'user' => getCurrentUser(false)
             ]);
         } else {
             recordRateLimitFailure($db, 'login', $loginIdentifierHash, $loginRateMaxAttempts, $loginRateWindowSeconds, $loginRateBlockSeconds);
@@ -5931,8 +6027,13 @@ function businessReviewTargetExists($db, $businessType, $businessId) {
 }
 
 function userOwnsBusinessReviewTarget($db, $userId, $businessType, $businessId) {
-    $stmt = $db->prepare("SELECT id FROM users WHERE id = ? AND user_type = ? AND business_id = ? LIMIT 1");
-    $stmt->execute([(int)$userId, $businessType, (int)$businessId]);
+    $map = getBusinessTypeMap();
+    if (!isset($map[$businessType])) {
+        return false;
+    }
+
+    $stmt = $db->prepare("SELECT id FROM {$map[$businessType]['table']} WHERE id = ? AND user_id = ? LIMIT 1");
+    $stmt->execute([(int)$businessId, (int)$userId]);
     return (bool)$stmt->fetchColumn();
 }
 
@@ -7259,13 +7360,12 @@ function updateAutoReplySettings($db) {
  * Get dealer information for logged-in dealer
  */
 function getDealerInfo($db) {
-    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
+    [$user, $selectedDealer, $dealers] = resolveUserBusiness($db, 'dealer', 'Dealer', getRequestedBusinessId('dealer'));
 
     try {
         // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
         applyRuntimeSchemaChange($db, "ALTER TABLE car_dealers ADD COLUMN user_id INT DEFAULT NULL");
 
-        // Try to find dealer by user_id or email, include user's full_name
         $stmt = $db->prepare("
             SELECT cd.*,
                    loc.name as location_name,
@@ -7274,56 +7374,17 @@ function getDealerInfo($db) {
             FROM car_dealers cd
             LEFT JOIN locations loc ON cd.location_id = loc.id
             LEFT JOIN users u ON cd.user_id = u.id
-            WHERE cd.user_id = ? OR cd.email = ?
+            WHERE cd.id = ? AND cd.user_id = ?
             LIMIT 1
         ");
-        $stmt->execute([$user['id'], $user['email']]);
+        $stmt->execute([(int)$selectedDealer['id'], (int)$user['id']]);
         $dealer = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($dealer && !$dealer['user_id']) {
-            // Link existing dealer to user
-            $stmt = $db->prepare("UPDATE car_dealers SET user_id = ? WHERE id = ?");
-            $stmt->execute([$user['id'], $dealer['id']]);
-            $dealer['user_id'] = $user['id'];
-        }
-
-        if (!$dealer) {
-            // Get default location_id
-            $stmt = $db->prepare("SELECT id FROM locations LIMIT 1");
-            $stmt->execute();
-            $location = $stmt->fetch(PDO::FETCH_ASSOC);
-            $locationId = $location ? $location['id'] : 1;
-
-            // Create dealer record
-            $stmt = $db->prepare("
-                INSERT INTO car_dealers (user_id, business_name, owner_name, email, phone, address, location_id, status)
-                VALUES (?, ?, ?, ?, ?, '', ?, 'active')
-            ");
-            $stmt->execute([
-                $user['id'],
-                $user['name'] . "'s Showroom",
-                $user['name'],
-                $user['email'],
-                '',
-                $locationId
-            ]);
-
-            // Fetch the newly created dealer with user's full_name
-            $stmt = $db->prepare("
-                SELECT cd.*,
-                       loc.name as location_name,
-                       loc.region,
-                       u.full_name as user_full_name
-                FROM car_dealers cd
-                LEFT JOIN locations loc ON cd.location_id = loc.id
-                LEFT JOIN users u ON cd.user_id = u.id
-                WHERE cd.user_id = ?
-            ");
-            $stmt->execute([$user['id']]);
-            $dealer = $stmt->fetch(PDO::FETCH_ASSOC);
-        }
-
-        sendSuccess(['dealer' => $dealer]);
+        sendSuccess([
+            'dealer' => $dealer,
+            'dealers' => $dealers,
+            'selected_dealer_id' => (int)$selectedDealer['id']
+        ]);
     } catch (Exception $e) {
         error_log("getDealerInfo error: " . $e->getMessage());
         sendError('Failed to load dealer information', 500);
@@ -7338,7 +7399,7 @@ function updateDealerShowroom($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
+    [$user, $dealer] = resolveUserBusiness($db, 'dealer', 'Dealer', getRequestedBusinessId('dealer'));
 
     try {
         $showroomName = trim($_POST['showroom_name'] ?? '');
@@ -7387,9 +7448,10 @@ function updateDealerShowroom($db) {
         }
 
         $setParts[] = "updated_at = NOW()";
-        $params[] = $user['id'];
+        $params[] = (int)$dealer['id'];
+        $params[] = (int)$user['id'];
 
-        $sql = "UPDATE car_dealers SET " . implode(', ', $setParts) . " WHERE user_id = ?";
+        $sql = "UPDATE car_dealers SET " . implode(', ', $setParts) . " WHERE id = ? AND user_id = ?";
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
 
@@ -7408,7 +7470,7 @@ function updateDealerBusiness($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
+    [$user, $dealer] = resolveUserBusiness($db, 'dealer', 'Dealer', getRequestedBusinessId('dealer'));
 
     try {
         $businessName = trim($_POST['business_name'] ?? '');
@@ -7428,9 +7490,10 @@ function updateDealerBusiness($db) {
         $setParts[] = "{$yearsField} = ?";
         $params[] = $yearsInBusiness;
         $setParts[] = 'updated_at = NOW()';
-        $params[] = $user['id'];
+        $params[] = (int)$dealer['id'];
+        $params[] = (int)$user['id'];
 
-        $sql = "UPDATE car_dealers SET " . implode(', ', $setParts) . " WHERE user_id = ?";
+        $sql = "UPDATE car_dealers SET " . implode(', ', $setParts) . " WHERE id = ? AND user_id = ?";
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
 
@@ -7445,7 +7508,7 @@ function updateDealerBusiness($db) {
  * Get dealer inventory (all cars listed by this dealer)
  */
 function getDealerInventory($db) {
-    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
+    [$user, $dealer] = resolveUserBusiness($db, 'dealer', 'Dealer', getRequestedBusinessId('dealer'));
 
     try {
         // Get all listings for this dealer user by user_id
@@ -7458,9 +7521,10 @@ function getDealerInventory($db) {
             LEFT JOIN car_makes m ON cl.make_id = m.id
             LEFT JOIN car_models mo ON cl.model_id = mo.id
             WHERE cl.user_id = ?
+            AND (cl.dealer_id = ? OR cl.dealer_id IS NULL)
             ORDER BY cl.created_at DESC
         ");
-        $stmt->execute([$user['id']]);
+        $stmt->execute([(int)$user['id'], (int)$dealer['id']]);
         $cars = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         sendSuccess(['cars' => $cars]);
@@ -7474,7 +7538,7 @@ function getDealerInventory($db) {
  * Get dealer recent activity
  */
 function getDealerRecentActivity($db) {
-    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
+    [$user, $dealer] = resolveUserBusiness($db, 'dealer', 'Dealer', getRequestedBusinessId('dealer'));
 
     try {
         $activities = [];
@@ -7492,10 +7556,11 @@ function getDealerRecentActivity($db) {
             LEFT JOIN car_makes m ON cl.make_id = m.id
             LEFT JOIN car_models mo ON cl.model_id = mo.id
             WHERE cl.user_id = ?
+            AND (cl.dealer_id = ? OR cl.dealer_id IS NULL)
             ORDER BY cl.created_at DESC
             LIMIT 10
         ");
-        $stmt->execute([$user['id']]);
+        $stmt->execute([(int)$user['id'], (int)$dealer['id']]);
         $listings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         // Format activities for frontend display
@@ -7545,18 +7610,9 @@ function dealerAddCar($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
+    [$user, $dealer] = resolveUserBusiness($db, 'dealer', 'Dealer', getRequestedBusinessId('dealer'));
 
     try {
-        // Get dealer profile info used for listing defaults.
-        $stmt = $db->prepare("SELECT id, location_id FROM car_dealers WHERE user_id = ?");
-        $stmt->execute([$user['id']]);
-        $dealer = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$dealer) {
-            sendError('Dealer record not found', 404);
-        }
-
         $make = trim($_POST['make'] ?? '');
         $model = trim($_POST['model'] ?? '');
         $makeId = intval($_POST['make_id'] ?? 0);
@@ -7761,7 +7817,7 @@ function uploadDealerLogo($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
+    [$user, $dealer] = resolveUserBusiness($db, 'dealer', 'Dealer', getRequestedBusinessId('dealer'));
 
     if (empty($_FILES['logo'])) {
         sendError('No file uploaded', 400);
@@ -7781,15 +7837,6 @@ function uploadDealerLogo($db) {
     }
 
     try {
-        // Get dealer ID
-        $stmt = $db->prepare("SELECT id, logo_url FROM car_dealers WHERE user_id = ?");
-        $stmt->execute([$user['id']]);
-        $dealer = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$dealer) {
-            sendError('Dealer record not found', 404);
-        }
-
         // Create upload directory
         $uploadDir = UPLOAD_PATH . 'dealer_logos/';
         if (!file_exists($uploadDir)) {
@@ -7872,67 +7919,29 @@ function updateNotificationPreferences($db) {
  * Get garage information for logged-in garage owner
  */
 function getGarageInfo($db) {
-    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
+    [$user, $selectedGarage, $garages] = resolveUserBusiness($db, 'garage', 'Garage', getRequestedBusinessId('garage'));
 
     try {
         // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
         applyRuntimeSchemaChange($db, "ALTER TABLE garages ADD COLUMN user_id INT DEFAULT NULL");
 
-        // Try to find garage by user_id or email
         $stmt = $db->prepare("
             SELECT g.*,
                    loc.name as location_name,
                    loc.region
             FROM garages g
             LEFT JOIN locations loc ON g.location_id = loc.id
-            WHERE g.user_id = ? OR g.email = ?
+            WHERE g.id = ? AND g.user_id = ?
             LIMIT 1
         ");
-        $stmt->execute([$user['id'], $user['email']]);
+        $stmt->execute([(int)$selectedGarage['id'], (int)$user['id']]);
         $garage = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($garage && !$garage['user_id']) {
-            // Link existing garage to user
-            $stmt = $db->prepare("UPDATE garages SET user_id = ? WHERE id = ?");
-            $stmt->execute([$user['id'], $garage['id']]);
-            $garage['user_id'] = $user['id'];
-        }
-
-        if (!$garage) {
-            // Get default location_id
-            $stmt = $db->prepare("SELECT id FROM locations LIMIT 1");
-            $stmt->execute();
-            $location = $stmt->fetch(PDO::FETCH_ASSOC);
-            $locationId = $location ? $location['id'] : 1;
-
-            // Create garage record
-            $stmt = $db->prepare("
-                INSERT INTO garages (user_id, name, owner_name, email, phone, address, location_id)
-                VALUES (?, ?, ?, ?, ?, '', ?)
-            ");
-            $stmt->execute([
-                $user['id'],
-                $user['name'] . "'s Garage",
-                $user['name'],
-                $user['email'],
-                '',
-                $locationId
-            ]);
-
-            // Fetch the newly created garage
-            $stmt = $db->prepare("
-                SELECT g.*,
-                       loc.name as location_name,
-                       loc.region
-                FROM garages g
-                LEFT JOIN locations loc ON g.location_id = loc.id
-                WHERE g.user_id = ?
-            ");
-            $stmt->execute([$user['id']]);
-            $garage = $stmt->fetch(PDO::FETCH_ASSOC);
-        }
-
-        sendSuccess(['garage' => $garage]);
+        sendSuccess([
+            'garage' => $garage,
+            'garages' => $garages,
+            'selected_garage_id' => (int)$selectedGarage['id']
+        ]);
     } catch (Exception $e) {
         error_log("getGarageInfo error: " . $e->getMessage());
         sendError('Failed to load garage information', 500);
@@ -7947,7 +7956,7 @@ function updateGarageInfo($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
+    [$user, $garage] = resolveUserBusiness($db, 'garage', 'Garage', getRequestedBusinessId('garage'));
 
     try {
         $garageName = trim($_POST['garage_name'] ?? '');
@@ -7991,9 +8000,10 @@ function updateGarageInfo($db) {
         }
 
         $setParts[] = "updated_at = NOW()";
-        $params[] = $user['id'];
+        $params[] = (int)$garage['id'];
+        $params[] = (int)$user['id'];
 
-        $sql = "UPDATE garages SET " . implode(', ', $setParts) . " WHERE user_id = ?";
+        $sql = "UPDATE garages SET " . implode(', ', $setParts) . " WHERE id = ? AND user_id = ?";
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
 
@@ -8012,7 +8022,7 @@ function updateGarageHours($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
+    [$user, $garage] = resolveUserBusiness($db, 'garage', 'Garage', getRequestedBusinessId('garage'));
 
     try {
         $operatingHours = trim($_POST['operating_hours'] ?? '');
@@ -8021,10 +8031,10 @@ function updateGarageHours($db) {
             UPDATE garages
             SET operating_hours = ?,
                 updated_at = NOW()
-            WHERE user_id = ?
+            WHERE id = ? AND user_id = ?
         ");
 
-        $stmt->execute([$operatingHours, $user['id']]);
+        $stmt->execute([$operatingHours, (int)$garage['id'], (int)$user['id']]);
 
         sendSuccess(['message' => 'Operating hours updated successfully']);
     } catch (Exception $e) {
@@ -8041,7 +8051,7 @@ function updateGarageServices($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
+    [$user, $garage] = resolveUserBusiness($db, 'garage', 'Garage', getRequestedBusinessId('garage'));
 
     try {
         $servicesInput = $_POST['services'] ?? [];
@@ -8070,10 +8080,10 @@ function updateGarageServices($db) {
             UPDATE garages
             SET services = ?,
                 updated_at = NOW()
-            WHERE user_id = ?
+            WHERE id = ? AND user_id = ?
         ");
 
-        $stmt->execute([$services, $user['id']]);
+        $stmt->execute([$services, (int)$garage['id'], (int)$user['id']]);
 
         sendSuccess(['message' => 'Services updated successfully']);
     } catch (Exception $e) {
@@ -8086,19 +8096,9 @@ function updateGarageServices($db) {
  * Get garage reviews
  */
 function getGarageReviews($db) {
-    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
+    [$user, $garage] = resolveUserBusiness($db, 'garage', 'Garage', getRequestedBusinessId('garage'));
 
     try {
-        // Get garage ID
-        $stmt = $db->prepare("SELECT id FROM garages WHERE user_id = ?");
-        $stmt->execute([$user['id']]);
-        $garage = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$garage) {
-            sendSuccess(['reviews' => []]);
-            return;
-        }
-
         // Try to create garage_reviews table if it doesn't exist
         try {
             $db->exec("
@@ -8144,7 +8144,7 @@ function uploadGarageLogo($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
+    [$user, $garage] = resolveUserBusiness($db, 'garage', 'Garage', getRequestedBusinessId('garage'));
 
     if (empty($_FILES['logo'])) {
         sendError('No file uploaded', 400);
@@ -8169,15 +8169,6 @@ function uploadGarageLogo($db) {
             $db->exec("ALTER TABLE garages ADD COLUMN logo_url VARCHAR(255) DEFAULT NULL");
         } catch (Exception $e) {
             // Ignore if column already exists.
-        }
-
-        // Get garage ID
-        $stmt = $db->prepare("SELECT id, logo_url FROM garages WHERE user_id = ?");
-        $stmt->execute([$user['id']]);
-        $garage = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$garage) {
-            sendError('Garage record not found', 404);
         }
 
         // Create upload directory
@@ -8220,67 +8211,29 @@ function uploadGarageLogo($db) {
  * Get car hire company information for logged-in owner
  */
 function getCarHireCompanyInfo($db) {
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $selectedCompany, $companies] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     try {
         // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
         applyRuntimeSchemaChange($db, "ALTER TABLE car_hire_companies ADD COLUMN user_id INT DEFAULT NULL");
 
-        // Try to find company by user_id or email
         $stmt = $db->prepare("
             SELECT chc.*,
                    loc.name as location_name,
                    loc.region
             FROM car_hire_companies chc
             LEFT JOIN locations loc ON chc.location_id = loc.id
-            WHERE chc.user_id = ? OR chc.email = ?
+            WHERE chc.id = ? AND chc.user_id = ?
             LIMIT 1
         ");
-        $stmt->execute([$user['id'], $user['email']]);
+        $stmt->execute([(int)$selectedCompany['id'], (int)$user['id']]);
         $company = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($company && !$company['user_id']) {
-            // Link existing company to user
-            $stmt = $db->prepare("UPDATE car_hire_companies SET user_id = ? WHERE id = ?");
-            $stmt->execute([$user['id'], $company['id']]);
-            $company['user_id'] = $user['id'];
-        }
-
-        if (!$company) {
-            // Get default location_id
-            $stmt = $db->prepare("SELECT id FROM locations LIMIT 1");
-            $stmt->execute();
-            $location = $stmt->fetch(PDO::FETCH_ASSOC);
-            $locationId = $location ? $location['id'] : 1;
-
-            // Create company record
-            $stmt = $db->prepare("
-                INSERT INTO car_hire_companies (user_id, business_name, owner_name, email, phone, address, location_id, status)
-                VALUES (?, ?, ?, ?, ?, '', ?, 'active')
-            ");
-            $stmt->execute([
-                $user['id'],
-                $user['name'] . "'s Car Hire",
-                $user['name'],
-                $user['email'],
-                '',
-                $locationId
-            ]);
-
-            // Fetch the newly created company
-            $stmt = $db->prepare("
-                SELECT chc.*,
-                       loc.name as location_name,
-                       loc.region
-                FROM car_hire_companies chc
-                LEFT JOIN locations loc ON chc.location_id = loc.id
-                WHERE chc.user_id = ?
-            ");
-            $stmt->execute([$user['id']]);
-            $company = $stmt->fetch(PDO::FETCH_ASSOC);
-        }
-
-        sendSuccess(['company' => $company]);
+        sendSuccess([
+            'company' => $company,
+            'companies' => $companies,
+            'selected_company_id' => (int)$selectedCompany['id']
+        ]);
     } catch (Exception $e) {
         error_log("getCarHireCompanyInfo error: " . $e->getMessage());
         sendError('Failed to load company information', 500);
@@ -8295,7 +8248,7 @@ function updateCarHireCompany($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     try {
         $companyName = trim($_POST['company_name'] ?? '');
@@ -8364,9 +8317,10 @@ function updateCarHireCompany($db) {
         }
 
         $setParts[] = "updated_at = NOW()";
-        $params[] = $user['id'];
+        $params[] = (int)$company['id'];
+        $params[] = (int)$user['id'];
 
-        $sql = "UPDATE car_hire_companies SET " . implode(', ', $setParts) . " WHERE user_id = ?";
+        $sql = "UPDATE car_hire_companies SET " . implode(', ', $setParts) . " WHERE id = ? AND user_id = ?";
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
 
@@ -8381,19 +8335,9 @@ function updateCarHireCompany($db) {
  * Get car hire fleet for management
  */
 function getCarHireFleetManagement($db) {
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     try {
-        // Get company profile details for fleet denormalized fields.
-        $stmt = $db->prepare("SELECT id, business_name, phone, email, location_id FROM car_hire_companies WHERE user_id = ?");
-        $stmt->execute([$user['id']]);
-        $company = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$company) {
-            sendSuccess(['fleet' => []]);
-            return;
-        }
-
         $stmt = $db->prepare("
             SELECT chf.*,
                    m.name as make_name,
@@ -8429,18 +8373,9 @@ function addCarHireVehicle($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     try {
-        // Get company ID
-        $stmt = $db->prepare("SELECT id FROM car_hire_companies WHERE user_id = ?");
-        $stmt->execute([$user['id']]);
-        $company = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$company) {
-            sendError('Company record not found', 404);
-        }
-
         $makeId = intval($_POST['make_id'] ?? 0);
         $modelId = intval($_POST['model_id'] ?? 0);
         $year = intval($_POST['year'] ?? 0);
@@ -8576,7 +8511,7 @@ function updateVehicleStatus($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     $vehicleId = intval($_GET['vehicle_id'] ?? $_POST['vehicle_id'] ?? 0);
     $status = trim($_GET['status'] ?? $_POST['status'] ?? '');
@@ -8590,20 +8525,6 @@ function updateVehicleStatus($db) {
     }
 
     try {
-        // First, get the user's car hire company
-        $companyStmt = $db->prepare("
-            SELECT id 
-            FROM car_hire_companies 
-            WHERE user_id = ? OR email = ?
-            LIMIT 1
-        ");
-        $companyStmt->execute([$user['id'], $user['email']]);
-        $company = $companyStmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$company) {
-            sendError('Car hire company not found for this user', 404);
-        }
-
         // Verify ownership - check if vehicle belongs to this company
         $stmt = $db->prepare("
             SELECT id
@@ -8632,7 +8553,7 @@ function updateVehicleStatus($db) {
  * Delete vehicle from fleet
  */
 function deleteCarHireVehicle($db) {
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     $vehicleId = intval($_GET['vehicle_id'] ?? $_POST['vehicle_id'] ?? 0);
 
@@ -8646,9 +8567,9 @@ function deleteCarHireVehicle($db) {
             SELECT chf.id, chf.image
             FROM car_hire_fleet chf
             INNER JOIN car_hire_companies chc ON chf.company_id = chc.id
-            WHERE chf.id = ? AND chc.user_id = ?
+            WHERE chf.id = ? AND chf.company_id = ? AND chc.user_id = ?
         ");
-        $stmt->execute([$vehicleId, $user['id']]);
+        $stmt->execute([$vehicleId, (int)$company['id'], (int)$user['id']]);
         $vehicle = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$vehicle) {
@@ -8685,19 +8606,9 @@ function deleteCarHireVehicle($db) {
  * Get car hire rentals
  */
 function getCarHireRentals($db) {
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     try {
-        // Get company ID
-        $stmt = $db->prepare("SELECT id FROM car_hire_companies WHERE user_id = ?");
-        $stmt->execute([$user['id']]);
-        $company = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$company) {
-            sendSuccess(['rentals' => []]);
-            return;
-        }
-
         // For now, return empty array as rental system is not fully implemented
         // This would connect to a bookings/rentals table when available
         sendSuccess(['rentals' => []]);
@@ -8732,7 +8643,7 @@ function uploadCarHireLogo($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     if (empty($_FILES['logo'])) {
         sendError('No file uploaded', 400);
@@ -8757,15 +8668,6 @@ function uploadCarHireLogo($db) {
             $db->exec("ALTER TABLE car_hire_companies ADD COLUMN logo_url VARCHAR(255) DEFAULT NULL");
         } catch (Exception $e) {
             // Ignore if column already exists.
-        }
-
-        // Get company ID
-        $stmt = $db->prepare("SELECT id, logo_url FROM car_hire_companies WHERE user_id = ?");
-        $stmt->execute([$user['id']]);
-        $company = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$company) {
-            sendError('Company record not found', 404);
         }
 
         // Create upload directory
@@ -9038,18 +8940,9 @@ function getVehicleForEdit($db) {
         sendError('Valid vehicle ID required', 400);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     try {
-        // Get company ID
-        $companyStmt = $db->prepare("SELECT id FROM car_hire_companies WHERE user_id = ?");
-        $companyStmt->execute([$user['id']]);
-        $company = $companyStmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$company) {
-            sendError('Car hire company not found', 404);
-        }
-
         // Fetch vehicle - verify ownership
         $stmt = $db->prepare("
             SELECT chf.*, m.name as make_name, mo.name as model_name
@@ -9099,7 +8992,7 @@ function updateVehicle($db) {
         sendError('POST method required', 405);
     }
 
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     $vehicleId = $_POST['vehicle_id'] ?? '';
 
@@ -9108,15 +9001,6 @@ function updateVehicle($db) {
     }
 
     try {
-        // Get company ID and verify ownership
-        $companyStmt = $db->prepare("SELECT id FROM car_hire_companies WHERE user_id = ?");
-        $companyStmt->execute([$user['id']]);
-        $company = $companyStmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$company) {
-            sendError('Car hire company not found', 404);
-        }
-
         // Verify vehicle ownership
         $vehicleStmt = $db->prepare("SELECT id FROM car_hire_fleet WHERE id = ? AND company_id = ?");
         $vehicleStmt->execute([$vehicleId, $company['id']]);

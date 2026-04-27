@@ -1,6 +1,8 @@
 class GarageDashboard {
     constructor() {
         this.garageInfo = null;
+        this.garages = [];
+        this.selectedGarageId = localStorage.getItem('motorlink_selected_garage_id') || '';
         this.services = [];
         this.currentUser = null;
         this.init();
@@ -47,12 +49,14 @@ class GarageDashboard {
 
     async loadGarageInfo() {
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=get_garage_info`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=get_garage_info${this.getSelectedGarageQuery()}`, {
                 credentials: 'include'
             });
             const data = await response.json();
 
             if (data.success && data.garage) {
+                this.syncGarageSelection(data.garages || [], data.selected_garage_id || data.garage.id);
+                this.renderGarageSwitcher();
                 this.garageInfo = data.garage;
                 this.populateGarageForm();
                 this.populateHoursForm();
@@ -60,6 +64,61 @@ class GarageDashboard {
                 this.updateStats();
             }
         } catch (error) {
+        }
+    }
+
+    getSelectedGarageQuery() {
+        return this.selectedGarageId ? `&garage_id=${encodeURIComponent(this.selectedGarageId)}` : '';
+    }
+
+    appendSelectedGarage(formData) {
+        if (this.selectedGarageId) {
+            formData.set('garage_id', this.selectedGarageId);
+        }
+    }
+
+    syncGarageSelection(garages, selectedId) {
+        this.garages = Array.isArray(garages) ? garages : [];
+        const ids = this.garages.map(garage => String(garage.id));
+        const preferredId = selectedId ? String(selectedId) : this.selectedGarageId;
+        this.selectedGarageId = ids.includes(preferredId) ? preferredId : (ids[0] || preferredId || '');
+
+        if (this.selectedGarageId) {
+            localStorage.setItem('motorlink_selected_garage_id', this.selectedGarageId);
+        }
+    }
+
+    renderGarageSwitcher() {
+        const existing = document.getElementById('garageBusinessSwitcher');
+        if (this.garages.length <= 1) {
+            if (existing) existing.remove();
+            return;
+        }
+
+        const header = document.querySelector('.dashboard-header');
+        if (!header) return;
+
+        const switcher = existing || document.createElement('div');
+        switcher.id = 'garageBusinessSwitcher';
+        switcher.className = 'dashboard-business-switcher';
+        switcher.innerHTML = `
+            <label for="garageBusinessSelect">Managing</label>
+            <select id="garageBusinessSelect" aria-label="Select garage business">
+                ${this.garages.map(garage => `
+                    <option value="${garage.id}" ${String(garage.id) === String(this.selectedGarageId) ? 'selected' : ''}>${garage.name || 'Garage'}</option>
+                `).join('')}
+            </select>
+        `;
+
+        if (!existing) header.appendChild(switcher);
+
+        const select = document.getElementById('garageBusinessSelect');
+        if (select) {
+            select.onchange = async () => {
+                this.selectedGarageId = select.value;
+                localStorage.setItem('motorlink_selected_garage_id', this.selectedGarageId);
+                await this.loadGarageInfo();
+            };
         }
     }
 
@@ -230,6 +289,7 @@ class GarageDashboard {
 
         const formData = new FormData(e.target);
         formData.append('action', 'update_garage_info');
+        this.appendSelectedGarage(formData);
 
         try {
             const response = await fetch(CONFIG.API_URL, {
@@ -273,6 +333,7 @@ class GarageDashboard {
 
         const submitData = new FormData();
         submitData.append('action', 'update_garage_hours');
+        this.appendSelectedGarage(submitData);
         submitData.append('operating_hours', JSON.stringify(hours));
 
         try {
@@ -307,6 +368,7 @@ class GarageDashboard {
 
         const formData = new FormData();
         formData.append('action', 'update_garage_services');
+        this.appendSelectedGarage(formData);
         formData.append('services', JSON.stringify(allServices));
 
         try {
@@ -399,6 +461,7 @@ class GarageDashboard {
         // Upload
         const formData = new FormData();
         formData.append('action', 'upload_garage_logo');
+        this.appendSelectedGarage(formData);
         formData.append('logo', file);
 
         try {

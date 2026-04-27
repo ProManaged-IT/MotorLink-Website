@@ -1,6 +1,8 @@
 class DealerDashboard {
     constructor() {
         this.dealerInfo = null;
+        this.dealers = [];
+        this.selectedDealerId = localStorage.getItem('motorlink_selected_dealer_id') || '';
         this.inventory = [];
         this.currentUser = null;
         this.init();
@@ -49,17 +51,76 @@ class DealerDashboard {
 
     async loadDealerInfo() {
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=get_dealer_info`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=get_dealer_info${this.getSelectedDealerQuery()}`, {
                 credentials: 'include'
             });
             const data = await response.json();
 
             if (data.success && data.dealer) {
+                this.syncDealerSelection(data.dealers || [], data.selected_dealer_id || data.dealer.id);
+                this.renderDealerSwitcher();
                 this.dealerInfo = data.dealer;
                 this.populateShowroomForm();
                 this.populateBusinessForm();
             }
         } catch (error) {
+        }
+    }
+
+    getSelectedDealerQuery() {
+        return this.selectedDealerId ? `&dealer_id=${encodeURIComponent(this.selectedDealerId)}` : '';
+    }
+
+    appendSelectedDealer(formData) {
+        if (this.selectedDealerId) {
+            formData.set('dealer_id', this.selectedDealerId);
+        }
+    }
+
+    syncDealerSelection(dealers, selectedId) {
+        this.dealers = Array.isArray(dealers) ? dealers : [];
+        const ids = this.dealers.map(dealer => String(dealer.id));
+        const preferredId = selectedId ? String(selectedId) : this.selectedDealerId;
+        this.selectedDealerId = ids.includes(preferredId) ? preferredId : (ids[0] || preferredId || '');
+
+        if (this.selectedDealerId) {
+            localStorage.setItem('motorlink_selected_dealer_id', this.selectedDealerId);
+        }
+    }
+
+    renderDealerSwitcher() {
+        const existing = document.getElementById('dealerBusinessSwitcher');
+        if (this.dealers.length <= 1) {
+            if (existing) existing.remove();
+            return;
+        }
+
+        const header = document.querySelector('.dashboard-header');
+        if (!header) return;
+
+        const switcher = existing || document.createElement('div');
+        switcher.id = 'dealerBusinessSwitcher';
+        switcher.className = 'dashboard-business-switcher';
+        switcher.innerHTML = `
+            <label for="dealerBusinessSelect">Managing</label>
+            <select id="dealerBusinessSelect" aria-label="Select dealer business">
+                ${this.dealers.map(dealer => `
+                    <option value="${dealer.id}" ${String(dealer.id) === String(this.selectedDealerId) ? 'selected' : ''}>${dealer.name || 'Dealer'}</option>
+                `).join('')}
+            </select>
+        `;
+
+        if (!existing) header.appendChild(switcher);
+
+        const select = document.getElementById('dealerBusinessSelect');
+        if (select) {
+            select.onchange = async () => {
+                this.selectedDealerId = select.value;
+                localStorage.setItem('motorlink_selected_dealer_id', this.selectedDealerId);
+                await this.loadDealerInfo();
+                await this.loadInventory();
+                await this.loadRecentActivity();
+            };
         }
     }
 
@@ -215,7 +276,7 @@ class DealerDashboard {
 
     async loadInventory() {
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=dealer_inventory`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=dealer_inventory${this.getSelectedDealerQuery()}`, {
                 credentials: 'include'
             });
             const data = await response.json();
@@ -373,7 +434,7 @@ class DealerDashboard {
 
     async loadRecentActivity() {
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=dealer_recent_activity`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=dealer_recent_activity${this.getSelectedDealerQuery()}`, {
                 credentials: 'include'
             });
             const data = await response.json();
@@ -543,6 +604,7 @@ class DealerDashboard {
 
         const formData = new FormData(e.target);
         formData.append('action', 'update_dealer_showroom');
+        this.appendSelectedDealer(formData);
 
         // Format operating hours from time pickers
         const weekdayHours = this.formatOperatingHours('weekdayOpen', 'weekdayClose');
@@ -606,6 +668,7 @@ class DealerDashboard {
 
         const formData = new FormData(e.target);
         formData.append('action', 'update_dealer_business');
+        this.appendSelectedDealer(formData);
 
         try {
             const response = await fetch(CONFIG.API_URL, {
@@ -632,6 +695,7 @@ class DealerDashboard {
 
         const formData = new FormData(e.target);
         formData.append('action', 'dealer_add_car');
+        this.appendSelectedDealer(formData);
 
         // Get car images
         const imageFiles = document.getElementById('carImages').files;
@@ -689,6 +753,7 @@ class DealerDashboard {
         // Upload
         const formData = new FormData();
         formData.append('action', 'upload_dealer_logo');
+        this.appendSelectedDealer(formData);
         formData.append('logo', file);
 
         try {

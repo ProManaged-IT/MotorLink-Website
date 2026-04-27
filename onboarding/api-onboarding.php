@@ -18,8 +18,12 @@ if (!is_dir(__DIR__ . '/logs')) {
     mkdir(__DIR__ . '/logs', 0755, true);
 }
 
+function isOnboardingApiLibraryMode() {
+    return defined('ONBOARDING_API_AS_LIB') && constant('ONBOARDING_API_AS_LIB') === true;
+}
+
 // Headers for CORS and JSON responses
-if (PHP_SAPI !== 'cli' && !(defined('ONBOARDING_API_AS_LIB') && ONBOARDING_API_AS_LIB === true)) {
+if (PHP_SAPI !== 'cli' && !isOnboardingApiLibraryMode()) {
     header('Content-Type: application/json; charset=utf-8');
 
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
@@ -1059,7 +1063,7 @@ function sendOnboardingWelcomeNotifications($db, $payload) {
 
 // Allow this file to be included for CLI/test harnesses without invoking
 // the HTTP routing block. Define ONBOARDING_API_AS_LIB=true before include.
-if (defined('ONBOARDING_API_AS_LIB') && ONBOARDING_API_AS_LIB === true) {
+if (isOnboardingApiLibraryMode()) {
     return;
 }
 
