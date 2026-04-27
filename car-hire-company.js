@@ -408,14 +408,19 @@ function renderFleet(data) {
         grid.innerHTML = '<div class="no-vehicles"><i class="fas fa-car"></i><p>No vehicles available at the moment</p></div>';
         return;
     }
+
+    window.carHireFleetAvailability = {};
     
     grid.innerHTML = data.map(vehicle => {
         const features = vehicle.features ? JSON.parse(vehicle.features) : [];
         const imageSrc = vehicle.image ? `uploads/${vehicle.image}` : inlinePlaceholder;
+        const confirmedBookings = Array.isArray(vehicle.confirmed_bookings) ? vehicle.confirmed_bookings : [];
+        window.carHireFleetAvailability[vehicle.id] = confirmedBookings;
         
         // Check status - either from status field or is_available field
         const status = vehicle.status || (vehicle.is_available == 1 ? 'available' : 'rented');
-        const isAvailable = status === 'available';
+        const blocksBookings = status === 'maintenance' || status === 'not_available';
+        const isBookable = !blocksBookings && companyData?.whatsapp;
         
         // Determine badge based on status
         let statusBadge = '';
@@ -435,9 +440,18 @@ function renderFleet(data) {
                 ? `${Math.round(companyDistanceKm * 1000)} m away`
                 : `${companyDistanceKm.toFixed(1)} km away`)
             : null;
+        const bookedDatesHtml = confirmedBookings.length > 0 ? `
+            <div class="fleet-booked-dates">
+                <strong><i class="fas fa-calendar-check"></i> Booked dates</strong>
+                ${confirmedBookings.slice(0, 3).map(range => `
+                    <span>${formatShortDate(range.start_date)} - ${formatShortDate(range.end_date)}</span>
+                `).join('')}
+            </div>
+        ` : '';
+        const bookingButtonLabel = status === 'rented' ? 'Book Future Dates' : 'Book via WhatsApp';
 
         return `
-            <div class="fleet-card ${!isAvailable ? 'unavailable' : ''}">
+            <div class="fleet-card ${blocksBookings ? 'unavailable' : ''} ${status === 'rented' ? 'has-bookings' : ''}">
                 <div class="fleet-image">
                     <img src="${imageSrc}" alt="${escapeHtml(vehicle.vehicle_name)}" loading="lazy" onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
                     ${statusBadge}
@@ -552,10 +566,12 @@ function renderFleet(data) {
                         `}
                     </div>
 
-                    ${isAvailable && companyData?.whatsapp ? `
+                    ${bookedDatesHtml}
+
+                    ${isBookable ? `
                         <button class="fleet-wa-book-btn"
                             onclick="carHireBooking.open(${vehicle.id}, ${vehicle.company_id}, '${escapeHtml(vehicle.vehicle_name).replace(/'/g, "\\'")}', ${vehicle.daily_rate})">
-                            <i class="fab fa-whatsapp"></i> Book via WhatsApp
+                            <i class="fab fa-whatsapp"></i> ${bookingButtonLabel}
                         </button>
                     ` : ''}
                 </div>
@@ -1020,6 +1036,13 @@ function escapeHtml(text) {
 
 function formatNumber(number) {
     return new Intl.NumberFormat().format(number);
+}
+
+function formatShortDate(value) {
+    if (!value) return '';
+    const parsedDate = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(parsedDate.getTime())) return value;
+    return parsedDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function capitalize(str) {

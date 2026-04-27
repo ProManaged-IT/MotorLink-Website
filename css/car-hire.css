@@ -2257,6 +2257,30 @@
     z-index: 2;
 }
 
+  .fleet-booked-dates {
+    display: grid;
+    gap: 5px;
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border: 1px solid #dbe4f0;
+    border-radius: 8px;
+    background: #f7fafc;
+    color: #334155;
+    font-size: 0.78rem;
+  }
+
+  .fleet-booked-dates strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #0f172a;
+    font-size: 0.76rem;
+  }
+
+  .fleet-booked-dates span {
+    color: #475569;
+  }
+
 .reg-badge {
     position: absolute;
     bottom: 12px;

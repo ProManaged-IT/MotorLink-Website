@@ -44,6 +44,32 @@
         return d.toISOString().split('T')[0];
     }
 
+    function _dateValue(value) {
+        return new Date(value + 'T00:00:00');
+    }
+
+    function _rangeOverlaps(startVal, endVal, bookedRange) {
+        if (!bookedRange || !bookedRange.start_date || !bookedRange.end_date) return false;
+        const requestedStart = _dateValue(startVal);
+        const requestedEnd = _dateValue(endVal);
+        const bookedStart = _dateValue(bookedRange.start_date);
+        const bookedEnd = _dateValue(bookedRange.end_date);
+        return requestedStart < bookedEnd && requestedEnd > bookedStart;
+    }
+
+    function _findBlockedRange(startVal, endVal) {
+        const ranges = Array.isArray(_booking.unavailableRanges) ? _booking.unavailableRanges : [];
+        return ranges.find(function (bookedRange) {
+            return _rangeOverlaps(startVal, endVal, bookedRange);
+        }) || null;
+    }
+
+    function _formatDate(value) {
+        const parsedDate = _dateValue(value);
+        if (Number.isNaN(parsedDate.getTime())) return value || '';
+        return parsedDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
     // ── Build modal DOM ────────────────────────────────────────────────────────
     function _buildModal() {
         if (document.getElementById('waHireBookingModal')) {
@@ -248,6 +274,12 @@
         if (!end)   { _showError('Please select a return date.'); return; }
         if (end <= start) { _showError('Return date must be after pick-up date.'); return; }
 
+        const blockedRange = _findBlockedRange(start, end);
+        if (blockedRange) {
+            _showError('This vehicle is already booked from ' + _formatDate(blockedRange.start_date) + ' to ' + _formatDate(blockedRange.end_date) + '. Please choose different dates.');
+            return;
+        }
+
         _submitting = true;
         const btn   = document.getElementById('wabkSubmitBtn');
         const label = document.getElementById('wabkSubmitLabel');
@@ -328,7 +360,14 @@
          * @param {number} dailyRate
          */
         open: function (fleetId, companyId, vehicleName, dailyRate) {
-            _booking = { fleetId, companyId, vehicleName, dailyRate };
+            const availability = window.carHireFleetAvailability || {};
+            _booking = {
+                fleetId,
+                companyId,
+                vehicleName,
+                dailyRate,
+                unavailableRanges: Array.isArray(availability[fleetId]) ? availability[fleetId] : []
+            };
             _modal   = _buildModal();
 
             // Reset form state

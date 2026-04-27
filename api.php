@@ -2917,6 +2917,44 @@ function getCarHireFleet($db) {
         ");
         $stmt->execute([$companyId]);
         $fleet = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($fleet as &$vehicle) {
+            $vehicle['confirmed_bookings'] = [];
+            $vehicle['next_booked_start'] = null;
+            $vehicle['next_booked_end'] = null;
+        }
+        unset($vehicle);
+
+        $fleetIds = array_values(array_filter(array_map('intval', array_column($fleet, 'id'))));
+        if (!empty($fleetIds)) {
+            $placeholders = implode(',', array_fill(0, count($fleetIds), '?'));
+            $bookingStmt = $db->prepare("\n                SELECT fleet_id, start_date, end_date\n                FROM car_hire_bookings\n                WHERE company_id = ?\n                  AND fleet_id IN ({$placeholders})\n                  AND status = 'confirmed'\n                  AND end_date >= CURDATE()\n                ORDER BY start_date ASC\n            ");
+            $bookingStmt->execute(array_merge([(int)$companyId], $fleetIds));
+
+            $bookingsByFleet = [];
+            foreach ($bookingStmt->fetchAll(PDO::FETCH_ASSOC) as $booking) {
+                $fleetKey = (int)$booking['fleet_id'];
+                if (!isset($bookingsByFleet[$fleetKey])) {
+                    $bookingsByFleet[$fleetKey] = [];
+                }
+                if (count($bookingsByFleet[$fleetKey]) < 10) {
+                    $bookingsByFleet[$fleetKey][] = [
+                        'start_date' => $booking['start_date'],
+                        'end_date' => $booking['end_date']
+                    ];
+                }
+            }
+
+            foreach ($fleet as &$vehicle) {
+                $ranges = $bookingsByFleet[(int)$vehicle['id']] ?? [];
+                $vehicle['confirmed_bookings'] = $ranges;
+                if (!empty($ranges)) {
+                    $vehicle['next_booked_start'] = $ranges[0]['start_date'];
+                    $vehicle['next_booked_end'] = $ranges[0]['end_date'];
+                }
+            }
+            unset($vehicle);
+        }
         
         sendSuccess(['fleet' => $fleet]);
     } catch (Exception $e) {
@@ -3241,8 +3279,12 @@ function carHireBookWhatsapp($db) {
         if (!$vehicle) {
             sendError('Vehicle not found in this company fleet', 404);
         }
-        if ($vehicle['status'] !== 'available') {
+        if (in_array($vehicle['status'], ['maintenance', 'not_available'], true)) {
             sendError('This vehicle is not available for booking', 409);
+        }
+
+        if (carHireFleetHasConfirmedDateConflict($db, $companyId, $fleetId, $startDate, $endDate)) {
+            sendError('This vehicle is already booked for those dates', 409);
         }
     } catch (Exception $e) {
         error_log("carHireBookWhatsapp validation error: " . $e->getMessage());
@@ -8632,21 +8674,38 @@ function getCarHireBookingForCompany($db, $bookingId, $companyId) {
     return $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
+function carHireFleetHasConfirmedDateConflict($db, $companyId, $fleetId, $startDate, $endDate, $excludeBookingId = 0) {
+    if (empty($fleetId) || empty($startDate) || empty($endDate)) {
+        return false;
+    }
+
+    $sql = "\n        SELECT COUNT(*)\n        FROM car_hire_bookings\n        WHERE company_id = ?\n          AND fleet_id = ?\n          AND status = 'confirmed'\n          AND NOT (end_date <= ? OR start_date >= ?)\n    ";
+    $params = [(int)$companyId, (int)$fleetId, $startDate, $endDate];
+
+    if ((int)$excludeBookingId > 0) {
+        $sql .= " AND id <> ?";
+        $params[] = (int)$excludeBookingId;
+    }
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+
+    return (int)$stmt->fetchColumn() > 0;
+}
+
 function carHireBookingHasDateConflict($db, $booking) {
     if (empty($booking['fleet_id'])) {
         return false;
     }
 
-    $stmt = $db->prepare("\n        SELECT COUNT(*)\n        FROM car_hire_bookings\n        WHERE company_id = ?\n          AND fleet_id = ?\n          AND id <> ?\n          AND status = 'confirmed'\n          AND NOT (end_date <= ? OR start_date >= ?)\n    ");
-    $stmt->execute([
+    return carHireFleetHasConfirmedDateConflict(
+        $db,
         (int)$booking['company_id'],
         (int)$booking['fleet_id'],
-        (int)$booking['id'],
         $booking['start_date'],
-        $booking['end_date']
-    ]);
-
-    return (int)$stmt->fetchColumn() > 0;
+        $booking['end_date'],
+        (int)$booking['id']
+    );
 }
 
 function releaseFleetVehicleIfNoConfirmedBooking($db, $companyId, $fleetId) {
@@ -8697,7 +8756,7 @@ function setCarHireBookingStatus($db, $companyId, $bookingId, $newStatus) {
                 throw new Exception('This vehicle already has a confirmed rental for those dates');
             }
 
-            if ($booking['status'] !== 'confirmed' && in_array($fleetVehicle['status'], ['rented', 'maintenance', 'not_available'], true)) {
+            if ($booking['status'] !== 'confirmed' && in_array($fleetVehicle['status'], ['maintenance', 'not_available'], true)) {
                 throw new Exception('This vehicle is not currently available to confirm');
             }
 
