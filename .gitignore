@@ -37,3 +37,7 @@ scripts/scrape_jobs/
 # Admin / app log files
 admin/admin_errors.log
 logs/
+
+# Playwright MCP browser session artifacts (snapshots, screenshots, console logs)
+.playwright-mcp/
+*.yml

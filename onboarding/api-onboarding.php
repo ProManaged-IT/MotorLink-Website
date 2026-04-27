@@ -377,7 +377,8 @@ function validateURL($url, $fieldName = 'URL') {
 }
 
 function validateBusinessName($name, $fieldName = 'Business name') {
-    if (empty($name)) {
+    $name = trim((string)$name);
+    if ($name === '') {
         return ['valid' => false, 'message' => "$fieldName is required"];
     }
     if (strlen($name) < 2) {
@@ -385,6 +386,23 @@ function validateBusinessName($name, $fieldName = 'Business name') {
     }
     if (strlen($name) > 255) {
         return ['valid' => false, 'message' => "$fieldName is too long (max 255 characters)"];
+    }
+    return ['valid' => true];
+}
+
+function validateOwnerName($name) {
+    $name = trim((string)$name);
+    if ($name === '') {
+        return ['valid' => false, 'message' => 'Owner name is required'];
+    }
+    if (strlen($name) < 2) {
+        return ['valid' => false, 'message' => 'Owner name must be at least 2 characters'];
+    }
+    if (strlen($name) > 150) {
+        return ['valid' => false, 'message' => 'Owner name is too long (max 150 characters)'];
+    }
+    if (!preg_match('/^[\p{L}\s\'\-\.]+$/u', $name)) {
+        return ['valid' => false, 'message' => 'Owner name contains invalid characters'];
     }
     return ['valid' => true];
 }
@@ -418,7 +436,7 @@ function businessExists($db, $type, $businessName, $email, $phone) {
         $stmt = $db->prepare("
             SELECT id, $nameField as name, email, phone 
             FROM $table 
-            WHERE ($nameField = ? OR email = ? OR phone = ?)
+            WHERE (LOWER($nameField) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone = ?)
             AND status IN ('active', 'pending_approval')
             LIMIT 1
         ");
@@ -434,7 +452,7 @@ function businessExists($db, $type, $businessName, $email, $phone) {
         $stmt = $db->prepare("
             SELECT id, business_name, email, phone 
             FROM users 
-            WHERE (business_name = ? OR LOWER(email) = LOWER(?) OR phone = ?)
+            WHERE (LOWER(business_name) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone = ?)
             AND user_type = ?
             AND status IN ('active', 'pending', 'pending_approval')
             LIMIT 1
@@ -981,6 +999,9 @@ try {
         case 'check_business_name': 
             checkBusinessNameExists($db); 
             break;
+        case 'check_username':
+            checkUsernameExists($db);
+            break;
         case 'add_car_hire': 
             addCarHireCompany($db); 
             break;
@@ -1316,6 +1337,49 @@ function checkBusinessNameExists($db) {
 }
 
 /**
+ * Check if a username is already taken (real-time validation helper).
+ * Returns { taken: bool, message: string }
+ */
+function checkUsernameExists($db) {
+    $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+
+    $username = trim((string)($input['username'] ?? ''));
+    // Exclude this user's own placeholder when editing (optional)
+    $excludeUserId = (int)($input['exclude_user_id'] ?? 0);
+
+    if ($username === '') {
+        sendError('username is required', 400);
+    }
+
+    // Format check first — fast, no DB hit
+    $formatCheck = validateUsername($username);
+    if (!$formatCheck['valid']) {
+        sendSuccess(['taken' => false, 'format_error' => $formatCheck['message']]);
+    }
+
+    try {
+        $stmt = $db->prepare(
+            "SELECT id FROM users
+             WHERE LOWER(username) = LOWER(?)
+             AND (" . ($excludeUserId > 0 ? "id != ?" : "1=1") . ")
+             LIMIT 1"
+        );
+        $params = [$username];
+        if ($excludeUserId > 0) $params[] = $excludeUserId;
+        $stmt->execute($params);
+
+        $taken = (bool)$stmt->fetch();
+        sendSuccess([
+            'taken'   => $taken,
+            'message' => $taken ? "Username \"{$username}\" is already taken. Please choose another." : 'Username is available.'
+        ]);
+    } catch (Exception $e) {
+        error_log('checkUsernameExists error: ' . $e->getMessage());
+        sendError('Failed to check username', 500);
+    }
+}
+
+/**
  * Get car makes for specialization
  */
 function getMakes($db) {
@@ -1398,6 +1462,11 @@ function addCarHireCompany($db) {
 
     // Comprehensive validation
     $validation = validateBusinessName($input['business_name'], 'Business name');
+    if (!$validation['valid']) {
+        sendError($validation['message'], 400);
+    }
+
+    $validation = validateOwnerName($input['owner_name']);
     if (!$validation['valid']) {
         sendError($validation['message'], 400);
     }
@@ -1769,6 +1838,11 @@ function addGarage($db) {
         sendError($validation['message'], 400);
     }
 
+    $validation = validateOwnerName($input['owner_name']);
+    if (!$validation['valid']) {
+        sendError($validation['message'], 400);
+    }
+
     $validation = validateEmail($input['email']);
     if (!$validation['valid']) {
         sendError($validation['message'], 400);
@@ -2081,6 +2155,11 @@ function addCarDealer($db) {
 
     // Comprehensive validation
     $validation = validateBusinessName($input['business_name'], 'Business name');
+    if (!$validation['valid']) {
+        sendError($validation['message'], 400);
+    }
+
+    $validation = validateOwnerName($input['owner_name']);
     if (!$validation['valid']) {
         sendError($validation['message'], 400);
     }
@@ -2484,11 +2563,14 @@ function claimExistingBusiness($db) {
     $required = ['owner_name', 'email', 'phone', 'username', 'password'];
     $missing = [];
     foreach ($required as $f) {
-        if (empty($input[$f])) $missing[] = $f;
+        if (trim((string)($input[$f] ?? '')) === '') $missing[] = $f;
     }
     if ($missing) {
         sendError('Missing required fields: ' . implode(', ', $missing), 400);
     }
+
+    $ownerValid = validateOwnerName($input['owner_name']);
+    if (!$ownerValid['valid']) sendError($ownerValid['message'], 400);
 
     $emailValid = validateEmail($input['email']);
     if (!$emailValid['valid']) sendError($emailValid['message'], 400);
@@ -2505,6 +2587,15 @@ function claimExistingBusiness($db) {
     if (!empty($input['whatsapp'])) {
         $waValid = validatePhone($input['whatsapp']);
         if (!$waValid['valid']) sendError('Invalid WhatsApp number. ' . $waValid['message'], 400);
+    }
+
+    // Validate optional URL fields if provided
+    foreach (['website', 'facebook_url', 'instagram_url', 'twitter_url', 'linkedin_url'] as $_urlField) {
+        if (!empty($input[$_urlField])) {
+            $urlLabel = ucwords(str_replace('_', ' ', $_urlField));
+            $urlCheck = validateURL($input[$_urlField], $urlLabel);
+            if (!$urlCheck['valid']) sendError($urlCheck['message'], 400);
+        }
     }
 
     $table = $info['table'];

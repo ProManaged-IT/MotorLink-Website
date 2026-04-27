@@ -499,6 +499,7 @@ class OnboardingForm {
         if (emailField) {
             let emailTimeout;
             emailField.addEventListener('input', (e) => {
+                delete e.target.dataset.duplicateError;  // reset duplicate flag on change
                 clearTimeout(emailTimeout);
                 emailTimeout = setTimeout(() => {
                     this.validateEmailField(e.target);
@@ -626,6 +627,17 @@ class OnboardingForm {
             usernameField.dispatchEvent(new Event('input', { bubbles: true }));
             this.showInfoToast(`Username suggested: ${suggested}`);
         });
+
+        // Real-time username uniqueness check on the new-business form
+        if (usernameField) {
+            let _unDebounce;
+            usernameField.addEventListener('input', () => {
+                clearTimeout(_unDebounce);
+                const val = usernameField.value.trim();
+                if (val.length < 3) return;
+                _unDebounce = setTimeout(() => this.checkUsernameDuplicate(val, usernameField), 500);
+            });
+        }
 
         document.getElementById('generatePasswordBtn')?.addEventListener('click', () => {
             if (!passwordField) return;
@@ -1072,18 +1084,30 @@ class OnboardingForm {
                 }
             });
             
-            // Email validation
+            // Email validation — required + format + duplicate check
             const emailField = document.getElementById('email');
             if (emailField) {
-                if (emailField.value && !this.validateEmailField(emailField)) {
+                if (!emailField.value.trim()) {
+                    this.showFieldError(emailField, 'Email address is required');
+                    isValid = false;
+                } else if (!this.validateEmailField(emailField)) {
+                    isValid = false;
+                } else if (emailField.dataset.duplicateError === '1') {
+                    this.showFieldError(emailField, 'This email is already registered. Please use a different email.');
                     isValid = false;
                 }
             }
             
-            // Phone validation
+            // Phone validation — required + format + duplicate check
             const phoneField = document.getElementById('phone');
             if (phoneField) {
-                if (phoneField.value && !this.validatePhoneField(phoneField)) {
+                if (!phoneField.value.trim()) {
+                    this.showFieldError(phoneField, 'Phone number is required');
+                    isValid = false;
+                } else if (!this.validatePhoneField(phoneField)) {
+                    isValid = false;
+                } else if (phoneField.dataset.duplicateError === '1') {
+                    this.showFieldError(phoneField, 'This phone number is already registered. Please use a different number.');
                     isValid = false;
                 }
             }
@@ -1233,8 +1257,12 @@ class OnboardingForm {
     }
 
     isValidEmail(email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
+        // RFC-aligned: local@domain.tld — requires 2+ char TLD, no consecutive dots, valid chars
+        const emailRegex = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+        if (!emailRegex.test(email)) return false;
+        // Reject consecutive dots in local part
+        if (email.split('@')[0].includes('..')) return false;
+        return true;
     }
 
     isValidPhone(phone) {
@@ -1368,7 +1396,7 @@ class OnboardingForm {
         }
     }
 
-    async checkEmailOrPhoneDuplicate(type, value) {
+    async checkEmailOrPhoneDuplicate(type, value, fieldEl = null) {
         if (!value || !this.businessType) return;
 
         try {
@@ -1393,24 +1421,27 @@ class OnboardingForm {
             const result = await response.json();
 
             if (result.success) {
-                const field = document.getElementById(type);
+                const field = fieldEl || document.getElementById(type);
                 if (!field) return;
 
                 if (type === 'email' && result.email_exists) {
                     if (result.email_belongs_to_user) {
-                        // Email belongs to existing user - might be second business
+                        field.dataset.duplicateError = '';  // warning only, not hard block
                         this.showFieldWarning(field, 'This email is already registered. You can continue if this is a second business.');
                     } else {
+                        field.dataset.duplicateError = '1';
                         this.showFieldError(field, 'This email is already registered. Please use a different email.');
                     }
                 } else if (type === 'phone' && result.phone_exists) {
                     if (result.phone_belongs_to_user) {
-                        // Phone belongs to existing user - might be second business
+                        field.dataset.duplicateError = '';
                         this.showFieldWarning(field, 'This phone number is already registered. You can continue if this is a second business.');
                     } else {
+                        field.dataset.duplicateError = '1';
                         this.showFieldError(field, 'This phone number is already registered. Please use a different phone number.');
                     }
                 } else {
+                    delete field.dataset.duplicateError;
                     this.clearFieldError(field);
                 }
             }
@@ -1485,6 +1516,34 @@ class OnboardingForm {
             if (typeof CONFIG !== 'undefined' && CONFIG.DEBUG) {
                 console.error('Business name duplicate check error:', error);
             }
+        }
+    }
+
+    async checkUsernameDuplicate(username, fieldEl) {
+        if (!username || username.length < 3) return;
+        // Format check — no API call needed if obviously wrong
+        if (!/^[a-zA-Z0-9_]+$/.test(username)) return;
+
+        try {
+            const response = await fetch(`${this.API_BASE_URL}?action=check_username`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username })
+            });
+            if (!response.ok) return;
+            const result = await response.json();
+            if (!result.success) return;
+
+            const field = fieldEl || document.getElementById('username');
+            if (!field) return;
+            if (result.taken) {
+                this.showFieldError(field, result.message || `Username "${username}" is already taken.`);
+            } else {
+                this.clearFieldError(field);
+            }
+        } catch (e) {
+            if (typeof CONFIG !== 'undefined' && CONFIG.DEBUG) console.error('Username duplicate check error:', e);
         }
     }
 
@@ -2447,6 +2506,76 @@ class OnboardingForm {
             });
         }
 
+        // ── Real-time validation on claim fields ─────────────────────────────
+        // Email
+        const claimEmail = document.getElementById('claimEmail');
+        if (claimEmail) {
+            claimEmail.addEventListener('blur', () => {
+                this.validateEmailField(claimEmail);
+                if (this.isValidEmail(claimEmail.value.trim())) {
+                    this.checkEmailOrPhoneDuplicate('email', claimEmail.value.trim(), claimEmail);
+                }
+            });
+            claimEmail.addEventListener('input', () => {
+                delete claimEmail.dataset.duplicateError;
+            });
+        }
+
+        // Phone
+        const claimPhone = document.getElementById('claimPhone');
+        if (claimPhone) {
+            claimPhone.addEventListener('blur', () => {
+                this.validatePhoneField(claimPhone);
+                const cleaned = claimPhone.value.trim().replace(/[\s\-\(\)\+]/g, '');
+                if (/^\d{7,15}$/.test(cleaned)) {
+                    this.checkEmailOrPhoneDuplicate('phone', claimPhone.value.trim(), claimPhone);
+                }
+            });
+            claimPhone.addEventListener('input', () => {
+                delete claimPhone.dataset.duplicateError;
+            });
+        }
+
+        // WhatsApp (format only, no duplicate check)
+        const claimWhatsapp = document.getElementById('claimWhatsapp');
+        if (claimWhatsapp) {
+            claimWhatsapp.addEventListener('blur', () => {
+                if (claimWhatsapp.value.trim()) this.validatePhoneField(claimWhatsapp);
+            });
+        }
+
+        // Username
+        const claimUsername = document.getElementById('claimUsername');
+        if (claimUsername) {
+            let unDebounce;
+            claimUsername.addEventListener('input', () => {
+                clearTimeout(unDebounce);
+                const val = claimUsername.value.trim();
+                if (val.length < 3) return;
+                unDebounce = setTimeout(() => this.checkUsernameDuplicate(val, claimUsername), 500);
+            });
+            claimUsername.addEventListener('blur', () => {
+                const val = claimUsername.value.trim();
+                if (val && !/^[a-zA-Z0-9_]+$/.test(val)) {
+                    this.showFieldError(claimUsername, 'Username may only contain letters, numbers and underscores');
+                }
+            });
+        }
+
+        // Owner name length guard
+        const claimOwnerName = document.getElementById('claimOwnerName');
+        if (claimOwnerName) {
+            claimOwnerName.addEventListener('blur', () => {
+                const v = claimOwnerName.value.trim();
+                if (v && v.length < 2) {
+                    this.showFieldError(claimOwnerName, 'Owner name must be at least 2 characters');
+                } else if (v) {
+                    this.clearFieldError(claimOwnerName);
+                }
+            });
+        }
+        // ── end real-time listeners ───────────────────────────────────────────
+
         // Populate locations into the claim filter (reuse loaded locations)
         this.populateClaimLocations();
     }
@@ -2604,6 +2733,87 @@ class OnboardingForm {
     async submitClaim() {
         const submitBtn = document.getElementById('claimSubmitBtn');
         const originalHtml = submitBtn ? submitBtn.innerHTML : '';
+
+        // ── client-side validation before touching the API ──────────────────
+        const fields = {
+            claimOwnerName : { label: 'Owner name',         min: 2, max: 150, type: 'name' },
+            claimEmail     : { label: 'Email',              min: 1, max: 255, type: 'email' },
+            claimPhone     : { label: 'Phone',              min: 1, max: 20,  type: 'phone' },
+            claimUsername  : { label: 'Username',           min: 3, max: 50,  type: 'username' },
+            claimPassword  : { label: 'Password',           min: 8, max: 128, type: 'password' }
+        };
+        let firstBad = null;
+        for (const [id, rule] of Object.entries(fields)) {
+            const el = document.getElementById(id);
+            if (!el) continue;
+            const val = id === 'claimPassword' ? el.value : el.value.trim();
+            this.clearFieldError(el);
+
+            if (!val) {
+                this.showFieldError(el, `${rule.label} is required`);
+                firstBad = firstBad || el;
+                continue;
+            }
+            if (val.length < rule.min) {
+                this.showFieldError(el, `${rule.label} must be at least ${rule.min} characters`);
+                firstBad = firstBad || el;
+                continue;
+            }
+            if (val.length > rule.max) {
+                this.showFieldError(el, `${rule.label} is too long (max ${rule.max} characters)`);
+                firstBad = firstBad || el;
+                continue;
+            }
+            if (rule.type === 'email' && !this.isValidEmail(val)) {
+                this.showFieldError(el, 'Invalid email format. Example: name@domain.com');
+                firstBad = firstBad || el;
+                continue;
+            }
+            // Block if a known-duplicate flag is still set (from real-time check)
+            if (rule.type === 'email' && el.dataset.duplicateError === '1') {
+                this.showFieldError(el, 'This email is already registered. Please use a different email.');
+                firstBad = firstBad || el;
+                continue;
+            }
+            if (rule.type === 'phone') {
+                const cleaned = val.replace(/[\s\-\(\)\+]/g, '');
+                if (!/^\d{7,15}$/.test(cleaned)) {
+                    this.showFieldError(el, 'Invalid phone number. Use 7–15 digits');
+                    firstBad = firstBad || el;
+                    continue;
+                }
+            }
+            if (rule.type === 'username' && !/^[a-zA-Z0-9_]+$/.test(val)) {
+                this.showFieldError(el, 'Username may only contain letters, numbers and underscores');
+                firstBad = firstBad || el;
+                continue;
+            }
+            if (rule.type === 'password') {
+                const pwErr = this.validatePasswordStrength(val);
+                if (pwErr) {
+                    this.showFieldError(el, pwErr);
+                    firstBad = firstBad || el;
+                    continue;
+                }
+            }
+        }
+
+        // Validate optional WhatsApp
+        const waEl = document.getElementById('claimWhatsapp');
+        if (waEl && waEl.value.trim()) {
+            const cleaned = waEl.value.trim().replace(/[\s\-\(\)\+]/g, '');
+            if (!/^\d{7,15}$/.test(cleaned)) {
+                this.showFieldError(waEl, 'Invalid WhatsApp number. Use 7–15 digits');
+                firstBad = firstBad || waEl;
+            }
+        }
+
+        if (firstBad) {
+            firstBad.focus();
+            return;
+        }
+        // ── end validation ───────────────────────────────────────────────────
+
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
@@ -2621,13 +2831,6 @@ class OnboardingForm {
                 password: document.getElementById('claimPassword').value,
                 whatsapp_updates_opt_in: document.getElementById('claimWhatsappOptIn').checked ? 1 : 0
             };
-
-            // Client-side password strength
-            const pwErr = this.validatePasswordStrength(payload.password);
-            if (pwErr) {
-                this.showError(pwErr);
-                return;
-            }
 
             const response = await fetch(`${this.API_BASE_URL}?action=claim_existing_business`, {
                 method: 'POST',
