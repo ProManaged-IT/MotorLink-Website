@@ -500,16 +500,19 @@ class OnboardingForm {
             let emailTimeout;
             emailField.addEventListener('input', (e) => {
                 delete e.target.dataset.duplicateError;  // reset duplicate flag on change
+                delete e.target.dataset.useExistingUser;
+                delete e.target.dataset.existingUserId;
+                this.setNewBusinessCredentialMode(false);
                 clearTimeout(emailTimeout);
                 emailTimeout = setTimeout(() => {
                     this.validateEmailField(e.target);
-                    this.checkEmailOrPhoneDuplicate('email', e.target.value);
+                    this.checkEmailOrPhoneDuplicate('email', e.target.value, e.target);
                 }, 500); // Debounce 500ms
             });
             emailField.addEventListener('blur', () => {
                 this.validateEmailField(emailField);
                 if (emailField.value) {
-                    this.checkEmailOrPhoneDuplicate('email', emailField.value);
+                    this.checkEmailOrPhoneDuplicate('email', emailField.value, emailField);
                 }
             });
         }
@@ -786,6 +789,7 @@ class OnboardingForm {
 
     handleBusinessTypeChange(type) {
         if (typeof CONFIG !== 'undefined' && CONFIG.DEBUG) console.log('Handling business type change to:', type);
+        this.setNewBusinessCredentialMode(false);
         
         // Hide all specific fields
         document.querySelectorAll('.business-specific-fields').forEach(field => {
@@ -1092,7 +1096,7 @@ class OnboardingForm {
                     isValid = false;
                 } else if (!this.validateEmailField(emailField)) {
                     isValid = false;
-                } else if (emailField.dataset.duplicateError === '1') {
+                } else if (emailField.dataset.duplicateError === '1' && emailField.dataset.useExistingUser !== '1') {
                     this.showFieldError(emailField, 'This email is already registered. Please use a different email.');
                     isValid = false;
                 }
@@ -1397,13 +1401,19 @@ class OnboardingForm {
     }
 
     async checkEmailOrPhoneDuplicate(type, value, fieldEl = null) {
-        if (!value || !this.businessType) return;
+        if (!value) return;
 
         try {
+            const isClaimField = !!fieldEl?.id?.startsWith('claim');
+            const claimBusinessType = isClaimField ? (document.getElementById('claimBusinessType')?.value || '') : '';
+            const claimBusinessId = isClaimField ? parseInt(document.getElementById('claimBusinessId')?.value || '0', 10) : 0;
             const payload = {
-                type: this.businessType,
+                type: claimBusinessType || this.businessType,
                 [type]: value
             };
+            if (isClaimField && claimBusinessType && claimBusinessId > 0) {
+                payload.business_id = claimBusinessId;
+            }
 
             const response = await fetch(`${this.API_BASE_URL}?action=check_email_phone`, {
                 method: 'POST',
@@ -1426,11 +1436,26 @@ class OnboardingForm {
 
                 if (type === 'email' && result.email_exists) {
                     if (result.email_belongs_to_user) {
-                        field.dataset.duplicateError = '';  // warning only, not hard block
-                        this.showFieldWarning(field, 'This email is already registered. You can continue if this is a second business.');
+                        delete field.dataset.duplicateError;
+                        field.dataset.useExistingUser = '1';
+                        field.dataset.existingUserId = result.existing_user?.id || '';
+                        if (field.id === 'claimEmail') {
+                            this.showFieldWarning(field, 'This email already has a MotorLink login. This claim will link the business to that existing account.');
+                            this.setClaimCredentialMode(true, result.existing_user || {});
+                        } else {
+                            this.showFieldWarning(field, 'This email already has a MotorLink login. This business will be linked to that existing account.');
+                            this.setNewBusinessCredentialMode(true, result.existing_user || {});
+                        }
                     } else {
                         field.dataset.duplicateError = '1';
+                        delete field.dataset.useExistingUser;
+                        delete field.dataset.existingUserId;
                         this.showFieldError(field, 'This email is already registered. Please use a different email.');
+                        if (field.id === 'claimEmail') {
+                            this.setClaimCredentialMode(false);
+                        } else if (field.id === 'email') {
+                            this.setNewBusinessCredentialMode(false);
+                        }
                     }
                 } else if (type === 'phone' && result.phone_exists) {
                     if (result.phone_belongs_to_user) {
@@ -1442,6 +1467,15 @@ class OnboardingForm {
                     }
                 } else {
                     delete field.dataset.duplicateError;
+                    if (type === 'email') {
+                        delete field.dataset.useExistingUser;
+                        delete field.dataset.existingUserId;
+                        if (field.id === 'claimEmail') {
+                            this.setClaimCredentialMode(false);
+                        } else if (field.id === 'email') {
+                            this.setNewBusinessCredentialMode(false);
+                        }
+                    }
                     this.clearFieldError(field);
                 }
             }
@@ -1472,6 +1506,85 @@ class OnboardingForm {
         warningEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${message}`;
         
         field.parentElement.appendChild(warningEl);
+    }
+
+    setClaimCredentialMode(useExistingUser, existingUser = {}) {
+        const notice = document.getElementById('claimExistingUserNotice');
+        const credentials = document.getElementById('claimCredentialsFields');
+        const username = document.getElementById('claimUsername');
+        const password = document.getElementById('claimPassword');
+        const submitBtn = document.getElementById('claimSubmitBtn');
+
+        if (useExistingUser) {
+            if (credentials) credentials.style.display = 'none';
+            if (username) {
+                username.required = false;
+                username.value = '';
+                delete username.dataset.duplicateError;
+                this.clearFieldError(username);
+            }
+            if (password) {
+                password.required = false;
+                password.value = '';
+                this.clearFieldError(password);
+            }
+            if (notice) {
+                const displayName = existingUser.full_name || existingUser.username || existingUser.email || 'this user';
+                notice.innerHTML = `<i class="fas fa-link"></i> <strong>Existing account found:</strong> ${this.escapeHtml(displayName)} will manage this business with their current login. No new username or temporary password will be created.`;
+                notice.style.display = 'block';
+            }
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-link"></i> Claim & Link Existing Account';
+            }
+            return;
+        }
+
+        if (credentials) credentials.style.display = '';
+        if (username) username.required = true;
+        if (password) password.required = true;
+        if (notice) {
+            notice.innerHTML = '';
+            notice.style.display = 'none';
+        }
+        if (submitBtn) {
+            submitBtn.innerHTML = '<i class="fas fa-check"></i> Claim & Send Credentials';
+        }
+    }
+
+    setNewBusinessCredentialMode(useExistingUser, existingUser = {}) {
+        const notice = document.getElementById('newExistingUserNotice');
+        const credentials = document.getElementById('newCredentialsFields');
+        const username = document.getElementById('username');
+        const password = document.getElementById('password');
+
+        if (useExistingUser) {
+            if (credentials) credentials.style.display = 'none';
+            if (username) {
+                username.required = false;
+                username.value = '';
+                delete username.dataset.duplicateError;
+                this.clearFieldError(username);
+            }
+            if (password) {
+                password.required = false;
+                password.value = '';
+                this.clearFieldError(password);
+            }
+            if (notice) {
+                const displayName = existingUser.full_name || existingUser.username || existingUser.email || 'this user';
+                notice.innerHTML = `<i class="fas fa-link"></i> <strong>Existing account found:</strong> ${this.escapeHtml(displayName)} will manage this business with their current login. No new username or temporary password will be created.`;
+                notice.style.display = 'block';
+            }
+            return;
+        }
+
+        if (credentials) credentials.style.display = '';
+        if (username) username.required = true;
+        if (password) password.required = true;
+        if (notice) {
+            notice.innerHTML = '';
+            notice.style.display = 'none';
+        }
     }
 
     async checkBusinessNameDuplicate(businessName) {
@@ -1538,8 +1651,10 @@ class OnboardingForm {
             const field = fieldEl || document.getElementById('username');
             if (!field) return;
             if (result.taken) {
+                field.dataset.duplicateError = '1';
                 this.showFieldError(field, result.message || `Username "${username}" is already taken.`);
             } else {
+                delete field.dataset.duplicateError;
                 this.clearFieldError(field);
             }
         } catch (e) {
@@ -2163,6 +2278,11 @@ class OnboardingForm {
 
             const formData = new FormData(document.getElementById('onboardingForm'));
             const data = Object.fromEntries(formData.entries());
+            const emailField = document.getElementById('email');
+            if (emailField && this.isValidEmail(emailField.value.trim())) {
+                await this.checkEmailOrPhoneDuplicate('email', emailField.value.trim(), emailField);
+            }
+            const useExistingUser = emailField?.dataset.useExistingUser === '1';
 
             // Debug: Log raw form data
             console.log('=== ONBOARDING DEBUG ===');
@@ -2171,16 +2291,18 @@ class OnboardingForm {
             console.log('Password present:', data.password ? 'Yes (length: ' + data.password.length + ')' : 'No');
 
             // Validate username and password are present
-            if (!data.username || !data.username.trim()) {
+            if (!useExistingUser && (!data.username || !data.username.trim())) {
                 throw new Error('Username is required. Please fill in the login credentials.');
             }
-            if (!data.password || !data.password.trim()) {
+            if (!useExistingUser && (!data.password || !data.password.trim())) {
                 throw new Error('Password is required. Please fill in the login credentials.');
             }
 
-            const pwError = this.validatePasswordStrength(data.password.trim());
-            if (pwError) {
-                throw new Error(pwError);
+            if (!useExistingUser) {
+                const pwError = this.validatePasswordStrength(data.password.trim());
+                if (pwError) {
+                    throw new Error(pwError);
+                }
             }
 
             // Prepare data based on business type
@@ -2264,7 +2386,9 @@ class OnboardingForm {
 
             // Login credentials for the business manager
             username: data.username,
-            password: data.password
+            password: data.password,
+            use_existing_user: document.getElementById('email')?.dataset.useExistingUser === '1' ? 1 : 0,
+            existing_user_id: parseInt(document.getElementById('email')?.dataset.existingUserId || '0', 10)
         };
 
         // Add business-specific data
@@ -2334,17 +2458,20 @@ class OnboardingForm {
 
         // Display user account info
         document.getElementById('successUserId').textContent = result.user_id || 'N/A';
-        document.getElementById('successUsername').textContent = result.username || 'N/A';
+        document.getElementById('successUsername').textContent = result.existing_account
+            ? `${result.username || 'Existing login'} (existing)`
+            : (result.username || 'N/A');
 
         // Update status badges dynamically
         const businessStatusText = result.business_status === 'pending_approval' ? 'Pending Approval' : result.business_status;
         const userStatusText = result.user_status === 'pending' ? 'Pending Approval' : result.user_status;
 
-        const emailNotice = result?.notifications?.email?.message || 'Credentials email sent.';
+        const emailNotice = result?.notifications?.email?.message || (result.existing_account ? 'Existing login linked.' : 'Credentials email sent.');
         const waNotice = result?.notifications?.whatsapp?.message || 'WhatsApp updates status unavailable.';
         const waStatus = result?.notifications?.whatsapp?.status || 'unknown';
         const waPrefix = waStatus === 'sent' ? 'WhatsApp update sent.' : 'WhatsApp update not sent yet.';
-        const notificationNote = `${emailNotice} ${waPrefix} ${waNotice}`;
+        const modeNotice = result.existing_account ? 'No new temporary password was created. ' : '';
+        const notificationNote = `${modeNotice}${emailNotice} ${waPrefix} ${waNotice}`;
         const noteEl = document.getElementById('successNotificationNote');
         if (noteEl) {
             noteEl.textContent = notificationNote;
@@ -2518,6 +2645,9 @@ class OnboardingForm {
             });
             claimEmail.addEventListener('input', () => {
                 delete claimEmail.dataset.duplicateError;
+                delete claimEmail.dataset.useExistingUser;
+                delete claimEmail.dataset.existingUserId;
+                this.setClaimCredentialMode(false);
             });
         }
 
@@ -2525,8 +2655,12 @@ class OnboardingForm {
         const claimPhone = document.getElementById('claimPhone');
         if (claimPhone) {
             claimPhone.addEventListener('blur', () => {
-                this.validatePhoneField(claimPhone);
                 const cleaned = claimPhone.value.trim().replace(/[\s\-\(\)\+]/g, '');
+                if (claimPhone.value.trim() && !/^\d{7,15}$/.test(cleaned)) {
+                    this.showFieldWarning(claimPhone, 'Phone format may be invalid — check digits or submit anyway.');
+                } else {
+                    this.clearFieldError(claimPhone);
+                }
                 if (/^\d{7,15}$/.test(cleaned)) {
                     this.checkEmailOrPhoneDuplicate('phone', claimPhone.value.trim(), claimPhone);
                 }
@@ -2536,11 +2670,18 @@ class OnboardingForm {
             });
         }
 
-        // WhatsApp (format only, no duplicate check)
+        // WhatsApp (format warning only, no duplicate check)
         const claimWhatsapp = document.getElementById('claimWhatsapp');
         if (claimWhatsapp) {
             claimWhatsapp.addEventListener('blur', () => {
-                if (claimWhatsapp.value.trim()) this.validatePhoneField(claimWhatsapp);
+                const val = claimWhatsapp.value.trim();
+                if (!val) return;
+                const cleaned = val.replace(/[\s\-\(\)\+]/g, '');
+                if (!/^\d{7,15}$/.test(cleaned)) {
+                    this.showFieldWarning(claimWhatsapp, 'WhatsApp format may be invalid — check digits or submit anyway.');
+                } else {
+                    this.clearFieldError(claimWhatsapp);
+                }
             });
         }
 
@@ -2550,6 +2691,7 @@ class OnboardingForm {
             let unDebounce;
             claimUsername.addEventListener('input', () => {
                 clearTimeout(unDebounce);
+                delete claimUsername.dataset.duplicateError;
                 const val = claimUsername.value.trim();
                 if (val.length < 3) return;
                 unDebounce = setTimeout(() => this.checkUsernameDuplicate(val, claimUsername), 500);
@@ -2627,6 +2769,12 @@ class OnboardingForm {
         const resultsEl = document.getElementById('claimResults');
 
         if (!resultsEl) return;
+
+        // Always reset any previously-selected business when a new search fires
+        const claimForm = document.getElementById('claimForm');
+        if (claimForm) { claimForm.reset(); claimForm.style.display = 'none'; }
+        this.setClaimCredentialMode(false);
+        resultsEl.style.display = '';
         if (!type) {
             resultsEl.innerHTML = '<div class="claim-empty">Select a business type to start searching.</div>';
             return;
@@ -2709,11 +2857,12 @@ class OnboardingForm {
         const resultsEl = document.getElementById('claimResults');
         if (!form || !summary || !idInput || !typeInput) return;
 
+        this.setClaimCredentialMode(false);
         idInput.value = biz.id;
         typeInput.value = biz.type;
         summary.innerHTML = `
             <div><strong>Selected:</strong> ${this.escapeHtml(biz.name)} <span style="color:#5f6b66;">(${this.escapeHtml(biz.ref)})</span></div>
-            <div style="margin-top:4px;color:#5f6b66;font-size:13px;">Enter the real owner's contact details and choose login credentials. They will receive their login by email and (optionally) WhatsApp.</div>
+            <div style="margin-top:4px;color:#5f6b66;font-size:13px;">Enter the real owner's contact details. If the email already has a MotorLink account, this business will be linked to that login.</div>
         `;
         form.style.display = 'block';
         if (resultsEl) resultsEl.style.display = 'none';
@@ -2727,21 +2876,31 @@ class OnboardingForm {
             form.reset();
             form.style.display = 'none';
         }
+        this.setClaimCredentialMode(false);
         if (resultsEl) resultsEl.style.display = '';
     }
 
     async submitClaim() {
         const submitBtn = document.getElementById('claimSubmitBtn');
         const originalHtml = submitBtn ? submitBtn.innerHTML : '';
+        const claimEmailEl = document.getElementById('claimEmail');
+
+        if (claimEmailEl && this.isValidEmail(claimEmailEl.value.trim())) {
+            await this.checkEmailOrPhoneDuplicate('email', claimEmailEl.value.trim(), claimEmailEl);
+        }
+
+        const useExistingUser = claimEmailEl?.dataset.useExistingUser === '1';
 
         // ── client-side validation before touching the API ──────────────────
         const fields = {
             claimOwnerName : { label: 'Owner name',         min: 2, max: 150, type: 'name' },
             claimEmail     : { label: 'Email',              min: 1, max: 255, type: 'email' },
-            claimPhone     : { label: 'Phone',              min: 1, max: 20,  type: 'phone' },
-            claimUsername  : { label: 'Username',           min: 3, max: 50,  type: 'username' },
-            claimPassword  : { label: 'Password',           min: 8, max: 128, type: 'password' }
+            claimPhone     : { label: 'Phone',              min: 1, max: 20,  type: 'phone' }
         };
+        if (!useExistingUser) {
+            fields.claimUsername = { label: 'Username', min: 3, max: 50, type: 'username' };
+            fields.claimPassword = { label: 'Password', min: 8, max: 128, type: 'password' };
+        }
         let firstBad = null;
         for (const [id, rule] of Object.entries(fields)) {
             const el = document.getElementById(id);
@@ -2778,13 +2937,18 @@ class OnboardingForm {
             if (rule.type === 'phone') {
                 const cleaned = val.replace(/[\s\-\(\)\+]/g, '');
                 if (!/^\d{7,15}$/.test(cleaned)) {
-                    this.showFieldError(el, 'Invalid phone number. Use 7–15 digits');
-                    firstBad = firstBad || el;
-                    continue;
+                    this.showFieldWarning(el, 'Phone format may be invalid — check digits or submit anyway.');
+                    // soft: do not block submission
                 }
             }
             if (rule.type === 'username' && !/^[a-zA-Z0-9_]+$/.test(val)) {
                 this.showFieldError(el, 'Username may only contain letters, numbers and underscores');
+                firstBad = firstBad || el;
+                continue;
+            }
+            // Block if a known-duplicate flag is still set (from real-time check)
+            if (rule.type === 'username' && el.dataset.duplicateError === '1') {
+                this.showFieldError(el, 'This username is already taken. Please choose a different one.');
                 firstBad = firstBad || el;
                 continue;
             }
@@ -2798,13 +2962,13 @@ class OnboardingForm {
             }
         }
 
-        // Validate optional WhatsApp
+        // Validate optional WhatsApp (soft — warning only)
         const waEl = document.getElementById('claimWhatsapp');
         if (waEl && waEl.value.trim()) {
             const cleaned = waEl.value.trim().replace(/[\s\-\(\)\+]/g, '');
             if (!/^\d{7,15}$/.test(cleaned)) {
-                this.showFieldError(waEl, 'Invalid WhatsApp number. Use 7–15 digits');
-                firstBad = firstBad || waEl;
+                this.showFieldWarning(waEl, 'WhatsApp format may be invalid — check digits or submit anyway.');
+                // soft: do not block submission
             }
         }
 
@@ -2827,8 +2991,10 @@ class OnboardingForm {
                 email: document.getElementById('claimEmail').value.trim(),
                 phone: document.getElementById('claimPhone').value.trim(),
                 whatsapp: document.getElementById('claimWhatsapp').value.trim(),
-                username: document.getElementById('claimUsername').value.trim(),
-                password: document.getElementById('claimPassword').value,
+                username: useExistingUser ? '' : document.getElementById('claimUsername').value.trim(),
+                password: useExistingUser ? '' : document.getElementById('claimPassword').value,
+                use_existing_user: useExistingUser ? 1 : 0,
+                existing_user_id: useExistingUser ? parseInt(claimEmailEl?.dataset.existingUserId || '0', 10) : 0,
                 whatsapp_updates_opt_in: document.getElementById('claimWhatsappOptIn').checked ? 1 : 0
             };
 
@@ -2861,12 +3027,13 @@ class OnboardingForm {
         setText('successBusinessId', data.business_id);
         setText('successReference', data.reference);
         setText('successUserId', data.user_id);
-        setText('successUsername', data.username);
+        setText('successUsername', data.existing_account ? `${data.username || 'Existing login'} (existing)` : data.username);
         const note = document.getElementById('successNotificationNote');
         if (note) {
             const emailStatus = data.notifications?.email?.status || 'pending';
             const waStatus = data.notifications?.whatsapp?.status || 'skipped';
-            note.innerHTML = `<i class="fas fa-paper-plane"></i> Email: <strong>${this.escapeHtml(emailStatus)}</strong>. WhatsApp: <strong>${this.escapeHtml(waStatus)}</strong>.`;
+            const modeText = data.existing_account ? 'Existing login linked. ' : '';
+            note.innerHTML = `<i class="fas fa-paper-plane"></i> ${modeText}Email: <strong>${this.escapeHtml(emailStatus)}</strong>. WhatsApp: <strong>${this.escapeHtml(waStatus)}</strong>.`;
         }
         const modal = document.getElementById('successModal');
         if (modal) modal.classList.add('active');

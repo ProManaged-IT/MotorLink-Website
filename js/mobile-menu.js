@@ -271,6 +271,7 @@ function initMobileMenu() {
             // Get user type from localStorage to show appropriate dashboard
             const userData = JSON.parse(localStorage.getItem('motorlink_user'));
             const userType = userData?.type;
+            const ownedTypes = Array.isArray(userData?.business_types) ? userData.business_types : [];
 
             // Check if dashboard links already exist (to prevent duplicates)
             const existingDashboardLinks = nav.querySelector('.mobile-dashboard-links');
@@ -282,39 +283,24 @@ function initMobileMenu() {
             const dashboardLinks = document.createElement('div');
             dashboardLinks.className = 'mobile-dashboard-links';
 
-            // Build dashboard link based on user type
-            let dashboardHTML = '';
-            switch(userType) {
-                case 'dealer':
-                    dashboardHTML = `
-                        <a href="dealer-dashboard.html" class="mobile-dash-link">
-                            <i class="fas fa-store"></i> My Showroom
-                        </a>
-                    `;
-                    break;
-                case 'garage':
-                    dashboardHTML = `
-                        <a href="garage-dashboard.html" class="mobile-dash-link">
-                            <i class="fas fa-wrench"></i> My Garage
-                        </a>
-                    `;
-                    break;
-                case 'car_hire':
-                    dashboardHTML = `
-                        <a href="car-hire-dashboard.html" class="mobile-dash-link">
-                            <i class="fas fa-car-side"></i> My Fleet
-                        </a>
-                    `;
-                    break;
-                case 'admin':
-                    dashboardHTML = `
-                        <a href="admin/admin.html" class="mobile-dash-link">
-                            <i class="fas fa-shield-alt"></i> Admin Panel
-                        </a>
-                    `;
-                    break;
-                // Individual users don't get a dashboard link
-            }
+            const dashboardMap = {
+                dealer: ['dealer-dashboard.html', 'My Showroom', 'fas fa-store'],
+                garage: ['garage-dashboard.html', 'My Garage', 'fas fa-wrench'],
+                car_hire: ['car-hire-dashboard.html', 'My Fleet', 'fas fa-car-side'],
+                admin: ['admin/admin.html', 'Admin Panel', 'fas fa-shield-alt']
+            };
+            const dashboardTypes = Array.from(new Set([
+                ...ownedTypes,
+                ...(dashboardMap[userType] ? [userType] : [])
+            ])).filter(type => dashboardMap[type]);
+            const dashboardHTML = dashboardTypes.map(type => {
+                const [href, label, icon] = dashboardMap[type];
+                return `
+                    <a href="${href}" class="mobile-dash-link">
+                        <i class="${icon}"></i> ${label}
+                    </a>
+                `;
+            }).join('');
 
             dashboardLinks.innerHTML = dashboardHTML + `
                 <a href="my-listings.html" class="mobile-dash-link">

@@ -138,16 +138,20 @@
                         </div>
                     </div>
 
-                    <h3 style="margin:18px 0 10px 0;"><i class="fas fa-key"></i> Login Credentials</h3>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="claimUsername">Username *</label>
-                            <input type="text" id="claimUsername" name="username" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="claimPassword">Temporary Password *</label>
-                            <input type="text" id="claimPassword" name="password" required>
-                            <small class="field-hint">Min 8 chars, include uppercase, number and special character.</small>
+                    <div id="claimExistingUserNotice" class="claim-existing-user-notice" style="display:none;"></div>
+
+                    <div id="claimCredentialsFields">
+                        <h3 style="margin:18px 0 10px 0;"><i class="fas fa-key"></i> Login Credentials</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="claimUsername">Username *</label>
+                                <input type="text" id="claimUsername" name="username" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="claimPassword">Temporary Password *</label>
+                                <input type="text" id="claimPassword" name="password" required>
+                                <small class="field-hint">Min 8 chars, include uppercase, number and special character.</small>
+                            </div>
                         </div>
                     </div>
 
@@ -472,51 +476,54 @@
                         </div>
                     </div>
 
+                    <div id="newExistingUserNotice" class="claim-existing-user-notice" style="display:none;"></div>
 
-                    <div class="form-group" style="margin-top: 30px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
-                        <h3 style="margin-bottom: 15px; color: #333;">
-                            <i class="fas fa-user-lock"></i> Login Account Details
-                        </h3>
-                        <p class="step-description" style="margin-bottom: 20px;">
-                            Create login credentials for the business manager to access their dashboard
-                        </p>
-                    </div>
-
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="username">
-                                <i class="fas fa-user"></i>
-                                Username *
-                            </label>
-                            <input type="text" id="username" name="username" required
-                                   autocomplete="username"
-                                   placeholder="Choose a unique username" pattern="[a-zA-Z0-9_]{4,20}"
-                                   minlength="4" maxlength="20">
-                            <div class="field-info">4-20 characters, letters, numbers and underscore only</div>
+                    <div id="newCredentialsFields">
+                        <div class="form-group" style="margin-top: 30px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                            <h3 style="margin-bottom: 15px; color: #333;">
+                                <i class="fas fa-user-lock"></i> Login Account Details
+                            </h3>
+                            <p class="step-description" style="margin-bottom: 20px;">
+                                Create login credentials for the business manager to access their dashboard
+                            </p>
                         </div>
 
-                        <div class="form-group">
-                            <label for="password">
-                                <i class="fas fa-lock"></i>
-                                Password *
-                            </label>
-                            <input type="password" id="password" name="password" required
-                                autocomplete="new-password"
-                                placeholder="Create a strong password" minlength="8">
-                            <div class="field-info">Min 8 chars — must include uppercase, number &amp; special character</div>
-                        </div>
-                    </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="username">
+                                    <i class="fas fa-user"></i>
+                                    Username *
+                                </label>
+                                <input type="text" id="username" name="username" required
+                                       autocomplete="username"
+                                       placeholder="Choose a unique username" pattern="[a-zA-Z0-9_]{4,20}"
+                                       minlength="4" maxlength="20">
+                                <div class="field-info">4-20 characters, letters, numbers and underscore only</div>
+                            </div>
 
-                    <div class="quick-actions" id="credentialsQuickActions">
-                        <button type="button" class="btn btn-secondary quick-action-btn" id="suggestUsernameBtn">
-                            <i class="fas fa-magic"></i> Suggest Username
-                        </button>
-                        <button type="button" class="btn btn-secondary quick-action-btn" id="generatePasswordBtn">
-                            <i class="fas fa-key"></i> Generate Password
-                        </button>
-                        <button type="button" class="btn btn-secondary quick-action-btn" id="copyPasswordBtn">
-                            <i class="fas fa-copy"></i> Copy Password
-                        </button>
+                            <div class="form-group">
+                                <label for="password">
+                                    <i class="fas fa-lock"></i>
+                                    Password *
+                                </label>
+                                <input type="password" id="password" name="password" required
+                                    autocomplete="new-password"
+                                    placeholder="Create a strong password" minlength="8">
+                                <div class="field-info">Min 8 chars — must include uppercase, number &amp; special character</div>
+                            </div>
+                        </div>
+
+                        <div class="quick-actions" id="credentialsQuickActions">
+                            <button type="button" class="btn btn-secondary quick-action-btn" id="suggestUsernameBtn">
+                                <i class="fas fa-magic"></i> Suggest Username
+                            </button>
+                            <button type="button" class="btn btn-secondary quick-action-btn" id="generatePasswordBtn">
+                                <i class="fas fa-key"></i> Generate Password
+                            </button>
+                            <button type="button" class="btn btn-secondary quick-action-btn" id="copyPasswordBtn">
+                                <i class="fas fa-copy"></i> Copy Password
+                            </button>
+                        </div>
                     </div>
                 </div>
 

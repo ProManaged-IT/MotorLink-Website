@@ -1062,45 +1062,29 @@ class MotorLink {
             existingDashboard.remove();
         }
 
-        // Determine dashboard URL and text based on user type
-        let dashboardUrl = '';
-        let dashboardText = '';
-        let dashboardIcon = '';
+        const dashboardMap = {
+            dealer: { url: 'dealer-dashboard.html', text: 'My Showroom', icon: 'fas fa-store' },
+            garage: { url: 'garage-dashboard.html', text: 'My Garage', icon: 'fas fa-wrench' },
+            car_hire: { url: 'car-hire-dashboard.html', text: 'My Fleet', icon: 'fas fa-car-side' },
+            admin: { url: 'admin/admin.html', text: 'Admin Panel', icon: 'fas fa-shield-alt' }
+        };
 
-        switch(this.currentUser.type) {
-            case 'dealer':
-                dashboardUrl = 'dealer-dashboard.html';
-                dashboardText = 'My Showroom';
-                dashboardIcon = 'fas fa-store';
-                break;
-            case 'garage':
-                dashboardUrl = 'garage-dashboard.html';
-                dashboardText = 'My Garage';
-                dashboardIcon = 'fas fa-wrench';
-                break;
-            case 'car_hire':
-                dashboardUrl = 'car-hire-dashboard.html';
-                dashboardText = 'My Fleet';
-                dashboardIcon = 'fas fa-car-side';
-                break;
-            case 'admin':
-                dashboardUrl = 'admin/admin.html';
-                dashboardText = 'Admin Panel';
-                dashboardIcon = 'fas fa-shield-alt';
-                break;
-            default:
-                // Individual users don't get a special dashboard link
-                return;
-        }
+        const ownedTypes = Array.isArray(this.currentUser.business_types) ? this.currentUser.business_types : [];
+        const dashboardTypes = Array.from(new Set([
+            ...ownedTypes,
+            ...(dashboardMap[this.currentUser.type] ? [this.currentUser.type] : [])
+        ])).filter(type => dashboardMap[type]);
 
-        // Create and insert the dashboard link
-        const dashboardLink = document.createElement('a');
-        dashboardLink.href = dashboardUrl;
-        dashboardLink.className = 'dashboard-link';
-        dashboardLink.innerHTML = `<i class="${dashboardIcon}"></i> <span>${dashboardText}</span>`;
+        if (!dashboardTypes.length) return;
 
-        // Insert after the last nav item
-        nav.appendChild(dashboardLink);
+        dashboardTypes.forEach(type => {
+            const item = dashboardMap[type];
+            const dashboardLink = document.createElement('a');
+            dashboardLink.href = item.url;
+            dashboardLink.className = 'dashboard-link';
+            dashboardLink.innerHTML = `<i class="${item.icon}"></i> <span>${item.text}</span>`;
+            nav.appendChild(dashboardLink);
+        });
         this.syncActiveNavLink();
     }
 

@@ -30,7 +30,8 @@ class CarHireDashboard {
                 return;
             }
 
-            if (data.user.type !== 'car_hire') {
+            const businessTypes = Array.isArray(data.user.business_types) ? data.user.business_types : [];
+            if (data.user.type !== 'car_hire' && !businessTypes.includes('car_hire')) {
                 alert('Access denied. This area is for car hire companies only.');
                 window.location.href = 'index.html';
                 return;

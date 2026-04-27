@@ -26,7 +26,8 @@ class GarageDashboard {
                 return;
             }
 
-            if (data.user.type !== 'garage') {
+            const businessTypes = Array.isArray(data.user.business_types) ? data.user.business_types : [];
+            if (data.user.type !== 'garage' && !businessTypes.includes('garage')) {
                 alert('Access denied. This area is for garage businesses only.');
                 window.location.href = 'index.html';
                 return;

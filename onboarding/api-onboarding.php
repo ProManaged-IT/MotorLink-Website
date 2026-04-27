@@ -469,6 +469,67 @@ function businessExists($db, $type, $businessName, $email, $phone) {
     }
 }
 
+function findReusableOnboardingUserByEmail($db, $email) {
+    $email = trim((string)$email);
+    if ($email === '') return null;
+
+    $stmt = $db->prepare("
+        SELECT id, username, email, full_name, phone, whatsapp, address, city,
+               user_type, business_id, status
+        FROM users
+        WHERE LOWER(email) = LOWER(?)
+        AND (email NOT LIKE '%@motorlink.test' OR email IS NULL)
+        AND (status IS NULL OR status NOT IN ('suspended', 'banned', 'deleted'))
+        LIMIT 1
+    ");
+    $stmt->execute([$email]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return $user ?: null;
+}
+
+function hydrateExistingOnboardingUser($db, $userId, $input, $businessType, $businessName, $city) {
+    $stmt = $db->prepare("
+        UPDATE users SET
+            full_name = CASE WHEN full_name IS NULL OR full_name = '' THEN ? ELSE full_name END,
+            phone = CASE WHEN phone IS NULL OR phone = '' THEN ? ELSE phone END,
+            whatsapp = CASE WHEN whatsapp IS NULL OR whatsapp = '' THEN ? ELSE whatsapp END,
+            address = CASE WHEN address IS NULL OR address = '' THEN ? ELSE address END,
+            city = CASE WHEN city IS NULL OR city = '' THEN ? ELSE city END,
+            business_name = CASE WHEN business_name IS NULL OR business_name = '' THEN ? ELSE business_name END,
+            business_registration = CASE WHEN business_registration IS NULL OR business_registration = '' THEN ? ELSE business_registration END,
+            national_id = CASE WHEN national_id IS NULL OR national_id = '' THEN ? ELSE national_id END,
+            date_of_birth = CASE WHEN date_of_birth IS NULL THEN ? ELSE date_of_birth END,
+            user_type = CASE WHEN user_type IS NULL OR user_type = '' OR user_type = 'individual' THEN ? ELSE user_type END,
+            updated_at = NOW()
+        WHERE id = ?
+    ");
+    $stmt->execute([
+        trim((string)($input['owner_name'] ?? '')),
+        trim((string)($input['phone'] ?? '')),
+        trim((string)($input['whatsapp'] ?? '')) ?: null,
+        trim((string)($input['address'] ?? '')),
+        $city,
+        $businessName,
+        trim((string)($input['business_registration'] ?? '')) ?: null,
+        trim((string)($input['owner_id_number'] ?? '')) ?: null,
+        trim((string)($input['owner_dob'] ?? '')) ?: null,
+        $businessType,
+        (int)$userId
+    ]);
+}
+
+function linkUserPrimaryBusinessIfEmpty($db, $userId, $businessId, $businessType) {
+    $stmt = $db->prepare("
+        UPDATE users SET
+            business_id = CASE WHEN business_id IS NULL OR business_id = 0 THEN ? ELSE business_id END,
+            user_type = CASE WHEN user_type IS NULL OR user_type = '' OR user_type = 'individual' THEN ? ELSE user_type END,
+            updated_at = NOW()
+        WHERE id = ?
+    ");
+    $stmt->execute([(int)$businessId, $businessType, (int)$userId]);
+}
+
 /**
  * Log API activity to file
  */
@@ -576,7 +637,7 @@ function getOnboardingNotificationSettings($db) {
  * Build a tailored quick-start guide for the new business owner.
  * @return array{html:string,text:string,dashboard_url:string}
  */
-function getOnboardingQuickStartGuide($businessTypeKey, $portalUrl) {
+function getOnboardingQuickStartGuide($businessTypeKey, $portalUrl, $existingAccount = false) {
     $base = rtrim(SITE_URL, '/');
     $dashboards = [
         'car_hire' => $base . '/car-hire-dashboard.html',
@@ -586,7 +647,9 @@ function getOnboardingQuickStartGuide($businessTypeKey, $portalUrl) {
     $dashboardUrl = $dashboards[$businessTypeKey] ?? ($base . '/profile.html');
 
     $commonSteps = [
-        'Sign in using the credentials below and change your password from <em>Profile &raquo; Account Settings</em>.',
+        $existingAccount
+            ? 'Sign in using your existing MotorLink login and open the relevant business dashboard.'
+            : 'Sign in using the credentials below and change your password from <em>Profile &raquo; Account Settings</em>.',
         'Upload your business logo and at least 3 photos so customers can recognise you.',
         'Complete your business profile: opening hours, address, phone, website and social links.',
         'Enable WhatsApp notifications in your profile to receive enquiries instantly.'
@@ -674,7 +737,10 @@ function sendOnboardingWelcomeEmail($db, $payload) {
             $portalUrl = rtrim(SITE_URL, '/') . '/login.html';
         }
 
-        $subject = SITE_NAME . ' - Your New Account Credentials';
+        $existingAccount = !empty($payload['existing_account']);
+        $subject = $existingAccount
+            ? SITE_NAME . ' - New Business Linked to Your Account'
+            : SITE_NAME . ' - Your New Account Credentials';
 
         $safeRecipientName = htmlspecialchars($recipientName, ENT_QUOTES, 'UTF-8');
         $safeBusinessName = htmlspecialchars($businessName, ENT_QUOTES, 'UTF-8');
@@ -697,7 +763,24 @@ function sendOnboardingWelcomeEmail($db, $payload) {
             elseif (strpos($btLower, 'dealer') !== false) $businessTypeKey = 'dealer';
             else $businessTypeKey = 'dealer';
         }
-        $guide = getOnboardingQuickStartGuide($businessTypeKey, $portalUrl);
+        $guide = getOnboardingQuickStartGuide($businessTypeKey, $portalUrl, $existingAccount);
+
+        $accountIntro = $existingAccount
+            ? 'We linked the <strong>' . $safeBusinessType . '</strong> <strong>' . $safeBusinessName . '</strong> to your existing MotorLink account.'
+            : 'We created your <strong>' . $safeBusinessType . '</strong> account for <strong>' . $safeBusinessName . '</strong>.';
+        $accountBox = $existingAccount
+            ? '<div style="border:1px solid #cde7d6;border-radius:10px;padding:14px 16px;background:#f7fffa;margin:0 0 16px 0;">
+                    <p style="margin:0 0 8px 0;"><strong>Login URL:</strong> <a href="' . $safePortalUrl . '" style="color:#0f6d37;text-decoration:none;">' . $safePortalUrl . '</a></p>
+                    <p style="margin:0;"><strong>Username:</strong> ' . $safeUsername . '</p>
+                </div>'
+            : '<div style="border:1px solid #cde7d6;border-radius:10px;padding:14px 16px;background:#f7fffa;margin:0 0 16px 0;">
+                    <p style="margin:0 0 8px 0;"><strong>Login URL:</strong> <a href="' . $safePortalUrl . '" style="color:#0f6d37;text-decoration:none;">' . $safePortalUrl . '</a></p>
+                    <p style="margin:0 0 8px 0;"><strong>Username:</strong> ' . $safeUsername . '</p>
+                    <p style="margin:0;"><strong>Temporary Password:</strong> ' . $safePassword . '</p>
+                </div>';
+        $securityNote = $existingAccount
+            ? 'Use your current password. No new password was created for this business.'
+            : 'Please log in and change your password immediately for security.';
 
         $htmlMessage = '
             <div style="font-family:Segoe UI,Arial,sans-serif;line-height:1.55;color:#113322;background:#f3fbf6;padding:20px;">
@@ -708,14 +791,10 @@ function sendOnboardingWelcomeEmail($db, $payload) {
                     </div>
                     <div style="padding:22px;">
                         <p style="margin:0 0 12px 0;">Hello ' . $safeRecipientName . ',</p>
-                        <p style="margin:0 0 14px 0;">We created your <strong>' . $safeBusinessType . '</strong> account for <strong>' . $safeBusinessName . '</strong>.</p>
+                        <p style="margin:0 0 14px 0;">' . $accountIntro . '</p>
                         ' . $referenceLine . '
-                        <div style="border:1px solid #cde7d6;border-radius:10px;padding:14px 16px;background:#f7fffa;margin:0 0 16px 0;">
-                            <p style="margin:0 0 8px 0;"><strong>Login URL:</strong> <a href="' . $safePortalUrl . '" style="color:#0f6d37;text-decoration:none;">' . $safePortalUrl . '</a></p>
-                            <p style="margin:0 0 8px 0;"><strong>Username:</strong> ' . $safeUsername . '</p>
-                            <p style="margin:0;"><strong>Temporary Password:</strong> ' . $safePassword . '</p>
-                        </div>
-                        <p style="margin:0 0 12px 0;">Please log in and change your password immediately for security.</p>
+                        ' . $accountBox . '
+                        <p style="margin:0 0 12px 0;">' . $securityNote . '</p>
                         ' . $guide['html'] . '
                         <p style="margin:14px 0 0 0;">Need help? Reply to this email and our team will assist you.</p>
                     </div>
@@ -725,12 +804,13 @@ function sendOnboardingWelcomeEmail($db, $payload) {
 
         $textMessage = "Welcome to " . SITE_NAME . "\n\n" .
             "Hello {$recipientName},\n" .
-            "Your {$businessType} account for {$businessName} has been created.\n" .
+            ($existingAccount
+                ? "Your {$businessType} for {$businessName} has been linked to your existing MotorLink account.\n"
+                : "Your {$businessType} account for {$businessName} has been created.\n") .
             ($reference !== '' ? "Reference: {$reference}\n" : '') .
             "Login URL: {$portalUrl}\n" .
             "Username: {$username}\n" .
-            "Temporary Password: {$plainPassword}\n\n" .
-            "Please log in and change your password immediately.\n\n" .
+            ($existingAccount ? "No new password was created for this business.\n\n" : "Temporary Password: {$plainPassword}\n\nPlease log in and change your password immediately.\n\n") .
             $guide['text'];
 
         $mailer = new SMTPMailer(
@@ -744,11 +824,11 @@ function sendOnboardingWelcomeEmail($db, $payload) {
 
         $sent = $mailer->send($recipientEmail, $subject, $htmlMessage, $textMessage);
         if ($sent) {
-            logActivity('Onboarding credentials email sent to ' . $recipientEmail);
+            logActivity(($existingAccount ? 'Onboarding account-link email sent to ' : 'Onboarding credentials email sent to ') . $recipientEmail);
             return [
                 'sent' => true,
                 'status' => 'sent',
-                'message' => 'Credentials email delivered'
+                'message' => $existingAccount ? 'Existing account link email delivered' : 'Credentials email delivered'
             ];
         }
 
@@ -855,27 +935,42 @@ function sendOnboardingWelcomeWhatsApp($db, $payload) {
         $businessName = trim((string)($payload['business_name'] ?? 'Your Business'));
         $username = trim((string)($payload['username'] ?? ''));
         $plainPassword = (string)($payload['password'] ?? '');
+        $existingAccount = !empty($payload['existing_account']);
         $portalUrl = trim((string)($settings['onboarding_portal_url'] ?? rtrim(SITE_URL, '/') . '/login.html'));
 
-        $messageText = SITE_NAME . " Onboarding\n" .
-            "Hello {$recipientName}, your account for {$businessName} is ready.\n" .
-            "Login: {$portalUrl}\n" .
-            "Username: {$username}\n" .
-            "Password: {$plainPassword}\n" .
-            "Please change password after first login.\n\n" .
-            "Quick start:\n" .
-            "1. Sign in & change password\n" .
-            "2. Upload logo and 3+ photos\n" .
-            "3. Complete profile (hours, address, socials)\n" .
-            "4. Enable WhatsApp notifications\n" .
-            "Need help? Reply to this message.";
+        if ($existingAccount) {
+            $messageText = SITE_NAME . " Onboarding\n" .
+                "Hello {$recipientName}, {$businessName} has been linked to your existing MotorLink account.\n" .
+                "Login: {$portalUrl}\n" .
+                "Username: {$username}\n" .
+                "Use your current password. No new password was created.\n\n" .
+                "Quick start:\n" .
+                "1. Sign in with your existing login\n" .
+                "2. Open the relevant business dashboard\n" .
+                "3. Complete profile (hours, address, socials)\n" .
+                "4. Enable WhatsApp notifications\n" .
+                "Need help? Reply to this message.";
+        } else {
+            $messageText = SITE_NAME . " Onboarding\n" .
+                "Hello {$recipientName}, your account for {$businessName} is ready.\n" .
+                "Login: {$portalUrl}\n" .
+                "Username: {$username}\n" .
+                "Password: {$plainPassword}\n" .
+                "Please change password after first login.\n\n" .
+                "Quick start:\n" .
+                "1. Sign in & change password\n" .
+                "2. Upload logo and 3+ photos\n" .
+                "3. Complete profile (hours, address, socials)\n" .
+                "4. Enable WhatsApp notifications\n" .
+                "Need help? Reply to this message.";
+        }
 
         $requestBody = [
             'to' => $targetPhone,
             'name' => $recipientName,
             'message' => $messageText,
             'username' => $username,
-            'password' => $plainPassword,
+            'password' => $existingAccount ? null : $plainPassword,
             'business_name' => $businessName
         ];
 
@@ -1137,6 +1232,7 @@ function checkEmailOrPhoneExists($db) {
     $email = $input['email'] ?? '';
     $phone = $input['phone'] ?? '';
     $type = $input['type'] ?? '';
+    $excludeBusinessId = (int)($input['business_id'] ?? 0);
     
     if (empty($email) && empty($phone)) {
         sendError('Email or phone is required', 400);
@@ -1147,16 +1243,18 @@ function checkEmailOrPhoneExists($db) {
             'email_exists' => false,
             'phone_exists' => false,
             'email_belongs_to_user' => false,
-            'phone_belongs_to_user' => false
+            'phone_belongs_to_user' => false,
+            'existing_user' => null
         ];
         
         // Check email in users table
         if (!empty($email)) {
             $stmt = $db->prepare("
-                SELECT id, email, user_type, business_id 
+                SELECT id, username, email, full_name, user_type, business_id, status
                 FROM users 
                 WHERE LOWER(email) = LOWER(?)
                 AND status IN ('active', 'pending', 'pending_approval')
+                AND (email NOT LIKE '%@motorlink.test' OR email IS NULL)
                 LIMIT 1
             ");
             $stmt->execute([$email]);
@@ -1165,21 +1263,34 @@ function checkEmailOrPhoneExists($db) {
             if ($existingUser) {
                 $results['email_exists'] = true;
                 $results['email_belongs_to_user'] = true;
+                $results['existing_user'] = [
+                    'id' => (int)$existingUser['id'],
+                    'username' => $existingUser['username'] ?? '',
+                    'email' => $existingUser['email'] ?? '',
+                    'full_name' => $existingUser['full_name'] ?? '',
+                    'user_type' => $existingUser['user_type'] ?? '',
+                    'business_id' => isset($existingUser['business_id']) ? (int)$existingUser['business_id'] : null,
+                    'status' => $existingUser['status'] ?? ''
+                ];
             }
             
             // Also check in business tables
             if (!$results['email_exists']) {
-                $tables = ['car_hire_companies', 'garages', 'car_dealers'];
-                foreach ($tables as $table) {
+                $tables = ['car_hire_companies' => 'car_hire', 'garages' => 'garage', 'car_dealers' => 'dealer'];
+                foreach ($tables as $table => $tableType) {
                     $emailField = ($table === 'garages') ? 'email' : 'email';
+                    $excludeSql = ($excludeBusinessId > 0 && $type === $tableType) ? 'AND id != ?' : '';
                     $stmt = $db->prepare("
                         SELECT id, email 
                         FROM $table 
                         WHERE LOWER(email) = LOWER(?)
                         AND status IN ('active', 'pending_approval')
+                        $excludeSql
                         LIMIT 1
                     ");
-                    $stmt->execute([$email]);
+                    $params = [$email];
+                    if ($excludeSql !== '') $params[] = $excludeBusinessId;
+                    $stmt->execute($params);
                     if ($stmt->fetch()) {
                         $results['email_exists'] = true;
                         break;
@@ -1207,16 +1318,20 @@ function checkEmailOrPhoneExists($db) {
             
             // Also check in business tables
             if (!$results['phone_exists']) {
-                $tables = ['car_hire_companies', 'garages', 'car_dealers'];
-                foreach ($tables as $table) {
+                $tables = ['car_hire_companies' => 'car_hire', 'garages' => 'garage', 'car_dealers' => 'dealer'];
+                foreach ($tables as $table => $tableType) {
+                    $excludeSql = ($excludeBusinessId > 0 && $type === $tableType) ? 'AND id != ?' : '';
                     $stmt = $db->prepare("
                         SELECT id, phone 
                         FROM $table 
                         WHERE phone = ?
                         AND status IN ('active', 'pending_approval')
+                        $excludeSql
                         LIMIT 1
                     ");
-                    $stmt->execute([$phone]);
+                    $params = [$phone];
+                    if ($excludeSql !== '') $params[] = $excludeBusinessId;
+                    $stmt->execute($params);
                     if ($stmt->fetch()) {
                         $results['phone_exists'] = true;
                         break;
@@ -1446,8 +1561,8 @@ function addCarHireCompany($db) {
     logActivity("Email received: " . ($input['email'] ?? 'NOT SET'));
     logActivity("Business name received: " . ($input['business_name'] ?? 'NOT SET'));
 
-    // Validate required fields (including login credentials)
-    $required = ['business_name', 'owner_name', 'email', 'phone', 'address', 'location_id', 'username', 'password'];
+    // Validate required fields. Credentials are required only for a brand-new user.
+    $required = ['business_name', 'owner_name', 'email', 'phone', 'address', 'location_id'];
     $missing = [];
     foreach ($required as $field) {
         if (empty($input[$field])) {
@@ -1481,14 +1596,27 @@ function addCarHireCompany($db) {
         sendError($validation['message'], 400);
     }
 
-    $validation = validateUsername($input['username']);
-    if (!$validation['valid']) {
-        sendError($validation['message'], 400);
-    }
+    $existingOwner = findReusableOnboardingUserByEmail($db, $input['email']);
+    $useExistingOwner = (bool)$existingOwner;
+    if (!$useExistingOwner) {
+        foreach (['username', 'password'] as $credentialField) {
+            if (empty($input[$credentialField])) {
+                sendError("Missing required fields: {$credentialField}", 400);
+            }
+        }
 
-    $validation = validatePassword($input['password']);
-    if (!$validation['valid']) {
-        sendError($validation['message'], 400);
+        $validation = validateUsername($input['username']);
+        if (!$validation['valid']) {
+            sendError($validation['message'], 400);
+        }
+
+        $validation = validatePassword($input['password']);
+        if (!$validation['valid']) {
+            sendError($validation['message'], 400);
+        }
+    } else {
+        $input['username'] = $existingOwner['username'] ?? '';
+        $input['password'] = '';
     }
 
     // Validate optional URLs
@@ -1543,27 +1671,29 @@ function addCarHireCompany($db) {
             sendError('A car hire company with similar details already exists. Business: ' . $existingName, 409);
         }
 
-        // Check if username already exists (case-insensitive) - check all statuses
-        $stmt = $db->prepare("SELECT id, username FROM users WHERE LOWER(username) = LOWER(?)");
-        $stmt->execute([$input['username']]);
-        $existingUser = $stmt->fetch();
-        if ($existingUser) {
-            sendError('Username "' . $existingUser['username'] . '" already exists. Please choose a different username.', 409);
-        }
+        if (!$useExistingOwner) {
+            // Check if username already exists (case-insensitive) - check all statuses
+            $stmt = $db->prepare("SELECT id, username FROM users WHERE LOWER(username) = LOWER(?)");
+            $stmt->execute([$input['username']]);
+            $existingUser = $stmt->fetch();
+            if ($existingUser) {
+                sendError('Username "' . $existingUser['username'] . '" already exists. Please choose a different username.', 409);
+            }
 
-        // Check if email already exists in users table (case-insensitive) - check all statuses
-        $stmt = $db->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)");
-        $stmt->execute([$input['email']]);
-        $existingEmail = $stmt->fetch();
-        if ($existingEmail) {
-            sendError('Email "' . $existingEmail['email'] . '" is already registered. Please use a different email or login with existing account.', 409);
+            // Check if email already exists in users table (case-insensitive) - check all statuses
+            $stmt = $db->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)");
+            $stmt->execute([$input['email']]);
+            $existingEmail = $stmt->fetch();
+            if ($existingEmail) {
+                sendError('Email "' . $existingEmail['email'] . '" is already registered. Please use a different email or login with existing account.', 409);
+            }
         }
 
         // Check if phone number already exists in users table - check all statuses
         $stmt = $db->prepare("SELECT id, phone, business_name FROM users WHERE phone = ? AND user_type IN ('car_hire', 'garage', 'dealer')");
         $stmt->execute([$input['phone']]);
         $existingPhone = $stmt->fetch();
-        if ($existingPhone) {
+        if ($existingPhone && (!$useExistingOwner || (int)$existingPhone['id'] !== (int)$existingOwner['id'])) {
             $businessInfo = $existingPhone['business_name'] ? ' (Business: ' . $existingPhone['business_name'] . ')' : '';
             sendError('Phone number "' . $input['phone'] . '" is already registered' . $businessInfo . '. Please use a different phone number.', 409);
         }
@@ -1634,9 +1764,6 @@ function addCarHireCompany($db) {
         $db->beginTransaction();
         
         try {
-            // Create user account first (simple, like admin)
-            $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
-
             $city = null;
             if (!empty($input['location_id'])) {
                 $locStmt = $db->prepare("SELECT name FROM locations WHERE id = ?");
@@ -1645,41 +1772,49 @@ function addCarHireCompany($db) {
                 $city = $location['name'] ?? null;
             }
 
-            $stmt = $db->prepare("
-                INSERT INTO users (username, email, password_hash, full_name, phone, whatsapp, address, city,
-                                 user_type, status, business_name, business_registration, national_id, date_of_birth,
-                                 created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'car_hire', 'pending', ?, ?, ?, ?, NOW(), NOW())
-            ");
+            if ($useExistingOwner) {
+                $userId = (int)$existingOwner['id'];
+                hydrateExistingOnboardingUser($db, $userId, $input, 'car_hire', $input['business_name'], $city);
+            } else {
+                // Create user account first (simple, like admin)
+                $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
 
-            $stmt->execute([
-                $input['username'],
-                $input['email'],
-                $passwordHash,
-                $input['owner_name'],
-                $input['phone'],
-                $input['whatsapp'] ?? null,
-                $input['address'],
-                $city,
-                $input['business_name'],
-                $input['business_registration'] ?? null,
-                $input['owner_id_number'] ?? null,
-                $input['owner_dob'] ?? null
-            ]);
+                $stmt = $db->prepare("
+                    INSERT INTO users (username, email, password_hash, full_name, phone, whatsapp, address, city,
+                                     user_type, status, business_name, business_registration, national_id, date_of_birth,
+                                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'car_hire', 'pending', ?, ?, ?, ?, NOW(), NOW())
+                ");
 
-            $userId = $db->lastInsertId();
+                $stmt->execute([
+                    $input['username'],
+                    $input['email'],
+                    $passwordHash,
+                    $input['owner_name'],
+                    $input['phone'],
+                    $input['whatsapp'] ?? null,
+                    $input['address'],
+                    $city,
+                    $input['business_name'],
+                    $input['business_registration'] ?? null,
+                    $input['owner_id_number'] ?? null,
+                    $input['owner_dob'] ?? null
+                ]);
 
-            if (!$userId || $userId <= 0) {
-                throw new Exception('Failed to get user ID after insert');
-            }
-            
-            // Verify user was actually created
-            $verifyStmt = $db->prepare("SELECT id, username, email FROM users WHERE id = ?");
-            $verifyStmt->execute([$userId]);
-            $verifiedUser = $verifyStmt->fetch();
-            
-            if (!$verifiedUser) {
-                throw new Exception('User was not found in database after insert');
+                $userId = $db->lastInsertId();
+
+                if (!$userId || $userId <= 0) {
+                    throw new Exception('Failed to get user ID after insert');
+                }
+                
+                // Verify user was actually created
+                $verifyStmt = $db->prepare("SELECT id, username, email FROM users WHERE id = ?");
+                $verifyStmt->execute([$userId]);
+                $verifiedUser = $verifyStmt->fetch();
+                
+                if (!$verifiedUser) {
+                    throw new Exception('User was not found in database after insert');
+                }
             }
 
             if (hasTableColumn($db, 'users', 'whatsapp_notifications')) {
@@ -1740,9 +1875,8 @@ function addCarHireCompany($db) {
             throw new Exception('Failed to get company ID after insert');
         }
 
-        // Link user to business
-        $stmt = $db->prepare("UPDATE users SET business_id = ? WHERE id = ?");
-        $stmt->execute([$companyId, $userId]);
+        // Link as primary business only when this user does not already have one.
+        linkUserPrimaryBusinessIfEmpty($db, $userId, $companyId, 'car_hire');
         
         // Commit transaction - both user and business are now in database
         $db->commit();
@@ -1761,7 +1895,8 @@ function addCarHireCompany($db) {
             'business_type' => 'Car Hire Company',
             'business_type_key' => 'car_hire',
             'username' => $input['username'],
-            'password' => $input['password'],
+            'password' => $useExistingOwner ? null : $input['password'],
+            'existing_account' => $useExistingOwner,
             'phone' => $input['phone'],
             'whatsapp' => $input['whatsapp'] ?? null,
             'whatsapp_updates_opt_in' => !empty($input['whatsapp_updates_opt_in']) ? 1 : 0,
@@ -1770,7 +1905,9 @@ function addCarHireCompany($db) {
 
         sendSuccess([
             'api_version' => 'v2_with_user_creation',
-            'message' => 'Car hire company successfully onboarded! Status: Pending Approval. Login account created.',
+            'message' => $useExistingOwner
+                ? 'Car hire company successfully onboarded! Status: Pending Approval. Existing login linked.'
+                : 'Car hire company successfully onboarded! Status: Pending Approval. Login account created.',
             'company_id' => $companyId,
             'user_id' => $userId,
             'username' => $input['username'],
@@ -1779,8 +1916,9 @@ function addCarHireCompany($db) {
             'email' => $input['email'],
             'phone' => $input['phone'],
             'business_status' => 'pending_approval',
-            'user_status' => 'pending',
+            'user_status' => $useExistingOwner ? ($existingOwner['status'] ?? 'existing') : 'pending',
             'status' => 'pending_approval',
+            'existing_account' => $useExistingOwner,
             'reference' => 'CH' . str_pad($companyId, 5, '0', STR_PAD_LEFT),
             'notifications' => $notifications
         ]);
@@ -1818,8 +1956,8 @@ function addGarage($db) {
     logActivity("Email received: " . ($input['email'] ?? 'NOT SET'));
     logActivity("Business name received: " . ($input['name'] ?? 'NOT SET'));
 
-    // Validate required fields (including login credentials)
-    $required = ['name', 'owner_name', 'email', 'phone', 'address', 'location_id', 'username', 'password'];
+    // Validate required fields. Credentials are required only for a brand-new user.
+    $required = ['name', 'owner_name', 'email', 'phone', 'address', 'location_id'];
     $missing = [];
     foreach ($required as $field) {
         if (empty($input[$field])) {
@@ -1853,14 +1991,27 @@ function addGarage($db) {
         sendError($validation['message'], 400);
     }
 
-    $validation = validateUsername($input['username']);
-    if (!$validation['valid']) {
-        sendError($validation['message'], 400);
-    }
+    $existingOwner = findReusableOnboardingUserByEmail($db, $input['email']);
+    $useExistingOwner = (bool)$existingOwner;
+    if (!$useExistingOwner) {
+        foreach (['username', 'password'] as $credentialField) {
+            if (empty($input[$credentialField])) {
+                sendError("Missing required fields: {$credentialField}", 400);
+            }
+        }
 
-    $validation = validatePassword($input['password']);
-    if (!$validation['valid']) {
-        sendError($validation['message'], 400);
+        $validation = validateUsername($input['username']);
+        if (!$validation['valid']) {
+            sendError($validation['message'], 400);
+        }
+
+        $validation = validatePassword($input['password']);
+        if (!$validation['valid']) {
+            sendError($validation['message'], 400);
+        }
+    } else {
+        $input['username'] = $existingOwner['username'] ?? '';
+        $input['password'] = '';
     }
 
     // Validate optional URLs
@@ -1923,27 +2074,29 @@ function addGarage($db) {
             sendError('A garage with similar details already exists. Business: ' . $existingName, 409);
         }
 
-        // Check if username already exists (case-insensitive) - check all statuses
-        $stmt = $db->prepare("SELECT id, username FROM users WHERE LOWER(username) = LOWER(?)");
-        $stmt->execute([$input['username']]);
-        $existingUser = $stmt->fetch();
-        if ($existingUser) {
-            sendError('Username "' . $existingUser['username'] . '" already exists. Please choose a different username.', 409);
-        }
+        if (!$useExistingOwner) {
+            // Check if username already exists (case-insensitive) - check all statuses
+            $stmt = $db->prepare("SELECT id, username FROM users WHERE LOWER(username) = LOWER(?)");
+            $stmt->execute([$input['username']]);
+            $existingUser = $stmt->fetch();
+            if ($existingUser) {
+                sendError('Username "' . $existingUser['username'] . '" already exists. Please choose a different username.', 409);
+            }
 
-        // Check if email already exists in users table (case-insensitive) - check all statuses
-        $stmt = $db->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)");
-        $stmt->execute([$input['email']]);
-        $existingEmail = $stmt->fetch();
-        if ($existingEmail) {
-            sendError('Email "' . $existingEmail['email'] . '" is already registered. Please use a different email or login with existing account.', 409);
+            // Check if email already exists in users table (case-insensitive) - check all statuses
+            $stmt = $db->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)");
+            $stmt->execute([$input['email']]);
+            $existingEmail = $stmt->fetch();
+            if ($existingEmail) {
+                sendError('Email "' . $existingEmail['email'] . '" is already registered. Please use a different email or login with existing account.', 409);
+            }
         }
 
         // Check if phone number already exists in users table - check all statuses
         $stmt = $db->prepare("SELECT id, phone, business_name FROM users WHERE phone = ? AND user_type IN ('car_hire', 'garage', 'dealer')");
         $stmt->execute([$input['phone']]);
         $existingPhone = $stmt->fetch();
-        if ($existingPhone) {
+        if ($existingPhone && (!$useExistingOwner || (int)$existingPhone['id'] !== (int)$existingOwner['id'])) {
             $businessInfo = $existingPhone['business_name'] ? ' (Business: ' . $existingPhone['business_name'] . ')' : '';
             sendError('Phone number "' . $input['phone'] . '" is already registered' . $businessInfo . '. Please use a different phone number.', 409);
         }
@@ -1962,9 +2115,6 @@ function addGarage($db) {
         $db->beginTransaction();
         
         try {
-            // Create user account first
-            $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
-
             $city = null;
             if (!empty($input['location_id'])) {
                 $locStmt = $db->prepare("SELECT name FROM locations WHERE id = ?");
@@ -1973,41 +2123,49 @@ function addGarage($db) {
                 $city = $location['name'] ?? null;
             }
 
-            $stmt = $db->prepare("
-                INSERT INTO users (username, email, password_hash, full_name, phone, whatsapp, address, city,
-                                 user_type, status, business_name, business_registration, national_id, date_of_birth,
-                                 created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'garage', 'pending', ?, ?, ?, ?, NOW(), NOW())
-            ");
+            if ($useExistingOwner) {
+                $userId = (int)$existingOwner['id'];
+                hydrateExistingOnboardingUser($db, $userId, $input, 'garage', $input['name'], $city);
+            } else {
+                // Create user account first
+                $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
 
-            $stmt->execute([
-                $input['username'],
-                $input['email'],
-                $passwordHash,
-                $input['owner_name'],
-                $input['phone'],
-                $input['whatsapp'] ?? null,
-                $input['address'],
-                $city,
-                $input['name'],  // business_name for garages
-                $input['business_registration'] ?? null,
-                $input['owner_id_number'] ?? null,
-                $input['owner_dob'] ?? null
-            ]);
+                $stmt = $db->prepare("
+                    INSERT INTO users (username, email, password_hash, full_name, phone, whatsapp, address, city,
+                                     user_type, status, business_name, business_registration, national_id, date_of_birth,
+                                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'garage', 'pending', ?, ?, ?, ?, NOW(), NOW())
+                ");
 
-            $userId = $db->lastInsertId();
+                $stmt->execute([
+                    $input['username'],
+                    $input['email'],
+                    $passwordHash,
+                    $input['owner_name'],
+                    $input['phone'],
+                    $input['whatsapp'] ?? null,
+                    $input['address'],
+                    $city,
+                    $input['name'],  // business_name for garages
+                    $input['business_registration'] ?? null,
+                    $input['owner_id_number'] ?? null,
+                    $input['owner_dob'] ?? null
+                ]);
 
-            if (!$userId || $userId <= 0) {
-                throw new Exception('Failed to get user ID after insert');
-            }
-            
-            // Verify user was actually created
-            $verifyStmt = $db->prepare("SELECT id, username, email FROM users WHERE id = ?");
-            $verifyStmt->execute([$userId]);
-            $verifiedUser = $verifyStmt->fetch();
-            
-            if (!$verifiedUser) {
-                throw new Exception('User was not found in database after insert');
+                $userId = $db->lastInsertId();
+
+                if (!$userId || $userId <= 0) {
+                    throw new Exception('Failed to get user ID after insert');
+                }
+                
+                // Verify user was actually created
+                $verifyStmt = $db->prepare("SELECT id, username, email FROM users WHERE id = ?");
+                $verifyStmt->execute([$userId]);
+                $verifiedUser = $verifyStmt->fetch();
+                
+                if (!$verifiedUser) {
+                    throw new Exception('User was not found in database after insert');
+                }
             }
 
             if (hasTableColumn($db, 'users', 'whatsapp_notifications')) {
@@ -2061,9 +2219,8 @@ function addGarage($db) {
 
         $garageId = $db->lastInsertId();
 
-        // Link user to business
-        $stmt = $db->prepare("UPDATE users SET business_id = ? WHERE id = ?");
-        $stmt->execute([$garageId, $userId]);
+        // Link as primary business only when this user does not already have one.
+        linkUserPrimaryBusinessIfEmpty($db, $userId, $garageId, 'garage');
 
         // Commit transaction so user and garage records are persisted atomically
         $db->commit();
@@ -2082,7 +2239,8 @@ function addGarage($db) {
             'business_type' => 'Garage',
             'business_type_key' => 'garage',
             'username' => $input['username'],
-            'password' => $input['password'],
+            'password' => $useExistingOwner ? null : $input['password'],
+            'existing_account' => $useExistingOwner,
             'phone' => $input['phone'],
             'whatsapp' => $input['whatsapp'] ?? null,
             'whatsapp_updates_opt_in' => !empty($input['whatsapp_updates_opt_in']) ? 1 : 0,
@@ -2091,7 +2249,9 @@ function addGarage($db) {
 
         sendSuccess([
             'api_version' => 'v2_with_user_creation',
-            'message' => 'Garage successfully onboarded! Status: Pending Approval. Login account created.',
+            'message' => $useExistingOwner
+                ? 'Garage successfully onboarded! Status: Pending Approval. Existing login linked.'
+                : 'Garage successfully onboarded! Status: Pending Approval. Login account created.',
             'garage_id' => $garageId,
             'user_id' => $userId,
             'username' => $input['username'],
@@ -2100,8 +2260,9 @@ function addGarage($db) {
             'email' => $input['email'],
             'phone' => $input['phone'],
             'business_status' => 'pending_approval',
-            'user_status' => 'pending',
+            'user_status' => $useExistingOwner ? ($existingOwner['status'] ?? 'existing') : 'pending',
             'status' => 'pending_approval',
+            'existing_account' => $useExistingOwner,
             'reference' => 'GR' . str_pad($garageId, 5, '0', STR_PAD_LEFT),
             'notifications' => $notifications
         ]);
@@ -2139,8 +2300,8 @@ function addCarDealer($db) {
     logActivity("Email received: " . ($input['email'] ?? 'NOT SET'));
     logActivity("Business name received: " . ($input['business_name'] ?? 'NOT SET'));
 
-    // Validate required fields (including login credentials)
-    $required = ['business_name', 'owner_name', 'email', 'phone', 'address', 'location_id', 'username', 'password'];
+    // Validate required fields. Credentials are required only for a brand-new user.
+    $required = ['business_name', 'owner_name', 'email', 'phone', 'address', 'location_id'];
     $missing = [];
     foreach ($required as $field) {
         if (empty($input[$field])) {
@@ -2174,14 +2335,27 @@ function addCarDealer($db) {
         sendError($validation['message'], 400);
     }
 
-    $validation = validateUsername($input['username']);
-    if (!$validation['valid']) {
-        sendError($validation['message'], 400);
-    }
+    $existingOwner = findReusableOnboardingUserByEmail($db, $input['email']);
+    $useExistingOwner = (bool)$existingOwner;
+    if (!$useExistingOwner) {
+        foreach (['username', 'password'] as $credentialField) {
+            if (empty($input[$credentialField])) {
+                sendError("Missing required fields: {$credentialField}", 400);
+            }
+        }
 
-    $validation = validatePassword($input['password']);
-    if (!$validation['valid']) {
-        sendError($validation['message'], 400);
+        $validation = validateUsername($input['username']);
+        if (!$validation['valid']) {
+            sendError($validation['message'], 400);
+        }
+
+        $validation = validatePassword($input['password']);
+        if (!$validation['valid']) {
+            sendError($validation['message'], 400);
+        }
+    } else {
+        $input['username'] = $existingOwner['username'] ?? '';
+        $input['password'] = '';
     }
 
     // Validate optional URLs
@@ -2236,27 +2410,29 @@ function addCarDealer($db) {
             sendError('A car dealer with similar details already exists. Business: ' . $existingName, 409);
         }
 
-        // Check if username already exists (case-insensitive) - check all statuses
-        $stmt = $db->prepare("SELECT id, username FROM users WHERE LOWER(username) = LOWER(?)");
-        $stmt->execute([$input['username']]);
-        $existingUser = $stmt->fetch();
-        if ($existingUser) {
-            sendError('Username "' . $existingUser['username'] . '" already exists. Please choose a different username.', 409);
-        }
+        if (!$useExistingOwner) {
+            // Check if username already exists (case-insensitive) - check all statuses
+            $stmt = $db->prepare("SELECT id, username FROM users WHERE LOWER(username) = LOWER(?)");
+            $stmt->execute([$input['username']]);
+            $existingUser = $stmt->fetch();
+            if ($existingUser) {
+                sendError('Username "' . $existingUser['username'] . '" already exists. Please choose a different username.', 409);
+            }
 
-        // Check if email already exists in users table (case-insensitive) - check all statuses
-        $stmt = $db->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)");
-        $stmt->execute([$input['email']]);
-        $existingEmail = $stmt->fetch();
-        if ($existingEmail) {
-            sendError('Email "' . $existingEmail['email'] . '" is already registered. Please use a different email or login with existing account.', 409);
+            // Check if email already exists in users table (case-insensitive) - check all statuses
+            $stmt = $db->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)");
+            $stmt->execute([$input['email']]);
+            $existingEmail = $stmt->fetch();
+            if ($existingEmail) {
+                sendError('Email "' . $existingEmail['email'] . '" is already registered. Please use a different email or login with existing account.', 409);
+            }
         }
 
         // Check if phone number already exists in users table - check all statuses
         $stmt = $db->prepare("SELECT id, phone, business_name FROM users WHERE phone = ? AND user_type IN ('car_hire', 'garage', 'dealer')");
         $stmt->execute([$input['phone']]);
         $existingPhone = $stmt->fetch();
-        if ($existingPhone) {
+        if ($existingPhone && (!$useExistingOwner || (int)$existingPhone['id'] !== (int)$existingOwner['id'])) {
             $businessInfo = $existingPhone['business_name'] ? ' (Business: ' . $existingPhone['business_name'] . ')' : '';
             sendError('Phone number "' . $input['phone'] . '" is already registered' . $businessInfo . '. Please use a different phone number.', 409);
         }
@@ -2274,9 +2450,6 @@ function addCarDealer($db) {
         // Start transaction to ensure atomicity and prevent partial writes
         $db->beginTransaction();
 
-        // Create user account first
-        $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
-
         $city = null;
         if (!empty($input['location_id'])) {
             $locStmt = $db->prepare("SELECT name FROM locations WHERE id = ?");
@@ -2286,32 +2459,40 @@ function addCarDealer($db) {
         }
 
         try {
-            $stmt = $db->prepare("
-                INSERT INTO users (username, email, password_hash, full_name, phone, whatsapp, address, city,
-                                 user_type, status, business_name, business_registration, national_id, date_of_birth,
-                                 created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'dealer', 'pending', ?, ?, ?, ?, NOW(), NOW())
-            ");
+            if ($useExistingOwner) {
+                $userId = (int)$existingOwner['id'];
+                hydrateExistingOnboardingUser($db, $userId, $input, 'dealer', $input['business_name'], $city);
+            } else {
+                // Create user account first
+                $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
 
-            $stmt->execute([
-                $input['username'],
-                $input['email'],
-                $passwordHash,
-                $input['owner_name'],
-                $input['phone'],
-                $input['whatsapp'] ?? null,
-                $input['address'],
-                $city,
-                $input['business_name'],
-                $input['business_registration'] ?? null,
-                $input['owner_id_number'] ?? null,
-                $input['owner_dob'] ?? null
-            ]);
+                $stmt = $db->prepare("
+                    INSERT INTO users (username, email, password_hash, full_name, phone, whatsapp, address, city,
+                                     user_type, status, business_name, business_registration, national_id, date_of_birth,
+                                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'dealer', 'pending', ?, ?, ?, ?, NOW(), NOW())
+                ");
 
-            $userId = $db->lastInsertId();
+                $stmt->execute([
+                    $input['username'],
+                    $input['email'],
+                    $passwordHash,
+                    $input['owner_name'],
+                    $input['phone'],
+                    $input['whatsapp'] ?? null,
+                    $input['address'],
+                    $city,
+                    $input['business_name'],
+                    $input['business_registration'] ?? null,
+                    $input['owner_id_number'] ?? null,
+                    $input['owner_dob'] ?? null
+                ]);
 
-            if (!$userId) {
-                throw new Exception('Failed to get user ID after insert');
+                $userId = $db->lastInsertId();
+
+                if (!$userId) {
+                    throw new Exception('Failed to get user ID after insert');
+                }
             }
 
             if (hasTableColumn($db, 'users', 'whatsapp_notifications')) {
@@ -2359,9 +2540,8 @@ function addCarDealer($db) {
             throw new Exception('Failed to get dealer ID after insert');
         }
 
-        // Link user to business
-        $stmt = $db->prepare("UPDATE users SET business_id = ? WHERE id = ?");
-        $stmt->execute([$dealerId, $userId]);
+        // Link as primary business only when this user does not already have one.
+        linkUserPrimaryBusinessIfEmpty($db, $userId, $dealerId, 'dealer');
         
         // Commit transaction - both user and business are now in database
         $db->commit();
@@ -2380,7 +2560,8 @@ function addCarDealer($db) {
             'business_type' => 'Car Dealer',
             'business_type_key' => 'dealer',
             'username' => $input['username'],
-            'password' => $input['password'],
+            'password' => $useExistingOwner ? null : $input['password'],
+            'existing_account' => $useExistingOwner,
             'phone' => $input['phone'],
             'whatsapp' => $input['whatsapp'] ?? null,
             'whatsapp_updates_opt_in' => !empty($input['whatsapp_updates_opt_in']) ? 1 : 0,
@@ -2389,7 +2570,9 @@ function addCarDealer($db) {
 
         sendSuccess([
             'api_version' => 'v2_with_user_creation',
-            'message' => 'Car dealer successfully onboarded! Status: Pending Approval. Login account created.',
+            'message' => $useExistingOwner
+                ? 'Car dealer successfully onboarded! Status: Pending Approval. Existing login linked.'
+                : 'Car dealer successfully onboarded! Status: Pending Approval. Login account created.',
             'dealer_id' => $dealerId,
             'user_id' => $userId,
             'username' => $input['username'],
@@ -2398,8 +2581,9 @@ function addCarDealer($db) {
             'email' => $input['email'],
             'phone' => $input['phone'],
             'business_status' => 'pending_approval',
-            'user_status' => 'pending',
+            'user_status' => $useExistingOwner ? ($existingOwner['status'] ?? 'existing') : 'pending',
             'status' => 'pending_approval',
+            'existing_account' => $useExistingOwner,
             'reference' => 'DL' . str_pad($dealerId, 5, '0', STR_PAD_LEFT),
             'notifications' => $notifications
         ]);
@@ -2534,7 +2718,8 @@ function searchExistingBusinesses($db) {
  * Claim an existing (scraped) business: replace placeholder user with real owner credentials,
  * update business contact details, send onboarding email + optional WhatsApp.
  *
- * Required input: type, business_id, owner_name, email, phone, username, password
+ * Required input: type, business_id, owner_name, email, phone
+ * username/password are required only when the email does not already belong to a user.
  * Optional: whatsapp, whatsapp_updates_opt_in, address, location_id, website,
  *           facebook_url, instagram_url, twitter_url, linkedin_url, business_registration,
  *           owner_id_number, owner_dob
@@ -2560,7 +2745,7 @@ function claimExistingBusiness($db) {
         sendError('A valid business_id is required.', 400);
     }
 
-    $required = ['owner_name', 'email', 'phone', 'username', 'password'];
+    $required = ['owner_name', 'email', 'phone'];
     $missing = [];
     foreach ($required as $f) {
         if (trim((string)($input[$f] ?? '')) === '') $missing[] = $f;
@@ -2569,24 +2754,23 @@ function claimExistingBusiness($db) {
         sendError('Missing required fields: ' . implode(', ', $missing), 400);
     }
 
-    $ownerValid = validateOwnerName($input['owner_name']);
+    $ownerName = trim((string)$input['owner_name']);
+    $email = trim((string)$input['email']);
+    $phone = trim((string)$input['phone']);
+    $username = trim((string)($input['username'] ?? ''));
+    $password = (string)($input['password'] ?? '');
+
+    $ownerValid = validateOwnerName($ownerName);
     if (!$ownerValid['valid']) sendError($ownerValid['message'], 400);
 
-    $emailValid = validateEmail($input['email']);
+    $emailValid = validateEmail($email);
     if (!$emailValid['valid']) sendError($emailValid['message'], 400);
 
-    $phoneValid = validatePhone($input['phone']);
-    if (!$phoneValid['valid']) sendError($phoneValid['message'], 400);
-
-    $userValid = validateUsername($input['username']);
-    if (!$userValid['valid']) sendError($userValid['message'], 400);
-
-    $passValid = validatePassword($input['password']);
-    if (!$passValid['valid']) sendError($passValid['message'], 400);
-
-    if (!empty($input['whatsapp'])) {
-        $waValid = validatePhone($input['whatsapp']);
-        if (!$waValid['valid']) sendError('Invalid WhatsApp number. ' . $waValid['message'], 400);
+    if (strlen($phone) > 40) {
+        sendError('Phone number is too long (max 40 characters).', 400);
+    }
+    if (isset($input['whatsapp']) && strlen(trim((string)$input['whatsapp'])) > 40) {
+        sendError('WhatsApp number is too long (max 40 characters).', 400);
     }
 
     // Validate optional URL fields if provided
@@ -2627,23 +2811,46 @@ function claimExistingBusiness($db) {
             }
         }
 
-        // Username uniqueness against non-placeholder users
-        $stmt = $db->prepare("SELECT id, username, email FROM users WHERE LOWER(username) = LOWER(?) AND id != ? LIMIT 1");
-        $stmt->execute([$input['username'], $placeholderUserId ?? 0]);
-        if ($stmt->fetch()) {
-            sendError('Username "' . $input['username'] . '" is already taken.', 409);
+        $existingOwner = null;
+        $stmt = $db->prepare("
+            SELECT id, username, email, full_name, phone, whatsapp, status, user_type, business_id
+            FROM users
+            WHERE LOWER(email) = LOWER(?)
+              AND id != ?
+              AND email NOT LIKE '%@motorlink.test'
+            LIMIT 1
+        ");
+        $stmt->execute([$email, $placeholderUserId ?? 0]);
+        $existingOwner = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        if ($existingOwner && in_array((string)$existingOwner['status'], ['suspended', 'banned'], true)) {
+            sendError('This email belongs to a suspended account. Reactivate the account before linking another business.', 409);
         }
 
-        // Email uniqueness against non-placeholder users
-        $stmt = $db->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ? AND email NOT LIKE '%@motorlink.test' LIMIT 1");
-        $stmt->execute([$input['email'], $placeholderUserId ?? 0]);
-        if ($stmt->fetch()) {
-            sendError('Email "' . $input['email'] . '" is already registered to another account.', 409);
+        $useExistingOwner = (bool)$existingOwner;
+
+        if (!$useExistingOwner) {
+            if ($username === '' || $password === '') {
+                sendError('Missing required fields: username, password', 400);
+            }
+
+            $userValid = validateUsername($username);
+            if (!$userValid['valid']) sendError($userValid['message'], 400);
+
+            $passValid = validatePassword($password);
+            if (!$passValid['valid']) sendError($passValid['message'], 400);
+
+            // Username uniqueness against non-placeholder users
+            $stmt = $db->prepare("SELECT id, username FROM users WHERE LOWER(username) = LOWER(?) AND id != ? LIMIT 1");
+            $stmt->execute([$username, $placeholderUserId ?? 0]);
+            if ($stmt->fetch()) {
+                sendError('Username "' . $username . '" is already taken.', 409);
+            }
         }
 
         ensureUserWhatsappPreferenceColumn($db);
 
-        $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
+        $passwordHash = $useExistingOwner ? null : password_hash($password, PASSWORD_DEFAULT);
 
         // Resolve city from location if provided
         $city = null;
@@ -2657,12 +2864,39 @@ function claimExistingBusiness($db) {
 
         $businessName = (string)($business[$nameField] ?? 'Your Business');
         $address = trim((string)($input['address'] ?? $business['address'] ?? ''));
-        $whatsappPhone = $input['whatsapp'] ?? ($business['whatsapp'] ?? null);
+        $whatsappPhone = trim((string)($input['whatsapp'] ?? ($business['whatsapp'] ?? '')));
+        if ($whatsappPhone === '') {
+            $whatsappPhone = null;
+        }
         $optIn = !empty($input['whatsapp_updates_opt_in']) ? 1 : 0;
 
         $db->beginTransaction();
         try {
-            if ($placeholderUserId) {
+            if ($useExistingOwner) {
+                $userId = (int)$existingOwner['id'];
+
+                $stmt = $db->prepare("
+                    UPDATE users
+                    SET full_name = CASE WHEN full_name IS NULL OR full_name = '' THEN ? ELSE full_name END,
+                        phone = CASE WHEN phone IS NULL OR phone = '' THEN ? ELSE phone END,
+                        whatsapp = CASE WHEN (whatsapp IS NULL OR whatsapp = '') AND ? <> '' THEN ? ELSE whatsapp END,
+                        address = CASE WHEN (address IS NULL OR address = '') AND ? <> '' THEN ? ELSE address END,
+                        city = CASE WHEN (city IS NULL OR city = '') AND ? IS NOT NULL THEN ? ELSE city END,
+                        updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([
+                    $ownerName,
+                    $phone,
+                    (string)$whatsappPhone,
+                    (string)$whatsappPhone,
+                    $address,
+                    $address,
+                    $city,
+                    $city,
+                    $userId
+                ]);
+            } elseif ($placeholderUserId) {
                 // Reuse placeholder user row in-place
                 $stmt = $db->prepare("
                     UPDATE users
@@ -2675,11 +2909,11 @@ function claimExistingBusiness($db) {
                     WHERE id = ?
                 ");
                 $stmt->execute([
-                    $input['username'],
-                    $input['email'],
+                    $username,
+                    $email,
                     $passwordHash,
-                    $input['owner_name'],
-                    $input['phone'],
+                    $ownerName,
+                    $phone,
                     $whatsappPhone,
                     $address,
                     $city,
@@ -2700,11 +2934,11 @@ function claimExistingBusiness($db) {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, NOW(), NOW())
                 ");
                 $stmt->execute([
-                    $input['username'],
-                    $input['email'],
+                    $username,
+                    $email,
                     $passwordHash,
-                    $input['owner_name'],
-                    $input['phone'],
+                    $ownerName,
+                    $phone,
                     $whatsappPhone,
                     $address,
                     $city,
@@ -2725,12 +2959,23 @@ function claimExistingBusiness($db) {
                 $prefStmt = $db->prepare("UPDATE users SET whatsapp_notifications = ? WHERE id = ?");
                 $prefStmt->execute([$optIn, $userId]);
             }
-            $prefStmt = $db->prepare("UPDATE users SET business_id = ? WHERE id = ?");
-            $prefStmt->execute([$businessId, $userId]);
+            if ($useExistingOwner) {
+                $prefStmt = $db->prepare("
+                    UPDATE users
+                    SET business_id = CASE WHEN business_id IS NULL OR business_id = 0 THEN ? ELSE business_id END,
+                        user_type = CASE WHEN (business_id IS NULL OR business_id = 0) AND (user_type IS NULL OR user_type = '' OR user_type IN ('buyer', 'individual')) THEN ? ELSE user_type END,
+                        updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $prefStmt->execute([$businessId, $type, $userId]);
+            } else {
+                $prefStmt = $db->prepare("UPDATE users SET business_id = ? WHERE id = ?");
+                $prefStmt->execute([$businessId, $userId]);
+            }
 
             // Update business contact + ownership info
             $bizSet = "user_id = ?, owner_name = ?, email = ?, phone = ?, whatsapp = ?, address = ?, status = 'pending_approval', updated_at = NOW()";
-            $bizParams = [$userId, $input['owner_name'], $input['email'], $input['phone'], $whatsappPhone, $address];
+            $bizParams = [$userId, $ownerName, $email, $phone, $whatsappPhone, $address];
 
             if ($locationId > 0) {
                 $bizSet .= ", location_id = ?";
@@ -2771,15 +3016,19 @@ function claimExistingBusiness($db) {
             "Business ID: $businessId | User ID: $userId | Ref: $reference"
         );
 
+        $resolvedUsername = $useExistingOwner ? (string)($existingOwner['username'] ?? '') : $username;
+        $resolvedUserStatus = $useExistingOwner ? (string)($existingOwner['status'] ?? 'active') : 'pending';
+
         $notifications = sendOnboardingWelcomeNotifications($db, [
-            'email' => $input['email'],
-            'owner_name' => $input['owner_name'],
+            'email' => $email,
+            'owner_name' => $ownerName,
             'business_name' => $businessName,
             'business_type' => $info['business_type_label'],
             'business_type_key' => $type,
-            'username' => $input['username'],
-            'password' => $input['password'],
-            'phone' => $input['phone'],
+            'username' => $resolvedUsername,
+            'password' => $useExistingOwner ? '' : $password,
+            'existing_account' => $useExistingOwner ? 1 : 0,
+            'phone' => $phone,
             'whatsapp' => $whatsappPhone,
             'whatsapp_updates_opt_in' => $optIn,
             'reference' => $reference
@@ -2787,17 +3036,20 @@ function claimExistingBusiness($db) {
 
         sendSuccess([
             'api_version' => 'v2_claim_existing',
-            'message' => 'Business successfully claimed and assigned to its owner. Status: Pending Approval. Login credentials emailed.',
+            'message' => $useExistingOwner
+                ? 'Business successfully linked to the existing owner account. Status: Pending Approval.'
+                : 'Business successfully claimed and assigned to its owner. Status: Pending Approval. Login credentials emailed.',
             'mode' => 'claim',
+            'existing_account' => $useExistingOwner,
             'business_id' => $businessId,
             'user_id' => $userId,
-            'username' => $input['username'],
+            'username' => $resolvedUsername,
             'business_name' => $businessName,
-            'owner_name' => $input['owner_name'],
-            'email' => $input['email'],
-            'phone' => $input['phone'],
+            'owner_name' => $ownerName,
+            'email' => $email,
+            'phone' => $phone,
             'business_status' => 'pending_approval',
-            'user_status' => 'pending',
+            'user_status' => $resolvedUserStatus,
             'status' => 'pending_approval',
             'reference' => $reference,
             'notifications' => $notifications

@@ -28,7 +28,8 @@ class DealerDashboard {
                 return;
             }
 
-            if (data.user.type !== 'dealer') {
+            const businessTypes = Array.isArray(data.user.business_types) ? data.user.business_types : [];
+            if (data.user.type !== 'dealer' && !businessTypes.includes('dealer')) {
                 alert('Access denied. This area is for dealers only.');
                 window.location.href = 'index.html';
                 return;

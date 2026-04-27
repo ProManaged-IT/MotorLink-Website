@@ -1826,6 +1826,17 @@ button:focus-visible,
     font-size: 14px;
 }
 .claim-selected-summary strong { color: #0f6d37; }
+.claim-existing-user-notice {
+    background: #fff8e6;
+    border: 1px solid #f3d27a;
+    border-radius: 10px;
+    color: #5f4300;
+    font-size: 14px;
+    line-height: 1.45;
+    margin: 14px 0 4px 0;
+    padding: 12px 14px;
+}
+.claim-existing-user-notice strong { color: #3d2b00; }
 .claim-form .form-row {
     display: grid;
     grid-template-columns: 1fr 1fr;

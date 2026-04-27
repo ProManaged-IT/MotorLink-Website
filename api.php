@@ -1202,6 +1202,48 @@ if (!function_exists('getCurrentUser')) {
     }
 }
 
+function getBusinessTypeMap() {
+    return [
+        'dealer' => ['table' => 'car_dealers', 'label' => 'Dealer'],
+        'garage' => ['table' => 'garages', 'label' => 'Garage'],
+        'car_hire' => ['table' => 'car_hire_companies', 'label' => 'Car Hire']
+    ];
+}
+
+function getUserBusinessTypes($db, $userId) {
+    $userId = (int)$userId;
+    if ($userId <= 0) return [];
+
+    $types = [];
+    foreach (getBusinessTypeMap() as $type => $info) {
+        $stmt = $db->prepare("SELECT id FROM {$info['table']} WHERE user_id = ? AND (status IS NULL OR status != 'deleted') LIMIT 1");
+        $stmt->execute([$userId]);
+        if ($stmt->fetchColumn()) {
+            $types[] = $type;
+        }
+    }
+
+    return $types;
+}
+
+function userOwnsBusinessType($db, $userId, $type) {
+    $map = getBusinessTypeMap();
+    if (!isset($map[$type])) return false;
+
+    $stmt = $db->prepare("SELECT id FROM {$map[$type]['table']} WHERE user_id = ? AND (status IS NULL OR status != 'deleted') LIMIT 1");
+    $stmt->execute([(int)$userId]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function requireBusinessDashboardAccess($db, $type, $label) {
+    $user = getCurrentUser();
+    if (($user['type'] ?? '') !== $type && !userOwnsBusinessType($db, $user['id'] ?? 0, $type)) {
+        sendError("Access denied. {$label} account required.", 403);
+    }
+
+    return $user;
+}
+
 /**
  * Require authentication
  */
@@ -7217,11 +7259,7 @@ function updateAutoReplySettings($db) {
  * Get dealer information for logged-in dealer
  */
 function getDealerInfo($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'dealer') {
-        sendError('Access denied. Dealer account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
 
     try {
         // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
@@ -7300,11 +7338,7 @@ function updateDealerShowroom($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'dealer') {
-        sendError('Access denied. Dealer account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
 
     try {
         $showroomName = trim($_POST['showroom_name'] ?? '');
@@ -7374,11 +7408,7 @@ function updateDealerBusiness($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'dealer') {
-        sendError('Access denied. Dealer account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
 
     try {
         $businessName = trim($_POST['business_name'] ?? '');
@@ -7415,11 +7445,7 @@ function updateDealerBusiness($db) {
  * Get dealer inventory (all cars listed by this dealer)
  */
 function getDealerInventory($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'dealer') {
-        sendError('Access denied. Dealer account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
 
     try {
         // Get all listings for this dealer user by user_id
@@ -7448,11 +7474,7 @@ function getDealerInventory($db) {
  * Get dealer recent activity
  */
 function getDealerRecentActivity($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'dealer') {
-        sendError('Access denied. Dealer account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
 
     try {
         $activities = [];
@@ -7523,11 +7545,7 @@ function dealerAddCar($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'dealer') {
-        sendError('Access denied. Dealer account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
 
     try {
         // Get dealer profile info used for listing defaults.
@@ -7696,11 +7714,7 @@ function dealerAddCar($db) {
  * Delete a car from dealer inventory
  */
 function dealerDeleteCar($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'dealer') {
-        sendError('Access denied. Dealer account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
 
     $carId = intval($_GET['car_id'] ?? $_POST['car_id'] ?? 0);
 
@@ -7747,11 +7761,7 @@ function uploadDealerLogo($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'dealer') {
-        sendError('Access denied. Dealer account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
 
     if (empty($_FILES['logo'])) {
         sendError('No file uploaded', 400);
@@ -7862,11 +7872,7 @@ function updateNotificationPreferences($db) {
  * Get garage information for logged-in garage owner
  */
 function getGarageInfo($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'garage') {
-        sendError('Access denied. Garage account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
 
     try {
         // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
@@ -7941,11 +7947,7 @@ function updateGarageInfo($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'garage') {
-        sendError('Access denied. Garage account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
 
     try {
         $garageName = trim($_POST['garage_name'] ?? '');
@@ -8010,11 +8012,7 @@ function updateGarageHours($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'garage') {
-        sendError('Access denied. Garage account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
 
     try {
         $operatingHours = trim($_POST['operating_hours'] ?? '');
@@ -8043,11 +8041,7 @@ function updateGarageServices($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'garage') {
-        sendError('Access denied. Garage account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
 
     try {
         $servicesInput = $_POST['services'] ?? [];
@@ -8092,11 +8086,7 @@ function updateGarageServices($db) {
  * Get garage reviews
  */
 function getGarageReviews($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'garage') {
-        sendError('Access denied. Garage account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
 
     try {
         // Get garage ID
@@ -8154,11 +8144,7 @@ function uploadGarageLogo($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'garage') {
-        sendError('Access denied. Garage account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'garage', 'Garage');
 
     if (empty($_FILES['logo'])) {
         sendError('No file uploaded', 400);
@@ -8234,11 +8220,7 @@ function uploadGarageLogo($db) {
  * Get car hire company information for logged-in owner
  */
 function getCarHireCompanyInfo($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     try {
         // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
@@ -8313,11 +8295,7 @@ function updateCarHireCompany($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     try {
         $companyName = trim($_POST['company_name'] ?? '');
@@ -8403,11 +8381,7 @@ function updateCarHireCompany($db) {
  * Get car hire fleet for management
  */
 function getCarHireFleetManagement($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     try {
         // Get company profile details for fleet denormalized fields.
@@ -8455,11 +8429,7 @@ function addCarHireVehicle($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     try {
         // Get company ID
@@ -8606,11 +8576,7 @@ function updateVehicleStatus($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     $vehicleId = intval($_GET['vehicle_id'] ?? $_POST['vehicle_id'] ?? 0);
     $status = trim($_GET['status'] ?? $_POST['status'] ?? '');
@@ -8666,11 +8632,7 @@ function updateVehicleStatus($db) {
  * Delete vehicle from fleet
  */
 function deleteCarHireVehicle($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     $vehicleId = intval($_GET['vehicle_id'] ?? $_POST['vehicle_id'] ?? 0);
 
@@ -8723,11 +8685,7 @@ function deleteCarHireVehicle($db) {
  * Get car hire rentals
  */
 function getCarHireRentals($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     try {
         // Get company ID
@@ -8753,11 +8711,7 @@ function getCarHireRentals($db) {
  * Complete a rental
  */
 function completeRental($db) {
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     $rentalId = intval($_GET['rental_id'] ?? $_POST['rental_id'] ?? 0);
 
@@ -8778,11 +8732,7 @@ function uploadCarHireLogo($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     if (empty($_FILES['logo'])) {
         sendError('No file uploaded', 400);
@@ -9088,11 +9038,7 @@ function getVehicleForEdit($db) {
         sendError('Valid vehicle ID required', 400);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     try {
         // Get company ID
@@ -9153,11 +9099,7 @@ function updateVehicle($db) {
         sendError('POST method required', 405);
     }
 
-    $user = getCurrentUser();
-
-    if ($user['type'] !== 'car_hire') {
-        sendError('Access denied. Car hire account required.', 403);
-    }
+    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
 
     $vehicleId = $_POST['vehicle_id'] ?? '';
 
@@ -10631,6 +10573,9 @@ function setPrimaryVehicle($db) {
         error_log("setPrimaryVehicle error: " . $e->getMessage());
         sendError('Failed to set primary vehicle: ' . $e->getMessage(), 500);
     }
+}
+
+?>
 }
 
 ?>
