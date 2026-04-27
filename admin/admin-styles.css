@@ -706,9 +706,6 @@ body {
 
 .aauth-trust i { color: #00c853; }
 
-/* Mobile bar — hidden by default, shown via media query at ≤480px */
-.aauth-mobile-bar { display: none; }
-
 /* ---------- ALERT INSIDE PANEL ---------- */
 .aauth-panel .alert {
     padding: 12px 14px;
@@ -720,125 +717,30 @@ body {
     gap: 8px;
 }
 
-/* ---------- RESPONSIVE: TABLET ---------- */
+/* ---------- RESPONSIVE ---------- */
 @media (max-width: 900px) {
-    .login-container { flex-direction: column; min-height: 100vh; }
+    .login-container { flex-direction: column; }
 
     .aauth-brand {
         flex: none;
-        height: auto;
-        min-height: 88px;
+        height: 68px;
     }
-
     .aauth-brand::after { display: none; }
-
     .aauth-brand-inner {
-        padding: 16px 28px 18px;
+        padding: 0 24px;
         flex-direction: row;
         align-items: center;
-        height: auto;
-        min-height: 88px;
+        height: 68px;
     }
-
-    .aauth-logo { font-size: 20px; white-space: nowrap; flex-shrink: 0; }
-
-    /* Show compact tagline next to logo on tablet */
-    .aauth-copy {
-        display: flex;
-        flex: 1;
-        flex-direction: column;
-        justify-content: center;
-        padding: 0 0 0 20px;
-    }
-
-    .aauth-copy h2  { display: none; }
-    .aauth-features { display: none; }
-
-    .aauth-copy > p {
-        font-size: 12px;
-        margin: 0;
-        max-width: none;
-        color: rgba(255, 255, 255, 0.52);
-        display: -webkit-box;
-        -webkit-line-clamp: 1;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
-
-    .aauth-deco { display: none; }
+    .aauth-copy, .aauth-deco { display: none; }
 
     .aauth-panel { flex: 1; }
-    .aauth-form-inner {
-        padding: 44px 44px 60px;
-        justify-content: flex-start;
-        max-width: 600px;
-    }
+    .aauth-form-inner { padding: 32px 28px 48px; justify-content: flex-start; }
 }
 
-/* ---------- RESPONSIVE: MOBILE ---------- */
 @media (max-width: 480px) {
-    /* Green backdrop behind form card (login-container is fixed, inset 0) */
-    .login-container {
-        background: linear-gradient(160deg, #0a1f13 0%, #1a3d22 100%);
-    }
-
-    /* Brand panel hidden — container bg takes over */
     .aauth-brand { display: none; }
-
-    /* Panel: transparent so green shows through behind the mobile bar */
-    .aauth-panel {
-        flex: 1;
-        background: transparent;
-        display: flex;
-        flex-direction: column;
-        overflow: visible;
-    }
-
-    /* Mobile bar shown ≤480px, floats on green */
-    .aauth-mobile-bar {
-        display: flex;
-        align-items: center;
-        padding: 22px 20px 16px;
-        background: transparent;
-        flex-shrink: 0;
-    }
-
-    .aauth-mobile-logo {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 20px;
-        font-weight: 800;
-        color: #ffffff;
-        letter-spacing: -0.2px;
-    }
-
-    .aauth-mobile-logo i { color: #00c853; font-size: 17px; }
-
-    /* Form inner = the white bottom-sheet card */
-    .aauth-form-inner {
-        flex: 1;
-        background: #ffffff;
-        border-radius: 24px 24px 0 0;
-        box-shadow: 0 -10px 48px rgba(0, 0, 0, 0.3);
-        overflow-x: hidden;
-        overflow-y: auto;
-        padding: 28px 24px calc(env(safe-area-inset-bottom, 0px) + 52px);
-        max-width: 100%;
-        justify-content: flex-start;
-    }
-
-    /* Pull-handle hint */
-    .aauth-form-inner::before {
-        content: '';
-        display: block;
-        width: 40px;
-        height: 4px;
-        background: #e5e7eb;
-        border-radius: 2px;
-        margin: 0 auto 20px;
-    }
-
+    .aauth-form-inner { padding: 28px 20px 48px; max-width: 100%; }
     .aauth-header h1 { font-size: 22px; }
 }
 
@@ -2056,17 +1958,9 @@ body {
         top: 0;
         left: 0;
         height: 100vh;
-        height: 100dvh; /* dynamic viewport — excludes mobile browser chrome */
         transform: translateX(-100%);
         transition: transform 0.3s ease;
         z-index: 1001;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-    
-    .sidebar-footer {
-        flex-shrink: 0; /* never squish the Back to Website / Logout buttons */
-        padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     }
     
     .admin-sidebar.mobile-open,

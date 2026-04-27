@@ -669,33 +669,13 @@
                             <option value="year_new">Year: Newest First</option>
                             <option value="year_old">Year: Oldest First</option>
                             <option value="most_viewed">Most Viewed</option>
+                            <option value="nearest">Nearest First</option>
                         </select>
                         <button type="button" class="btn btn-sm btn-success" id="findNearbyBtn" style="display: none; margin-left: 8px;">
                             <i class="fas fa-location-arrow"></i> Find Nearby
                         </button>
                     </div>
                 </div>
-
-                <!-- Recently Viewed Carousel (populated by script.js) -->
-                <section id="recentlyViewedSection" style="display:none;" aria-label="Recently viewed cars">
-                    <div class="rv-header">
-                        <span class="rv-title"><i class="fas fa-history"></i> Recently Viewed</span>
-                        <button class="rv-clear-btn" id="rvClearBtn" aria-label="Clear recently viewed history">
-                            <i class="fas fa-times"></i> Clear
-                        </button>
-                    </div>
-                    <div class="rv-track-wrap">
-                        <button class="rv-arrow rv-arrow-left" id="rvArrowLeft" aria-label="Scroll left">
-                            <i class="fas fa-chevron-left"></i>
-                        </button>
-                        <div class="rv-track" id="rvTrack" role="list" aria-live="polite">
-                            <!-- cards injected by script.js -->
-                        </div>
-                        <button class="rv-arrow rv-arrow-right" id="rvArrowRight" aria-label="Scroll right">
-                            <i class="fas fa-chevron-right"></i>
-                        </button>
-                    </div>
-                </section>
 
                 <!-- Car Listings Grid -->
                 <div class="listings-grid" id="listingsGrid" role="region" aria-label="Car listings results">
@@ -838,20 +818,5 @@
     
     <!-- Logo 3D Animation (first load only) -->
     <script src="js/logo-3d-init.js"></script>
-
-    <!-- Feedback Widget & Walkthrough -->
-    <script id="ml-feedback-widget-script" src="js/feedback-widget.js" defer></script>
-    <script src="js/walkthrough.js" defer></script>
-
-    <!-- PWA Service Worker Registration -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                // Use a relative path so it works on both localhost and /motorlink/ on production
-                navigator.serviceWorker.register('sw.js')
-                    .catch(() => { /* silent fail — SW is a progressive enhancement */ });
-            });
-        }
-    </script>
 </body>
 </html>

@@ -444,9 +444,6 @@ class CarDetailManager {
                                 <i class="far fa-heart"></i> Save
                             </button>
                             ` : ''}
-                            <button type="button" class="contact-btn share-btn" onclick="carDetailManager.shareListingOnWhatsApp()" title="Share this listing on WhatsApp">
-                                <i class="fab fa-whatsapp"></i> Share
-                            </button>
                             ${!isOwnListing ? `
                             <button class="contact-btn report-btn" onclick="carDetailManager.openReportModal(${listing.id})" title="Report this listing">
                                 <i class="fas fa-flag"></i> Report
@@ -686,11 +683,9 @@ class CarDetailManager {
                 <div class="showroom-card" onclick="window.location.href='car.html?id=${listing.id}'">
                     <div class="showroom-card-image">
                         <img src="${imageUrl}" alt="${this.escapeHtml(listing.title || '')}" onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
+                        <span class="listing-badge premium">Recommended</span>
                     </div>
                     <div class="showroom-card-content">
-                        <div class="showroom-badges">
-                            <span class="listing-badge premium">Recommended</span>
-                        </div>
                         <h3 class="showroom-card-title">${this.escapeHtml(listing.title || '')}</h3>
                         <div class="showroom-card-price">${formattedPrice}</div>
                         <div class="showroom-card-details">
@@ -900,13 +895,11 @@ class CarDetailManager {
                     <div class="showroom-card-image">
                         <img src="${imageUrl}" alt="${this.escapeHtml(listing.title)}"
                              onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
+                        ${listing.listing_type === 'featured' || listing.listing_type === 'premium' ? `
+                            <span class="listing-badge ${listing.listing_type}">${this.capitalize(listing.listing_type)}</span>
+                        ` : ''}
                     </div>
                     <div class="showroom-card-content">
-                        ${listing.listing_type === 'featured' || listing.listing_type === 'premium' ? `
-                            <div class="showroom-badges">
-                                <span class="listing-badge ${listing.listing_type}">${this.capitalize(listing.listing_type)}</span>
-                            </div>
-                        ` : ''}
                         <h3 class="showroom-card-title">${this.escapeHtml(listing.title)}</h3>
                         <div class="showroom-card-price">${formattedPrice}</div>
                         <div class="showroom-card-details">
@@ -989,21 +982,6 @@ class CarDetailManager {
                 btn.classList.remove('saved');
             }
         }
-    }
-
-    // Share the current listing on WhatsApp (Malawi's primary comms channel)
-    shareListingOnWhatsApp() {
-        const listing = this.currentListing || {};
-        const title = listing.title || 'this car';
-        const price = parseInt(listing.price || 0, 10);
-        const currency = (typeof CONFIG !== 'undefined' && CONFIG.CURRENCY_CODE) || 'MWK';
-        const priceText = price > 0
-            ? `${currency} ${price.toLocaleString()}`
-            : 'Price on request';
-        const url = window.location.href;
-        const msg = `Check out this car on MotorLink Malawi:\n\n${title}\nPrice: ${priceText}\n\n${url}`;
-        const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
-        window.open(waUrl, '_blank', 'noopener');
     }
 
     async toggleSave() {

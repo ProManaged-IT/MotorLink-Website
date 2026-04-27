@@ -26,6 +26,19 @@ class AICarChat {
         this.locationContextUpdatedAt = 0;
         this.locationContextPromise = null;
         this.locationCacheTtlMs = 10 * 60 * 1000;
+        this._typingFactTimeout = null;
+        this._typingFactInterval = null;
+        this._lastTypingFact = '';
+        this.vehicleWaitFacts = [
+            'Vehicle fact: ABS can pulse the brakes far faster than a human foot can.',
+            'Vehicle fact: Underinflated tyres can quietly increase fuel use and tyre wear.',
+            'Vehicle fact: Modern engine oil cools and cleans parts, not just lubricates them.',
+            'Vehicle fact: Some turbochargers can spin at more than 100,000 rpm.',
+            'Vehicle fact: Early cars used tillers before steering wheels became standard.',
+            'Vehicle fact: A tyre can lose pressure slowly without looking flat.',
+            'Vehicle fact: Cabin air filters can affect demisting as well as air quality.',
+            'Fun vehicle fact: A dashboard warning light is a car clearing its throat.'
+        ];
         this._conversationSaveTimeout = null;
         this._persistEventsBound = false;
         this.init();
@@ -1166,7 +1179,7 @@ class AICarChat {
         clearTimeout(this._blockHeaderToggleTimeout);
         this._blockHeaderToggleTimeout = setTimeout(() => { this._blockHeaderToggle = false; }, 600);
         this.setInputSendingState(true, retryAttempt);
-        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 62000 : 48000);
+        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 50000 : 39000);
 
         // Show compact in-chat typing indicator
         this.showTypingIndicator();
@@ -1178,8 +1191,8 @@ class AICarChat {
             const controller = new AbortController();
             const locationContext = await this.resolveLocationContextForMessage(message);
             // Allow realistic server time on live networks without forcing premature aborts.
-            const base = 38000;
-            const timeoutDuration = retryAttempt > 0 ? 52000 : base;
+            const base = 32000;
+            const timeoutDuration = retryAttempt > 0 ? 43000 : base;
             timeoutId = setTimeout(() => {
                 abortReason = 'timeout';
                 controller.abort('request_timeout');
@@ -1975,9 +1988,37 @@ class AICarChat {
     /**
      * Show typing indicator when bot is processing
      */
+    getRandomVehicleWaitFact(previousFact = '') {
+        const facts = Array.isArray(this.vehicleWaitFacts) ? this.vehicleWaitFacts : [];
+        if (facts.length === 0) return '';
+
+        let fact = facts[Math.floor(Math.random() * facts.length)];
+        if (facts.length > 1 && fact === previousFact) {
+            fact = facts[(facts.indexOf(fact) + 1) % facts.length];
+        }
+        return fact;
+    }
+
+    clearTypingIndicatorTimers() {
+        if (this._typingTimerInterval) {
+            clearInterval(this._typingTimerInterval);
+            this._typingTimerInterval = null;
+        }
+        if (this._typingFactTimeout) {
+            clearTimeout(this._typingFactTimeout);
+            this._typingFactTimeout = null;
+        }
+        if (this._typingFactInterval) {
+            clearInterval(this._typingFactInterval);
+            this._typingFactInterval = null;
+        }
+    }
+
     showTypingIndicator() {
         const messagesContainer = document.getElementById('aiChatMessages');
         if (!messagesContainer) return;
+
+        this.clearTypingIndicatorTimers();
         
         // Remove existing typing indicator
         const existing = document.getElementById('aiChatTypingIndicator');
@@ -1992,14 +2033,15 @@ class AICarChat {
             </div>
             <div class="ai-chat-message-content">
                 <div class="ai-chat-message-bubble ai-chat-typing-indicator">
-                    <span class="ai-chat-typing-label">MotorLink AI is thinking</span>
-                    <span class="ai-chat-typing-timer" id="aiChatTypingTimer" style="margin-left:6px; font-size:11px; color:#64748b; font-weight:600;">0s</span>
-                    <div class="ai-chat-typing-dots">
-                        <span></span>
-                        <span></span>
-                        <span></span>
+                    <div class="ai-chat-typing-row">
+                        <span class="ai-chat-typing-label">MotorLink AI is thinking</span>
+                        <div class="ai-chat-typing-dots" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
                         </div>
                     </div>
+                    <div class="ai-chat-typing-fact" id="aiChatTypingFact" aria-live="polite"></div>
                 </div>
             </div>
         `;
@@ -2007,28 +2049,30 @@ class AICarChat {
         messagesContainer.appendChild(typingDiv);
         this.scrollToBottom();
 
-        // Start an elapsed-time counter so users get perceived-speed feedback
-        // on slow provider calls.
-        if (this._typingTimerInterval) clearInterval(this._typingTimerInterval);
-        const startedAt = Date.now();
-        this._typingTimerInterval = setInterval(() => {
-            const timerEl = document.getElementById('aiChatTypingTimer');
-            if (!timerEl) { clearInterval(this._typingTimerInterval); this._typingTimerInterval = null; return; }
-            const secs = Math.floor((Date.now() - startedAt) / 1000);
-            timerEl.textContent = `${secs}s`;
-            if (secs >= 15) timerEl.style.color = '#b45309';
-            if (secs >= 30) timerEl.style.color = '#dc2626';
-        }, 1000);
+        const showNextFact = () => {
+            const factEl = document.getElementById('aiChatTypingFact');
+            if (!factEl) {
+                this.clearTypingIndicatorTimers();
+                return;
+            }
+
+            this._lastTypingFact = this.getRandomVehicleWaitFact(this._lastTypingFact);
+            factEl.textContent = this._lastTypingFact;
+            factEl.classList.add('is-visible');
+            this.scrollToBottom();
+        };
+
+        this._typingFactTimeout = setTimeout(() => {
+            showNextFact();
+            this._typingFactInterval = setInterval(showNextFact, 9000);
+        }, 6500);
     }
     
     /**
      * Hide typing indicator
      */
     hideTypingIndicator() {
-        if (this._typingTimerInterval) {
-            clearInterval(this._typingTimerInterval);
-            this._typingTimerInterval = null;
-        }
+        this.clearTypingIndicatorTimers();
         const typing = document.getElementById('aiChatTypingIndicator');
         if (typing) {
             typing.remove();

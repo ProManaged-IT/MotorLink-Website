@@ -1162,7 +1162,7 @@ class EditOperations {
     }
 
     showEditModelModal(model) {
-        const bodyTypes = ['sedan', 'suv', 'hatchback', 'coupe', 'convertible', 'wagon', 'minivan', 'pickup', 'commercial'];
+        const bodyTypes = ['sedan', 'suv', 'hatchback', 'coupe', 'convertible', 'wagon', 'minivan', 'crossover', 'pickup', 'commercial'];
         
         const modalHtml = `
             <div class="modal-overlay active" id="editModelModal">

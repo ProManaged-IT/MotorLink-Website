@@ -5,7 +5,6 @@ User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: https://promanaged-it.com/motorlink/sitemap.php
 Sitemap: https://promanaged-it.com/motorlink/sitemap.xml
 
 # Allow all key pages

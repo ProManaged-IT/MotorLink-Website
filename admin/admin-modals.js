@@ -757,16 +757,16 @@ function showAddModelModal() {
                         <label for="add-model-body-type">Body Type</label>
                         <select id="add-model-body-type" name="body_type" class="form-control">
                             <option value="">Select Body Type</option>
-                            <option value="Sedan">Sedan</option>
-                            <option value="SUV">SUV</option>
-                            <option value="Hatchback">Hatchback</option>
-                            <option value="Coupe">Coupe</option>
-                            <option value="Convertible">Convertible</option>
-                            <option value="Wagon">Wagon</option>
-                            <option value="Van">Van</option>
-                            <option value="Truck">Truck</option>
-                            <option value="Minivan">Minivan</option>
-                            <option value="Crossover">Crossover</option>
+                            <option value="sedan">Sedan</option>
+                            <option value="suv">SUV</option>
+                            <option value="hatchback">Hatchback</option>
+                            <option value="coupe">Coupe</option>
+                            <option value="convertible">Convertible</option>
+                            <option value="wagon">Wagon</option>
+                            <option value="minivan">Minivan</option>
+                            <option value="crossover">Crossover</option>
+                            <option value="pickup">Pickup</option>
+                            <option value="commercial">Commercial</option>
                         </select>
                     </div>
 

@@ -868,16 +868,15 @@ class SellManager {
             });
         }
 
-        // Color validation
+        // Color validation (select element — use change event)
         const colorInput = document.querySelector('[name="exterior_color"]');
         if (colorInput) {
-            colorInput.addEventListener('input', (e) => {
+            colorInput.addEventListener('change', (e) => {
                 const value = e.target.value ? e.target.value.trim() : '';
                 if (value.length > 0) {
-                    // Color should be 2-20 characters, alphanumeric with spaces and hyphens
-                    const colorRegex = /^[a-zA-Z0-9\s\-]{2,20}$/;
+                    const colorRegex = /^[a-zA-Z0-9\s\-]{2,30}$/;
                     if (!colorRegex.test(value)) {
-                        this.showFieldError(colorInput, 'Color must be 2-20 characters and contain only letters, numbers, spaces, and hyphens');
+                        this.showFieldError(colorInput, 'Invalid color value');
                     } else {
                         this.clearFieldError(colorInput);
                     }
@@ -1020,22 +1019,38 @@ class SellManager {
             modelSelect.innerHTML = '<option value="">Select Model</option>';
 
             if (data.success && data.models) {
-                // Group models by name to avoid duplicates (since we now have multiple rows per model)
+                // Group models by name; track the widest year range across all variants
                 const uniqueModels = new Map();
                 data.models.forEach(model => {
                     if (!uniqueModels.has(model.name)) {
-                        uniqueModels.set(model.name, model);
+                        uniqueModels.set(model.name, {
+                            ...model,
+                            _yearMin: model.year_start || null,
+                            _yearMax: model.year_end   || null
+                        });
+                    } else {
+                        const existing = uniqueModels.get(model.name);
+                        if (model.year_start && (existing._yearMin === null || model.year_start < existing._yearMin)) {
+                            existing._yearMin = model.year_start;
+                        }
+                        if (model.year_end === null) {
+                            existing._yearMax = null; // still in production
+                        } else if (model.year_end && existing._yearMax !== null && model.year_end > existing._yearMax) {
+                            existing._yearMax = model.year_end;
+                        }
                     }
                 });
-                
-                // Add unique models to dropdown
+
+                // Add unique models to dropdown with year-range data attributes
                 Array.from(uniqueModels.values()).forEach(model => {
                     const option = document.createElement('option');
-                    option.value = model.id; // Use first model ID for this name
+                    option.value = model.id;
                     option.textContent = model.name;
                     if (model.body_type) {
                         option.textContent += ` (${model.body_type})`;
                     }
+                    if (model._yearMin) option.dataset.yearStart = model._yearMin;
+                    if (model._yearMax) option.dataset.yearEnd   = model._yearMax;
                     modelSelect.appendChild(option);
                 });
             }
@@ -1050,6 +1065,12 @@ class SellManager {
                 modelSelect.addEventListener('change', async (e) => {
                     const modelId = e.target.value;
                     console.log('Sell form - Model changed to ID:', modelId);
+
+                    // Re-populate year dropdown based on selected model's year range
+                    const selectedOpt = modelSelect.options[modelSelect.selectedIndex];
+                    const ys = selectedOpt?.dataset?.yearStart ? parseInt(selectedOpt.dataset.yearStart) : null;
+                    const ye = selectedOpt?.dataset?.yearEnd   ? parseInt(selectedOpt.dataset.yearEnd)   : null;
+                    this.populateYearDropdown(ys, ye);
                     
                     if (modelId && window.modelVariationsHelper) {
                         await window.modelVariationsHelper.loadModelVariations(modelId, {
@@ -1141,22 +1162,31 @@ class SellManager {
         }
     }
 
-    populateYearDropdown() {
+    populateYearDropdown(minYear = null, maxYear = null) {
         const yearSelect = document.getElementById('yearSelect');
         if (!yearSelect) return;
+
+        const currentYear = new Date().getFullYear();
+        const from = minYear ? Math.max(1980, minYear) : 1990;
+        const to   = maxYear ? Math.min(currentYear, maxYear) : currentYear;
+
+        const prevValue = yearSelect.value;
 
         // Clear existing options except first one
         while (yearSelect.options.length > 1) {
             yearSelect.removeChild(yearSelect.lastChild);
         }
 
-        const currentYear = new Date().getFullYear();
-
-        for (let year = currentYear; year >= 1990; year--) {
+        for (let year = to; year >= from; year--) {
             const option = document.createElement('option');
             option.value = year;
             option.textContent = year;
             yearSelect.appendChild(option);
+        }
+
+        // Restore previously selected year if it still falls in range
+        if (prevValue && parseInt(prevValue) >= from && parseInt(prevValue) <= to) {
+            yearSelect.value = prevValue;
         }
     }
 
@@ -1786,10 +1816,9 @@ removePhoto(index) {
         const colorInput = document.querySelector('[name="exterior_color"]');
         if (colorInput && colorInput.value && colorInput.value.trim()) {
             const color = colorInput.value.trim();
-            // Color should be 2-20 characters, alphanumeric with spaces and hyphens
-            const colorRegex = /^[a-zA-Z0-9\s\-]{2,20}$/;
+            const colorRegex = /^[a-zA-Z0-9\s\-]{2,30}$/;
             if (!colorRegex.test(color)) {
-                this.showToast('Color must be 2-20 characters and contain only letters, numbers, spaces, and hyphens', 'error');
+                this.showToast('Invalid color value selected', 'error');
                 colorInput.focus();
                 return false;
             }
