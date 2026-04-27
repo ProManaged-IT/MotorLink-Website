@@ -40,7 +40,17 @@
         </div>
 
         <div class="form-container">
-            <div class="progress-bar">
+            <!-- Onboarding Mode Toggle: New vs Claim Existing -->
+            <div class="onboarding-mode-toggle" role="tablist" aria-label="Onboarding mode">
+                <button type="button" class="mode-tab active" id="modeTabNew" data-mode="new" role="tab" aria-selected="true">
+                    <i class="fas fa-plus-circle"></i> Onboard New Business
+                </button>
+                <button type="button" class="mode-tab" id="modeTabClaim" data-mode="claim" role="tab" aria-selected="false">
+                    <i class="fas fa-link"></i> Claim Existing Listed Business
+                </button>
+            </div>
+
+            <div class="progress-bar" id="newBusinessProgress">
                 <div class="progress-step active" data-step="1">
                     <div class="step-number">1</div>
                     <div class="step-label">Business Type</div>
@@ -62,6 +72,104 @@
                     <div class="step-label">Review & Submit</div>
                 </div>
             </div>
+
+            <!-- ================== Claim Existing Business Section ================== -->
+            <section id="claimSection" class="claim-section" style="display:none;">
+                <div class="step-description-block">
+                    <h2><i class="fas fa-link"></i> Claim an Existing Listed Business</h2>
+                    <p class="step-description">Search businesses already listed on MotorLink (e.g. from public directories) and assign one to its real owner. The owner will receive their login credentials by email and optionally WhatsApp.</p>
+                </div>
+
+                <div class="claim-search-grid">
+                    <div class="form-group">
+                        <label for="claimType">Business Type *</label>
+                        <select id="claimType" required>
+                            <option value="">Select type</option>
+                            <option value="dealer">Car Dealer</option>
+                            <option value="garage">Garage / Workshop</option>
+                            <option value="car_hire">Car Hire Company</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="claimSearchQuery">Search</label>
+                        <input type="text" id="claimSearchQuery" placeholder="Business name, address, phone or email">
+                    </div>
+                    <div class="form-group">
+                        <label for="claimLocation">Location (optional)</label>
+                        <select id="claimLocation">
+                            <option value="">All locations</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="align-self:end;">
+                        <button type="button" class="btn btn-primary" id="claimSearchBtn">
+                            <i class="fas fa-search"></i> Search Listings
+                        </button>
+                    </div>
+                </div>
+
+                <div id="claimResults" class="claim-results"></div>
+
+                <!-- Owner credentials form, shown after a result is selected -->
+                <form id="claimForm" class="claim-form" style="display:none;">
+                    <input type="hidden" id="claimBusinessId" name="business_id">
+                    <input type="hidden" id="claimBusinessType" name="type">
+
+                    <div class="claim-selected-summary" id="claimSelectedSummary"></div>
+
+                    <h3 style="margin:18px 0 10px 0;"><i class="fas fa-user"></i> Owner Details</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="claimOwnerName">Owner Full Name *</label>
+                            <input type="text" id="claimOwnerName" name="owner_name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="claimEmail">Owner Email *</label>
+                            <input type="email" id="claimEmail" name="email" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="claimPhone">Owner Phone *</label>
+                            <input type="tel" id="claimPhone" name="phone" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="claimWhatsapp">WhatsApp (optional)</label>
+                            <input type="tel" id="claimWhatsapp" name="whatsapp">
+                        </div>
+                    </div>
+
+                    <h3 style="margin:18px 0 10px 0;"><i class="fas fa-key"></i> Login Credentials</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="claimUsername">Username *</label>
+                            <input type="text" id="claimUsername" name="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="claimPassword">Temporary Password *</label>
+                            <input type="text" id="claimPassword" name="password" required>
+                            <small class="field-hint">Min 8 chars, include uppercase, number and special character.</small>
+                        </div>
+                    </div>
+
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="claimWhatsappOptIn" name="whatsapp_updates_opt_in" value="1">
+                            <span class="checkmark"></span>
+                            Send login details and updates by WhatsApp (when enabled)
+                        </label>
+                    </div>
+
+                    <div class="form-navigation">
+                        <button type="button" class="btn btn-secondary" id="claimCancelBtn">
+                            <i class="fas fa-arrow-left"></i> Choose Different Business
+                        </button>
+                        <button type="submit" class="btn btn-success" id="claimSubmitBtn">
+                            <i class="fas fa-check"></i> Claim & Send Credentials
+                        </button>
+                    </div>
+                </form>
+            </section>
+            <!-- ================== /Claim Existing Business Section ================== -->
 
             <form id="onboardingForm">
                 <!-- Step 1: Business Type -->

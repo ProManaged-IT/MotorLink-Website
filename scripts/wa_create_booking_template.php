@@ -8,12 +8,8 @@
  * Usage: php scripts/wa_create_booking_template.php
  */
 
-$pdo = new PDO(
-    'mysql:host=promanaged-it.com;dbname=p601229_motorlinkmalawi_db;charset=utf8mb4',
-    'p601229',
-    '2:p2WpmX[0YTs7',
-    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-);
+require_once __DIR__ . '/_bootstrap.php';
+$pdo = motorlink_script_pdo();
 
 $rows = $pdo->query(
     "SELECT setting_key, setting_value FROM site_settings WHERE setting_group='whatsapp'"
@@ -156,7 +152,7 @@ echo "=== Step 3: Send template test to +{$testTo} ===" . PHP_EOL;
 
 if ($status !== 'APPROVED') {
     echo "Template status is '{$status}' — cannot send yet. Templates sometimes take a few minutes." . PHP_EOL;
-    echo "Run 'php scripts/wa_test_booking_template.php' once it's approved." . PHP_EOL;
+    echo "Re-run this script once Meta marks the template as APPROVED." . PHP_EOL;
     exit(0);
 }
 

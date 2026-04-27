@@ -1,9 +1,6 @@
 <?php
-$pdo = new PDO(
-    'mysql:host=promanaged-it.com;dbname=p601229_motorlinkmalawi_db;charset=utf8mb4',
-    'p601229', '2:p2WpmX[0YTs7',
-    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-);
+require_once __DIR__ . '/_bootstrap.php';
+$pdo = motorlink_script_pdo();
 $rows   = $pdo->query("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('wa_api_token','wa_business_account_id','wa_api_version')")->fetchAll(PDO::FETCH_KEY_PAIR);
 $token  = $rows['wa_api_token']          ?? '';
 $wabaId = $rows['wa_business_account_id'] ?? '';

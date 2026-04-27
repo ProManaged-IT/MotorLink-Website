@@ -19,47 +19,48 @@ if (!is_dir(__DIR__ . '/logs')) {
 }
 
 // Headers for CORS and JSON responses
-header('Content-Type: application/json; charset=utf-8');
+if (PHP_SAPI !== 'cli' && !(defined('ONBOARDING_API_AS_LIB') && ONBOARDING_API_AS_LIB === true)) {
+    header('Content-Type: application/json; charset=utf-8');
 
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowedOrigins = [
-    'http://localhost:8000',
-    'http://127.0.0.1:8000',
-    'https://promanaged-it.com',
-    'https://www.promanaged-it.com'
-];
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    $allowedOrigins = [
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'https://promanaged-it.com',
+        'https://www.promanaged-it.com'
+    ];
 
-if ($origin && in_array($origin, $allowedOrigins, true)) {
-    header('Access-Control-Allow-Origin: ' . $origin);
-    header('Access-Control-Allow-Credentials: true');
-    header('Vary: Origin');
-}
+    if ($origin && in_array($origin, $allowedOrigins, true)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Credentials: true');
+        header('Vary: Origin');
+    }
 
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
 
-// Handle preflight OPTIONS request
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
-}
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+        http_response_code(200);
+        exit;
+    }
 
-// Start session early with cookie params matching admin-api.php so the
-// shared PHP session created at login is readable here.
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    $isHTTPS = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || (($_SERVER['SERVER_PORT'] ?? null) == 443)
-        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+    // Start session early with cookie params matching admin-api.php so the
+    // shared PHP session created at login is readable here.
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        $isHTTPS = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (($_SERVER['SERVER_PORT'] ?? null) == 443)
+            || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
 
-    session_set_cookie_params([
-        'lifetime' => 86400,
-        'path'     => '/',
-        'domain'   => '',
-        'secure'   => $isHTTPS,
-        'httponly' => true,
-        'samesite' => 'Lax'
-    ]);
-    session_start();
+        session_set_cookie_params([
+            'lifetime' => 86400,
+            'path'     => '/',
+            'domain'   => '',
+            'secure'   => $isHTTPS,
+            'httponly' => true,
+            'samesite' => 'Lax'
+        ]);
+        session_start();
+    }
 }
 
 // Database Configuration
@@ -156,6 +157,9 @@ define('DB_PASS', $runtimeDb['pass']);
 define('DB_NAME', $runtimeDb['name']);
 define('SITE_NAME', 'MotorLink');
 define('SITE_URL', 'https://promanaged-it.com/motorlink');
+
+// Runtime site config (provides motorlink_get_site_runtime_config used for WhatsApp dial code, etc.)
+require_once __DIR__ . '/../includes/runtime-site-config.php';
 
 /**
  * Database Connection
@@ -526,6 +530,7 @@ function getOnboardingNotificationSettings($db) {
         'smtp_from_email' => defined('SMTP_FROM_EMAIL') ? SMTP_FROM_EMAIL : 'noreply@promanaged-it.com',
         'smtp_from_name' => defined('SMTP_FROM_NAME') ? SMTP_FROM_NAME : 'MotorLink',
         'onboarding_whatsapp_enabled' => '0',
+        'onboarding_whatsapp_provider' => 'generic',
         'onboarding_whatsapp_api_url' => '',
         'onboarding_whatsapp_api_token' => '',
         'onboarding_portal_url' => rtrim(SITE_URL, '/') . '/login.html'
@@ -547,6 +552,80 @@ function getOnboardingNotificationSettings($db) {
     }
 
     return $defaults;
+}
+
+/**
+ * Build a tailored quick-start guide for the new business owner.
+ * @return array{html:string,text:string,dashboard_url:string}
+ */
+function getOnboardingQuickStartGuide($businessTypeKey, $portalUrl) {
+    $base = rtrim(SITE_URL, '/');
+    $dashboards = [
+        'car_hire' => $base . '/car-hire-dashboard.html',
+        'garage'   => $base . '/garage-dashboard.html',
+        'dealer'   => $base . '/dealer-dashboard.html'
+    ];
+    $dashboardUrl = $dashboards[$businessTypeKey] ?? ($base . '/profile.html');
+
+    $commonSteps = [
+        'Sign in using the credentials below and change your password from <em>Profile &raquo; Account Settings</em>.',
+        'Upload your business logo and at least 3 photos so customers can recognise you.',
+        'Complete your business profile: opening hours, address, phone, website and social links.',
+        'Enable WhatsApp notifications in your profile to receive enquiries instantly.'
+    ];
+
+    $typeSteps = [
+        'car_hire' => [
+            'Add your fleet under <em>My Vehicles</em> with daily, weekly and monthly rates.',
+            'Set <em>Hire Categories</em> (Standard, Events, Vans &amp; Trucks) to appear in the right searches.',
+            'Confirm your service area and pickup/return options so customers see availability.'
+        ],
+        'garage' => [
+            'Add the <em>Services</em> you offer (mechanical, body, electrical, recovery) and approximate price ranges.',
+            'List the <em>Vehicle Makes</em> you specialise in to match incoming customer requests.',
+            'Turn on <em>24/7 Recovery</em> if applicable so urgent jobs reach you first.'
+        ],
+        'dealer' => [
+            'Post your first vehicle from the dashboard &raquo; <em>Add New Listing</em>.',
+            'Mark featured stock to appear at the top of search results.',
+            'Add finance, trade-in and import options so buyers know what you offer.'
+        ]
+    ];
+
+    $steps = array_merge($typeSteps[$businessTypeKey] ?? [], $commonSteps);
+
+    $listHtml = '';
+    foreach ($steps as $i => $step) {
+        $listHtml .= '<li style="margin:0 0 8px 0;"><strong>Step ' . ($i + 1) . '.</strong> ' . $step . '</li>';
+    }
+
+    $safeDashboard = htmlspecialchars($dashboardUrl, ENT_QUOTES, 'UTF-8');
+
+    $html = '
+        <div style="border-top:1px solid #e1ece6;margin:16px 0 0 0;padding:16px 0 0 0;">
+            <h3 style="margin:0 0 10px 0;color:#0f6d37;font-size:16px;">Quick Start Guide</h3>
+            <p style="margin:0 0 10px 0;font-size:14px;">Get the most out of MotorLink in less than 10 minutes:</p>
+            <ol style="margin:0 0 12px 18px;padding:0;font-size:14px;color:#1c2d24;">' . $listHtml . '</ol>
+            <p style="margin:0 0 6px 0;font-size:14px;">
+                <a href="' . $safeDashboard . '" style="display:inline-block;background:#1a7431;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Open Your Dashboard</a>
+            </p>
+            <p style="margin:8px 0 0 0;font-size:13px;color:#5f6b66;">Tip: keep your contact phone and WhatsApp current so customers can reach you instantly.</p>
+        </div>
+    ';
+
+    $textLines = ["Quick Start Guide:"];
+    foreach ($steps as $i => $step) {
+        $textLines[] = ($i + 1) . '. ' . trim(strip_tags($step));
+    }
+    $textLines[] = '';
+    $textLines[] = 'Your dashboard: ' . $dashboardUrl;
+    $text = implode("\n", $textLines);
+
+    return [
+        'html' => $html,
+        'text' => $text,
+        'dashboard_url' => $dashboardUrl
+    ];
 }
 
 /**
@@ -591,6 +670,17 @@ function sendOnboardingWelcomeEmail($db, $payload) {
             ? '<p style="margin:0 0 8px 0;"><strong>Reference:</strong> ' . $safeReference . '</p>'
             : '';
 
+        $businessTypeKey = strtolower(trim((string)($payload['business_type_key'] ?? '')));
+        if (!in_array($businessTypeKey, ['car_hire', 'garage', 'dealer'], true)) {
+            // Fallback: derive from business_type label.
+            $btLower = strtolower($businessType);
+            if (strpos($btLower, 'hire') !== false)      $businessTypeKey = 'car_hire';
+            elseif (strpos($btLower, 'garage') !== false) $businessTypeKey = 'garage';
+            elseif (strpos($btLower, 'dealer') !== false) $businessTypeKey = 'dealer';
+            else $businessTypeKey = 'dealer';
+        }
+        $guide = getOnboardingQuickStartGuide($businessTypeKey, $portalUrl);
+
         $htmlMessage = '
             <div style="font-family:Segoe UI,Arial,sans-serif;line-height:1.55;color:#113322;background:#f3fbf6;padding:20px;">
                 <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #dcefe2;border-radius:14px;overflow:hidden;">
@@ -608,7 +698,8 @@ function sendOnboardingWelcomeEmail($db, $payload) {
                             <p style="margin:0;"><strong>Temporary Password:</strong> ' . $safePassword . '</p>
                         </div>
                         <p style="margin:0 0 12px 0;">Please log in and change your password immediately for security.</p>
-                        <p style="margin:0;">Need help? Reply to this email and our team will assist you.</p>
+                        ' . $guide['html'] . '
+                        <p style="margin:14px 0 0 0;">Need help? Reply to this email and our team will assist you.</p>
                     </div>
                 </div>
             </div>
@@ -621,7 +712,8 @@ function sendOnboardingWelcomeEmail($db, $payload) {
             "Login URL: {$portalUrl}\n" .
             "Username: {$username}\n" .
             "Temporary Password: {$plainPassword}\n\n" .
-            "Please log in and change your password immediately.";
+            "Please log in and change your password immediately.\n\n" .
+            $guide['text'];
 
         $mailer = new SMTPMailer(
             (string)$settings['smtp_host'],
@@ -704,11 +796,22 @@ function sendOnboardingWelcomeWhatsApp($db, $payload) {
         }
 
         $apiUrl = trim((string)($settings['onboarding_whatsapp_api_url'] ?? ''));
-        if ($apiUrl === '') {
+        $provider = strtolower(trim((string)($settings['onboarding_whatsapp_provider'] ?? 'generic')));
+        $apiToken = trim((string)($settings['onboarding_whatsapp_api_token'] ?? ''));
+
+        // Provider must be either a generic POST endpoint or a built-in (callmebot).
+        if ($provider !== 'callmebot' && $apiUrl === '') {
             return [
                 'sent' => false,
                 'status' => 'skipped',
-                'message' => 'WhatsApp updates are coming soon. We will activate them automatically once provider setup is completed.'
+                'message' => 'WhatsApp provider not configured. Set onboarding_whatsapp_provider (generic|callmebot), onboarding_whatsapp_api_url and onboarding_whatsapp_api_token in site_settings.'
+            ];
+        }
+        if ($provider === 'callmebot' && $apiToken === '') {
+            return [
+                'sent' => false,
+                'status' => 'skipped',
+                'message' => 'CallMeBot provider selected but onboarding_whatsapp_api_token (CallMeBot APIKEY) is empty.'
             ];
         }
 
@@ -741,7 +844,13 @@ function sendOnboardingWelcomeWhatsApp($db, $payload) {
             "Login: {$portalUrl}\n" .
             "Username: {$username}\n" .
             "Password: {$plainPassword}\n" .
-            "Please change password after first login.";
+            "Please change password after first login.\n\n" .
+            "Quick start:\n" .
+            "1. Sign in & change password\n" .
+            "2. Upload logo and 3+ photos\n" .
+            "3. Complete profile (hours, address, socials)\n" .
+            "4. Enable WhatsApp notifications\n" .
+            "Need help? Reply to this message.";
 
         $requestBody = [
             'to' => $targetPhone,
@@ -753,17 +862,29 @@ function sendOnboardingWelcomeWhatsApp($db, $payload) {
         ];
 
         $headers = ['Content-Type: application/json'];
-        $apiToken = trim((string)($settings['onboarding_whatsapp_api_token'] ?? ''));
-        if ($apiToken !== '') {
+        if ($apiToken !== '' && $provider !== 'callmebot') {
             $headers[] = 'Authorization: Bearer ' . $apiToken;
         }
 
-        $ch = curl_init($apiUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody, JSON_UNESCAPED_UNICODE));
-        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        if ($provider === 'callmebot') {
+            // CallMeBot WhatsApp: simple GET endpoint, recipient must enroll first.
+            $cmbUrl = 'https://api.callmebot.com/whatsapp.php?' . http_build_query([
+                'phone'  => $targetPhone,
+                'text'   => $messageText,
+                'apikey' => $apiToken
+            ]);
+            $ch = curl_init($cmbUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        } else {
+            $ch = curl_init($apiUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestBody, JSON_UNESCAPED_UNICODE));
+            curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        }
 
         $responseBody = curl_exec($ch);
         $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -823,6 +944,12 @@ function sendOnboardingWelcomeNotifications($db, $payload) {
 // API ROUTING & MAIN EXECUTION
 // ============================================================================
 
+// Allow this file to be included for CLI/test harnesses without invoking
+// the HTTP routing block. Define ONBOARDING_API_AS_LIB=true before include.
+if (defined('ONBOARDING_API_AS_LIB') && ONBOARDING_API_AS_LIB === true) {
+    return;
+}
+
 try {
     $db = getDB();
     $action = $_GET['action'] ?? $_POST['action'] ?? '';
@@ -871,6 +998,12 @@ try {
             break;
         case 'get_vehicle_types': 
             getVehicleTypes($db); 
+            break;
+        case 'search_existing_businesses':
+            searchExistingBusinesses($db);
+            break;
+        case 'claim_existing_business':
+            claimExistingBusiness($db);
             break;
         default:
             sendError('Invalid action: ' . $action, 400);
@@ -1557,6 +1690,7 @@ function addCarHireCompany($db) {
             'owner_name' => $input['owner_name'],
             'business_name' => $input['business_name'],
             'business_type' => 'Car Hire Company',
+            'business_type_key' => 'car_hire',
             'username' => $input['username'],
             'password' => $input['password'],
             'phone' => $input['phone'],
@@ -1872,6 +2006,7 @@ function addGarage($db) {
             'owner_name' => $input['owner_name'],
             'business_name' => $input['name'],
             'business_type' => 'Garage',
+            'business_type_key' => 'garage',
             'username' => $input['username'],
             'password' => $input['password'],
             'phone' => $input['phone'],
@@ -2164,6 +2299,7 @@ function addCarDealer($db) {
             'owner_name' => $input['owner_name'],
             'business_name' => $input['business_name'],
             'business_type' => 'Car Dealer',
+            'business_type_key' => 'dealer',
             'username' => $input['username'],
             'password' => $input['password'],
             'phone' => $input['phone'],
@@ -2197,6 +2333,391 @@ function addCarDealer($db) {
         error_log("addCarDealer error: " . $e->getMessage());
         logActivity("ERROR adding car dealer: " . $e->getMessage());
         sendError('Failed to add car dealer: ' . $e->getMessage(), 500);
+    }
+}
+
+// ============================================================================
+// CLAIM EXISTING (SCRAPED) BUSINESS — assign an unclaimed listing to its real owner
+// ============================================================================
+
+/**
+ * Maps a business type key to its DB table + display fields.
+ */
+function claimGetTypeMap($type) {
+    $map = [
+        'car_hire' => [
+            'table' => 'car_hire_companies',
+            'name_field' => 'business_name',
+            'ref_prefix' => 'CH',
+            'business_type_label' => 'Car Hire Company'
+        ],
+        'garage' => [
+            'table' => 'garages',
+            'name_field' => 'name',
+            'ref_prefix' => 'GR',
+            'business_type_label' => 'Garage'
+        ],
+        'dealer' => [
+            'table' => 'car_dealers',
+            'name_field' => 'business_name',
+            'ref_prefix' => 'DL',
+            'business_type_label' => 'Car Dealer'
+        ]
+    ];
+    return $map[$type] ?? null;
+}
+
+/**
+ * Search for unclaimed/scraped businesses an admin can assign to a real owner.
+ * Filters: type (required), q (name contains), location_id, phone, email
+ * Unclaimed = linked user has placeholder email '@motorlink.test' OR business has user_id NULL.
+ */
+function searchExistingBusinesses($db) {
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (!$input) {
+        $input = array_merge($_GET, $_POST);
+    }
+
+    $type = strtolower(trim((string)($input['type'] ?? '')));
+    $info = claimGetTypeMap($type);
+    if (!$info) {
+        sendError('Invalid or missing business type. Use car_hire, garage or dealer.', 400);
+    }
+
+    $q = trim((string)($input['q'] ?? ''));
+    $locationId = isset($input['location_id']) && $input['location_id'] !== '' ? (int)$input['location_id'] : null;
+    $phone = trim((string)($input['phone'] ?? ''));
+    $email = trim((string)($input['email'] ?? ''));
+
+    $table = $info['table'];
+    $nameField = $info['name_field'];
+
+    try {
+        $where = ["b.status IN ('active','pending_approval','pending')"];
+        $params = [];
+
+        // Restrict to "unclaimed" rows only.
+        $where[] = "(b.user_id IS NULL OR EXISTS (SELECT 1 FROM users u2 WHERE u2.id = b.user_id AND (u2.email LIKE '%@motorlink.test' OR u2.email IS NULL OR u2.email = '')))";
+
+        if ($q !== '') {
+            $where[] = "(b.$nameField LIKE :q OR b.address LIKE :q OR b.phone LIKE :q OR b.email LIKE :q)";
+            $params[':q'] = '%' . $q . '%';
+        }
+        if ($locationId !== null) {
+            $where[] = "b.location_id = :location_id";
+            $params[':location_id'] = $locationId;
+        }
+        if ($phone !== '') {
+            $where[] = "b.phone LIKE :phone";
+            $params[':phone'] = '%' . preg_replace('/\D+/', '', $phone) . '%';
+        }
+        if ($email !== '') {
+            $where[] = "LOWER(b.email) LIKE LOWER(:email)";
+            $params[':email'] = '%' . $email . '%';
+        }
+
+        $sql = "
+            SELECT b.id, b.$nameField AS business_name, b.owner_name, b.email, b.phone, b.address, b.location_id,
+                   b.status, b.user_id, b.logo_url, b.website,
+                   l.name AS location_name, l.region AS location_region,
+                   u.email AS user_email, u.username AS user_username
+            FROM {$table} b
+            LEFT JOIN locations l ON l.id = b.location_id
+            LEFT JOIN users u ON u.id = b.user_id
+            WHERE " . implode(' AND ', $where) . "
+            ORDER BY b.$nameField ASC
+            LIMIT 50
+        ";
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($results as &$row) {
+            $row['is_placeholder_user'] = !empty($row['user_email']) && stripos($row['user_email'], '@motorlink.test') !== false;
+            $row['type'] = $type;
+            $row['reference'] = $info['ref_prefix'] . str_pad((string)$row['id'], 5, '0', STR_PAD_LEFT);
+        }
+        unset($row);
+
+        sendSuccess([
+            'type' => $type,
+            'count' => count($results),
+            'results' => $results
+        ]);
+    } catch (Exception $e) {
+        error_log('searchExistingBusinesses error: ' . $e->getMessage());
+        sendError('Failed to search existing businesses: ' . $e->getMessage(), 500);
+    }
+}
+
+/**
+ * Claim an existing (scraped) business: replace placeholder user with real owner credentials,
+ * update business contact details, send onboarding email + optional WhatsApp.
+ *
+ * Required input: type, business_id, owner_name, email, phone, username, password
+ * Optional: whatsapp, whatsapp_updates_opt_in, address, location_id, website,
+ *           facebook_url, instagram_url, twitter_url, linkedin_url, business_registration,
+ *           owner_id_number, owner_dob
+ */
+function claimExistingBusiness($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendError('POST method required', 405);
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (!$input) {
+        $input = $_POST;
+    }
+
+    $type = strtolower(trim((string)($input['type'] ?? '')));
+    $info = claimGetTypeMap($type);
+    if (!$info) {
+        sendError('Invalid business type. Use car_hire, garage or dealer.', 400);
+    }
+
+    $businessId = (int)($input['business_id'] ?? 0);
+    if ($businessId <= 0) {
+        sendError('A valid business_id is required.', 400);
+    }
+
+    $required = ['owner_name', 'email', 'phone', 'username', 'password'];
+    $missing = [];
+    foreach ($required as $f) {
+        if (empty($input[$f])) $missing[] = $f;
+    }
+    if ($missing) {
+        sendError('Missing required fields: ' . implode(', ', $missing), 400);
+    }
+
+    $emailValid = validateEmail($input['email']);
+    if (!$emailValid['valid']) sendError($emailValid['message'], 400);
+
+    $phoneValid = validatePhone($input['phone']);
+    if (!$phoneValid['valid']) sendError($phoneValid['message'], 400);
+
+    $userValid = validateUsername($input['username']);
+    if (!$userValid['valid']) sendError($userValid['message'], 400);
+
+    $passValid = validatePassword($input['password']);
+    if (!$passValid['valid']) sendError($passValid['message'], 400);
+
+    if (!empty($input['whatsapp'])) {
+        $waValid = validatePhone($input['whatsapp']);
+        if (!$waValid['valid']) sendError('Invalid WhatsApp number. ' . $waValid['message'], 400);
+    }
+
+    $table = $info['table'];
+    $nameField = $info['name_field'];
+
+    try {
+        // Load the target business row
+        $stmt = $db->prepare("SELECT * FROM {$table} WHERE id = ? LIMIT 1");
+        $stmt->execute([$businessId]);
+        $business = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$business) {
+            sendError('Business not found.', 404);
+        }
+
+        // Verify business is unclaimed (no real user attached)
+        $existingUserId = (int)($business['user_id'] ?? 0);
+        $placeholderUserId = null;
+        if ($existingUserId > 0) {
+            $uStmt = $db->prepare("SELECT id, email FROM users WHERE id = ? LIMIT 1");
+            $uStmt->execute([$existingUserId]);
+            $existingUser = $uStmt->fetch(PDO::FETCH_ASSOC);
+            if ($existingUser) {
+                $isPlaceholder = stripos((string)$existingUser['email'], '@motorlink.test') !== false
+                    || empty($existingUser['email']);
+                if (!$isPlaceholder) {
+                    sendError('This business is already linked to an active owner. Use the admin tools to transfer ownership instead.', 409);
+                }
+                $placeholderUserId = (int)$existingUser['id'];
+            }
+        }
+
+        // Username uniqueness against non-placeholder users
+        $stmt = $db->prepare("SELECT id, username, email FROM users WHERE LOWER(username) = LOWER(?) AND id != ? LIMIT 1");
+        $stmt->execute([$input['username'], $placeholderUserId ?? 0]);
+        if ($stmt->fetch()) {
+            sendError('Username "' . $input['username'] . '" is already taken.', 409);
+        }
+
+        // Email uniqueness against non-placeholder users
+        $stmt = $db->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ? AND email NOT LIKE '%@motorlink.test' LIMIT 1");
+        $stmt->execute([$input['email'], $placeholderUserId ?? 0]);
+        if ($stmt->fetch()) {
+            sendError('Email "' . $input['email'] . '" is already registered to another account.', 409);
+        }
+
+        ensureUserWhatsappPreferenceColumn($db);
+
+        $passwordHash = password_hash($input['password'], PASSWORD_DEFAULT);
+
+        // Resolve city from location if provided
+        $city = null;
+        $locationId = isset($input['location_id']) && $input['location_id'] !== '' ? (int)$input['location_id'] : (int)($business['location_id'] ?? 0);
+        if ($locationId > 0) {
+            $locStmt = $db->prepare("SELECT name FROM locations WHERE id = ?");
+            $locStmt->execute([$locationId]);
+            $row = $locStmt->fetch(PDO::FETCH_ASSOC);
+            $city = $row['name'] ?? null;
+        }
+
+        $businessName = (string)($business[$nameField] ?? 'Your Business');
+        $address = trim((string)($input['address'] ?? $business['address'] ?? ''));
+        $whatsappPhone = $input['whatsapp'] ?? ($business['whatsapp'] ?? null);
+        $optIn = !empty($input['whatsapp_updates_opt_in']) ? 1 : 0;
+
+        $db->beginTransaction();
+        try {
+            if ($placeholderUserId) {
+                // Reuse placeholder user row in-place
+                $stmt = $db->prepare("
+                    UPDATE users
+                    SET username = ?, email = ?, password_hash = ?, full_name = ?, phone = ?, whatsapp = ?,
+                        address = ?, city = ?, user_type = ?, status = 'pending', business_name = ?,
+                        business_registration = COALESCE(?, business_registration),
+                        national_id = COALESCE(?, national_id),
+                        date_of_birth = COALESCE(?, date_of_birth),
+                        email_verified = 0, updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([
+                    $input['username'],
+                    $input['email'],
+                    $passwordHash,
+                    $input['owner_name'],
+                    $input['phone'],
+                    $whatsappPhone,
+                    $address,
+                    $city,
+                    $type,
+                    $businessName,
+                    $input['business_registration'] ?? null,
+                    $input['owner_id_number'] ?? null,
+                    $input['owner_dob'] ?? null,
+                    $placeholderUserId
+                ]);
+                $userId = $placeholderUserId;
+            } else {
+                // Business had no user; create a fresh one
+                $stmt = $db->prepare("
+                    INSERT INTO users (username, email, password_hash, full_name, phone, whatsapp, address, city,
+                                     user_type, status, business_name, business_registration, national_id, date_of_birth,
+                                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, NOW(), NOW())
+                ");
+                $stmt->execute([
+                    $input['username'],
+                    $input['email'],
+                    $passwordHash,
+                    $input['owner_name'],
+                    $input['phone'],
+                    $whatsappPhone,
+                    $address,
+                    $city,
+                    $type,
+                    $businessName,
+                    $input['business_registration'] ?? null,
+                    $input['owner_id_number'] ?? null,
+                    $input['owner_dob'] ?? null
+                ]);
+                $userId = (int)$db->lastInsertId();
+            }
+
+            if (!$userId) {
+                throw new Exception('Failed to resolve user ID for claim.');
+            }
+
+            if (hasTableColumn($db, 'users', 'whatsapp_notifications')) {
+                $prefStmt = $db->prepare("UPDATE users SET whatsapp_notifications = ? WHERE id = ?");
+                $prefStmt->execute([$optIn, $userId]);
+            }
+            $prefStmt = $db->prepare("UPDATE users SET business_id = ? WHERE id = ?");
+            $prefStmt->execute([$businessId, $userId]);
+
+            // Update business contact + ownership info
+            $bizSet = "user_id = ?, owner_name = ?, email = ?, phone = ?, whatsapp = ?, address = ?, status = 'pending_approval', updated_at = NOW()";
+            $bizParams = [$userId, $input['owner_name'], $input['email'], $input['phone'], $whatsappPhone, $address];
+
+            if ($locationId > 0) {
+                $bizSet .= ", location_id = ?";
+                $bizParams[] = $locationId;
+            }
+
+            // Optional URL updates
+            foreach (['website', 'facebook_url', 'instagram_url', 'twitter_url', 'linkedin_url'] as $col) {
+                if (array_key_exists($col, $input) && trim((string)$input[$col]) !== '') {
+                    $val = trim((string)$input[$col]);
+                    $val = $col === 'website'
+                        ? (preg_match('#^https?://#i', $val) ? $val : 'https://' . $val)
+                        : $val;
+                    if (hasTableColumn($db, $table, $col)) {
+                        $bizSet .= ", $col = ?";
+                        $bizParams[] = $val;
+                    }
+                }
+            }
+
+            $bizParams[] = $businessId;
+            $stmt = $db->prepare("UPDATE {$table} SET $bizSet WHERE id = ?");
+            $stmt->execute($bizParams);
+
+            $db->commit();
+        } catch (Exception $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
+
+        $reference = $info['ref_prefix'] . str_pad((string)$businessId, 5, '0', STR_PAD_LEFT);
+
+        logActivity("Claim successful: type=$type business_id=$businessId user_id=$userId business={$businessName}");
+        logAdminActivityLog($db, 'onboarding_claim',
+            "Claimed existing {$info['business_type_label']}: {$businessName}",
+            "Business ID: $businessId | User ID: $userId | Ref: $reference"
+        );
+
+        $notifications = sendOnboardingWelcomeNotifications($db, [
+            'email' => $input['email'],
+            'owner_name' => $input['owner_name'],
+            'business_name' => $businessName,
+            'business_type' => $info['business_type_label'],
+            'business_type_key' => $type,
+            'username' => $input['username'],
+            'password' => $input['password'],
+            'phone' => $input['phone'],
+            'whatsapp' => $whatsappPhone,
+            'whatsapp_updates_opt_in' => $optIn,
+            'reference' => $reference
+        ]);
+
+        sendSuccess([
+            'api_version' => 'v2_claim_existing',
+            'message' => 'Business successfully claimed and assigned to its owner. Status: Pending Approval. Login credentials emailed.',
+            'mode' => 'claim',
+            'business_id' => $businessId,
+            'user_id' => $userId,
+            'username' => $input['username'],
+            'business_name' => $businessName,
+            'owner_name' => $input['owner_name'],
+            'email' => $input['email'],
+            'phone' => $input['phone'],
+            'business_status' => 'pending_approval',
+            'user_status' => 'pending',
+            'status' => 'pending_approval',
+            'reference' => $reference,
+            'notifications' => $notifications
+        ]);
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('claimExistingBusiness error: ' . $e->getMessage());
+        logActivity('ERROR claiming business: ' . $e->getMessage());
+        sendError('Failed to claim existing business: ' . $e->getMessage(), 500);
     }
 }
 

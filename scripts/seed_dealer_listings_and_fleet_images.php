@@ -9,13 +9,8 @@
  * Run: php scripts/seed_dealer_listings_and_fleet_images.php
  */
 
-$creds = require __DIR__ . '/../admin/admin-secrets.local.php';
-$db = new PDO(
-    'mysql:host=' . $creds['MOTORLINK_DB_HOST'] . ';dbname=' . $creds['MOTORLINK_DB_NAME'] . ';charset=utf8mb4',
-    $creds['MOTORLINK_DB_USER'],
-    $creds['MOTORLINK_DB_PASS'],
-    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-);
+require_once __DIR__ . '/_bootstrap.php';
+$db = motorlink_script_pdo();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

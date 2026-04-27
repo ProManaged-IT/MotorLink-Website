@@ -384,6 +384,9 @@ class OnboardingForm {
 
     setupEventListeners() {
         if (typeof CONFIG !== 'undefined' && CONFIG.DEBUG) console.log('Setting up event listeners...');
+
+        // Mode toggle (New vs Claim Existing)
+        this.setupClaimMode();
         
         // Business type selection - COMPLETELY FIXED
         document.querySelectorAll('.business-option').forEach(option => {
@@ -2401,6 +2404,272 @@ class OnboardingForm {
             opt.style.pointerEvents = 'none';
             opt.style.opacity = '0.6';
         });
+    }
+
+    // ====================================================================
+    // CLAIM EXISTING BUSINESS MODE
+    // ====================================================================
+    setupClaimMode() {
+        const tabNew = document.getElementById('modeTabNew');
+        const tabClaim = document.getElementById('modeTabClaim');
+        if (!tabNew || !tabClaim) return;
+
+        tabNew.addEventListener('click', () => this.switchOnboardingMode('new'));
+        tabClaim.addEventListener('click', () => this.switchOnboardingMode('claim'));
+
+        const searchBtn = document.getElementById('claimSearchBtn');
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => this.runClaimSearch());
+        }
+        const queryInput = document.getElementById('claimSearchQuery');
+        if (queryInput) {
+            queryInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.runClaimSearch();
+                }
+            });
+        }
+        const claimType = document.getElementById('claimType');
+        if (claimType) {
+            claimType.addEventListener('change', () => this.runClaimSearch());
+        }
+
+        const cancelBtn = document.getElementById('claimCancelBtn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => this.resetClaimSelection());
+        }
+        const claimForm = document.getElementById('claimForm');
+        if (claimForm) {
+            claimForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.submitClaim();
+            });
+        }
+
+        // Populate locations into the claim filter (reuse loaded locations)
+        this.populateClaimLocations();
+    }
+
+    switchOnboardingMode(mode) {
+        const isClaim = mode === 'claim';
+        const tabNew = document.getElementById('modeTabNew');
+        const tabClaim = document.getElementById('modeTabClaim');
+        const progress = document.getElementById('newBusinessProgress');
+        const form = document.getElementById('onboardingForm');
+        const claimSection = document.getElementById('claimSection');
+
+        if (tabNew) {
+            tabNew.classList.toggle('active', !isClaim);
+            tabNew.setAttribute('aria-selected', String(!isClaim));
+        }
+        if (tabClaim) {
+            tabClaim.classList.toggle('active', isClaim);
+            tabClaim.setAttribute('aria-selected', String(isClaim));
+        }
+        if (progress) progress.style.display = isClaim ? 'none' : '';
+        if (form) form.style.display = isClaim ? 'none' : '';
+        if (claimSection) claimSection.style.display = isClaim ? 'block' : 'none';
+
+        if (isClaim) {
+            this.populateClaimLocations();
+        }
+    }
+
+    populateClaimLocations() {
+        const locSelect = document.getElementById('claimLocation');
+        const sourceSelect = document.getElementById('location');
+        if (!locSelect || !sourceSelect) return;
+        // Avoid duplicating
+        if (locSelect.options.length > 1) return;
+        Array.from(sourceSelect.options).forEach((opt, idx) => {
+            if (idx === 0) return; // skip placeholder
+            const clone = document.createElement('option');
+            clone.value = opt.value;
+            clone.textContent = opt.textContent;
+            locSelect.appendChild(clone);
+        });
+    }
+
+    async runClaimSearch() {
+        const type = (document.getElementById('claimType') || {}).value || '';
+        const q = (document.getElementById('claimSearchQuery') || {}).value || '';
+        const locationId = (document.getElementById('claimLocation') || {}).value || '';
+        const resultsEl = document.getElementById('claimResults');
+
+        if (!resultsEl) return;
+        if (!type) {
+            resultsEl.innerHTML = '<div class="claim-empty">Select a business type to start searching.</div>';
+            return;
+        }
+
+        resultsEl.innerHTML = '<div class="claim-empty"><i class="fas fa-spinner fa-spin"></i> Searching listings...</div>';
+
+        try {
+            const response = await fetch(`${this.API_BASE_URL}?action=search_existing_businesses`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, q, location_id: locationId })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || `HTTP ${response.status}`);
+            }
+            this.renderClaimResults(data.results || []);
+        } catch (err) {
+            resultsEl.innerHTML = `<div class="claim-empty">Could not load listings: ${this.escapeHtml(err.message)}</div>`;
+        }
+    }
+
+    escapeHtml(str) {
+        if (str === undefined || str === null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    renderClaimResults(results) {
+        const el = document.getElementById('claimResults');
+        if (!el) return;
+        if (!results.length) {
+            el.innerHTML = '<div class="claim-empty">No unclaimed listings match your search. Try a different name or remove filters.</div>';
+            return;
+        }
+        el.innerHTML = results.map((r) => {
+            const placeholder = r.is_placeholder_user
+                ? '<span class="badge warn">Scraped Listing</span>'
+                : '<span class="badge">Unassigned</span>';
+            const meta = [
+                r.location_name ? `<i class="fas fa-map-marker-alt"></i> ${this.escapeHtml(r.location_name)}` : '',
+                r.address ? `<i class="fas fa-location-arrow"></i> ${this.escapeHtml(r.address)}` : '',
+                r.phone ? `<i class="fas fa-phone"></i> ${this.escapeHtml(r.phone)}` : '',
+                r.email ? `<i class="fas fa-envelope"></i> ${this.escapeHtml(r.email)}` : ''
+            ].filter(Boolean).join('<br>');
+            return `
+                <div class="claim-result-card" data-id="${r.id}" data-type="${this.escapeHtml(r.type)}" data-name="${this.escapeHtml(r.business_name || '')}" data-ref="${this.escapeHtml(r.reference || '')}">
+                    <h4>${this.escapeHtml(r.business_name || 'Unnamed Business')}</h4>
+                    <div class="meta">${meta}</div>
+                    <div class="badges">
+                        ${placeholder}
+                        <span class="badge">${this.escapeHtml(r.reference || '')}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        el.querySelectorAll('.claim-result-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const id = card.getAttribute('data-id');
+                const type = card.getAttribute('data-type');
+                const name = card.getAttribute('data-name');
+                const ref = card.getAttribute('data-ref');
+                this.selectClaimBusiness({ id, type, name, ref });
+            });
+        });
+    }
+
+    selectClaimBusiness(biz) {
+        const form = document.getElementById('claimForm');
+        const summary = document.getElementById('claimSelectedSummary');
+        const idInput = document.getElementById('claimBusinessId');
+        const typeInput = document.getElementById('claimBusinessType');
+        const resultsEl = document.getElementById('claimResults');
+        if (!form || !summary || !idInput || !typeInput) return;
+
+        idInput.value = biz.id;
+        typeInput.value = biz.type;
+        summary.innerHTML = `
+            <div><strong>Selected:</strong> ${this.escapeHtml(biz.name)} <span style="color:#5f6b66;">(${this.escapeHtml(biz.ref)})</span></div>
+            <div style="margin-top:4px;color:#5f6b66;font-size:13px;">Enter the real owner's contact details and choose login credentials. They will receive their login by email and (optionally) WhatsApp.</div>
+        `;
+        form.style.display = 'block';
+        if (resultsEl) resultsEl.style.display = 'none';
+        form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    resetClaimSelection() {
+        const form = document.getElementById('claimForm');
+        const resultsEl = document.getElementById('claimResults');
+        if (form) {
+            form.reset();
+            form.style.display = 'none';
+        }
+        if (resultsEl) resultsEl.style.display = '';
+    }
+
+    async submitClaim() {
+        const submitBtn = document.getElementById('claimSubmitBtn');
+        const originalHtml = submitBtn ? submitBtn.innerHTML : '';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+        }
+
+        try {
+            const payload = {
+                type: document.getElementById('claimBusinessType').value,
+                business_id: parseInt(document.getElementById('claimBusinessId').value, 10),
+                owner_name: document.getElementById('claimOwnerName').value.trim(),
+                email: document.getElementById('claimEmail').value.trim(),
+                phone: document.getElementById('claimPhone').value.trim(),
+                whatsapp: document.getElementById('claimWhatsapp').value.trim(),
+                username: document.getElementById('claimUsername').value.trim(),
+                password: document.getElementById('claimPassword').value,
+                whatsapp_updates_opt_in: document.getElementById('claimWhatsappOptIn').checked ? 1 : 0
+            };
+
+            // Client-side password strength
+            const pwErr = this.validatePasswordStrength(payload.password);
+            if (pwErr) {
+                this.showError(pwErr);
+                return;
+            }
+
+            const response = await fetch(`${this.API_BASE_URL}?action=claim_existing_business`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || `HTTP ${response.status}`);
+            }
+
+            // Show success modal reusing existing markup
+            this.showClaimSuccess(data);
+        } catch (err) {
+            this.showError(err.message || 'Failed to submit claim.');
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalHtml;
+            }
+        }
+    }
+
+    showClaimSuccess(data) {
+        const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val ?? ''; };
+        setText('successBusinessName', data.business_name);
+        setText('successBusinessId', data.business_id);
+        setText('successReference', data.reference);
+        setText('successUserId', data.user_id);
+        setText('successUsername', data.username);
+        const note = document.getElementById('successNotificationNote');
+        if (note) {
+            const emailStatus = data.notifications?.email?.status || 'pending';
+            const waStatus = data.notifications?.whatsapp?.status || 'skipped';
+            note.innerHTML = `<i class="fas fa-paper-plane"></i> Email: <strong>${this.escapeHtml(emailStatus)}</strong>. WhatsApp: <strong>${this.escapeHtml(waStatus)}</strong>.`;
+        }
+        const modal = document.getElementById('successModal');
+        if (modal) modal.classList.add('active');
+
+        // Reset claim form
+        this.resetClaimSelection();
     }
 }
 
