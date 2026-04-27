@@ -1056,8 +1056,11 @@ class MotorLink {
         const nav = document.getElementById('mainNav');
         if (!nav) return;
 
-        // Remove ALL existing dashboard links before re-rendering
-        nav.querySelectorAll('.dashboard-link').forEach(el => el.remove());
+        Array.from(nav.children).forEach(el => {
+            if (el.classList.contains('dashboard-link') || el.classList.contains('dashboard-nav-group')) {
+                el.remove();
+            }
+        });
 
         const dashboardMap = {
             dealer: { url: 'dealer-dashboard.html', text: 'My Showroom', icon: 'fas fa-store' },
@@ -1074,14 +1077,63 @@ class MotorLink {
 
         if (!dashboardTypes.length) return;
 
-        dashboardTypes.forEach(type => {
+        const createDashboardLink = (type, className = 'dashboard-link') => {
             const item = dashboardMap[type];
             const dashboardLink = document.createElement('a');
             dashboardLink.href = item.url;
-            dashboardLink.className = 'dashboard-link';
+            dashboardLink.className = className;
             dashboardLink.innerHTML = `<i class="${item.icon}"></i> <span>${item.text}</span>`;
-            nav.appendChild(dashboardLink);
+            return dashboardLink;
+        };
+
+        if (dashboardTypes.length === 1) {
+            nav.appendChild(createDashboardLink(dashboardTypes[0]));
+            this.syncActiveNavLink();
+            return;
+        }
+
+        const currentPage = (window.location.pathname.split('/').pop() || 'index.html').toLowerCase();
+        const dashboardGroup = document.createElement('details');
+        dashboardGroup.className = 'dashboard-nav-group';
+        dashboardGroup.innerHTML = `
+            <summary class="dashboard-menu-trigger" aria-label="Open dashboard menu">
+                <i class="fas fa-th-large"></i>
+                <span>Dashboards</span>
+                <i class="fas fa-chevron-down dashboard-menu-chevron"></i>
+            </summary>
+            <div class="dashboard-menu" role="menu"></div>
+        `;
+
+        const dashboardMenu = dashboardGroup.querySelector('.dashboard-menu');
+        dashboardTypes.forEach(type => {
+            const item = dashboardMap[type];
+            const dashboardLink = createDashboardLink(type, 'dashboard-menu-link');
+            dashboardLink.setAttribute('role', 'menuitem');
+            if ((item.url.split('/').pop() || '').toLowerCase() === currentPage) {
+                dashboardGroup.classList.add('active');
+            }
+            dashboardMenu.appendChild(dashboardLink);
         });
+
+        dashboardGroup.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                dashboardGroup.removeAttribute('open');
+                dashboardGroup.querySelector('.dashboard-menu-trigger')?.focus();
+            }
+        });
+
+        if (!this.dashboardMenuOutsideClickBound) {
+            document.addEventListener('click', event => {
+                document.querySelectorAll('.dashboard-nav-group[open]').forEach(group => {
+                    if (!group.contains(event.target)) {
+                        group.removeAttribute('open');
+                    }
+                });
+            });
+            this.dashboardMenuOutsideClickBound = true;
+        }
+
+        nav.appendChild(dashboardGroup);
         this.syncActiveNavLink();
     }
 

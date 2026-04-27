@@ -1593,3 +1593,160 @@ body.header-force-mobile .logo {
         min-height: 44px !important;
     }
 }
+
+/* Logged-in dashboard menu keeps the header calm when users own several business types. */
+.header-container .nav > .dashboard-link,
+.header-container .dashboard-menu-trigger {
+    min-height: 40px !important;
+    padding: 8px 12px !important;
+    border: 1px solid rgba(26, 116, 49, 0.18) !important;
+    border-radius: 8px !important;
+    background: rgba(26, 116, 49, 0.07) !important;
+    color: #1a7431 !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    box-shadow: none !important;
+}
+
+.header-container .dashboard-nav-group {
+    position: relative !important;
+    display: flex !important;
+    align-items: center !important;
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    z-index: 3 !important;
+}
+
+.header-container .dashboard-menu-trigger {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 7px !important;
+    cursor: pointer !important;
+    list-style: none !important;
+    user-select: none !important;
+}
+
+.header-container .dashboard-menu-trigger::-webkit-details-marker {
+    display: none !important;
+}
+
+.header-container .dashboard-nav-group[open] .dashboard-menu-trigger,
+.header-container .dashboard-nav-group.active .dashboard-menu-trigger,
+.header-container .nav > .dashboard-link.active,
+.header-container .nav > .dashboard-link:hover,
+.header-container .dashboard-menu-trigger:hover {
+    border-color: rgba(26, 116, 49, 0.34) !important;
+    background: rgba(26, 116, 49, 0.11) !important;
+    color: #0f5c26 !important;
+}
+
+.header-container .dashboard-menu-chevron {
+    font-size: 11px !important;
+    transition: transform 0.2s ease !important;
+}
+
+.header-container .dashboard-nav-group[open] .dashboard-menu-chevron {
+    transform: rotate(180deg) !important;
+}
+
+.header-container .dashboard-menu {
+    display: none !important;
+    position: absolute !important;
+    top: calc(100% + 10px) !important;
+    right: 0 !important;
+    min-width: 220px !important;
+    padding: 8px !important;
+    border: 1px solid rgba(15, 92, 38, 0.12) !important;
+    border-radius: 8px !important;
+    background: #ffffff !important;
+    box-shadow: 0 16px 36px rgba(17, 24, 39, 0.14) !important;
+    z-index: 11020 !important;
+}
+
+.header-container .dashboard-nav-group[open] .dashboard-menu {
+    display: grid !important;
+    gap: 4px !important;
+}
+
+.header-container .dashboard-menu-link {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+    min-height: 42px !important;
+    padding: 10px 11px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    color: #1f2937 !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    line-height: 1.2 !important;
+    text-decoration: none !important;
+    white-space: nowrap !important;
+    background: transparent !important;
+}
+
+.header-container .dashboard-menu-link i {
+    width: 18px !important;
+    color: #1a7431 !important;
+    text-align: center !important;
+}
+
+.header-container .dashboard-menu-link:hover,
+.header-container .dashboard-menu-link.active {
+    color: #0f5c26 !important;
+    background: rgba(26, 116, 49, 0.08) !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+@media (min-width: 1441px) {
+    .header .container {
+        max-width: 1480px !important;
+        width: 100% !important;
+        padding-left: 24px !important;
+        padding-right: 24px !important;
+    }
+
+    .header-container {
+        gap: 18px !important;
+    }
+
+    .header-container .nav {
+        gap: 12px !important;
+        justify-content: center !important;
+        min-width: 0 !important;
+    }
+
+    .header-container .nav > a:not(.dashboard-link) {
+        font-size: 13.5px !important;
+        padding: 8px 10px !important;
+    }
+}
+
+@media (min-width: 951px) and (max-width: 1280px) {
+    .header-container .nav > .dashboard-link,
+    .header-container .dashboard-menu-trigger {
+        min-height: 36px !important;
+        padding: 7px 10px !important;
+        font-size: 12px !important;
+        gap: 6px !important;
+    }
+
+    .header-container .dashboard-menu {
+        min-width: 210px !important;
+    }
+}
+
+@media (max-width: 950px) {
+    .header-container .dashboard-nav-group {
+        display: none !important;
+    }
+}
+
+body.header-force-mobile .dashboard-nav-group {
+    display: none !important;
+}

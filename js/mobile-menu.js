@@ -68,7 +68,11 @@ function buildTabletPanel(userMenu) {
                        || (JSON.parse(localStorage.getItem('motorlink_favorites') || '[]')).length;
 
         const dashMap = { dealer: ['dealer-dashboard.html','My Showroom','fas fa-store'], garage: ['garage-dashboard.html','My Garage','fas fa-wrench'], car_hire: ['car-hire-dashboard.html','My Fleet','fas fa-car-side'], admin: ['admin/admin.html','Admin Panel','fas fa-shield-alt'] };
-        const dash = dashMap[type];
+        const ownedTypes = Array.isArray(userData.business_types) ? userData.business_types : [];
+        const dashboardTypes = Array.from(new Set([
+            ...ownedTypes,
+            ...(dashMap[type] ? [type] : [])
+        ])).filter(dashboardType => dashMap[dashboardType]);
 
         panel.innerHTML = `
             <div class="tpanel-header">
@@ -96,7 +100,10 @@ function buildTabletPanel(userMenu) {
                     ${favCount > 0 ? `<span class="tpanel-badge">${favCount > 99 ? '99+' : favCount}</span>` : ''}
                 </a>
             </div>
-            ${dash ? `<a href="${dash[0]}" class="tpanel-link"><i class="${dash[2]}"></i> ${dash[1]}</a>` : ''}
+            ${dashboardTypes.map(dashboardType => {
+                const dash = dashMap[dashboardType];
+                return `<a href="${dash[0]}" class="tpanel-link"><i class="${dash[2]}"></i> ${dash[1]}</a>`;
+            }).join('')}
             <a href="profile.html" class="tpanel-link"><i class="fas fa-user-cog"></i> Profile Settings</a>
             <button class="tpanel-logout"><i class="fas fa-sign-out-alt"></i> Logout</button>
         `;
