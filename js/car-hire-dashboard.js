@@ -362,37 +362,92 @@ class CarHireDashboard {
         const container = document.getElementById('rentalsList');
 
         if (!rentals || rentals.length === 0) {
-            container.innerHTML = '<p class="text-muted">No active rentals</p>';
+            container.innerHTML = '<p class="text-muted">No rental requests yet. New WhatsApp booking requests will appear here.</p>';
             return;
         }
 
-        container.innerHTML = rentals.map(rental => `
-            <div class="rental-card">
+        const counts = rentals.reduce((summary, rental) => {
+            const status = rental.status || 'pending';
+            summary[status] = (summary[status] || 0) + 1;
+            return summary;
+        }, {});
+
+        const summaryHtml = `
+            <div class="rental-summary-grid">
+                <div class="rental-summary-card pending"><strong>${counts.pending || 0}</strong><span>Pending Requests</span></div>
+                <div class="rental-summary-card confirmed"><strong>${counts.confirmed || 0}</strong><span>Active Rentals</span></div>
+                <div class="rental-summary-card completed"><strong>${counts.completed || 0}</strong><span>Completed</span></div>
+                <div class="rental-summary-card closed"><strong>${(counts.declined || 0) + (counts.cancelled || 0)}</strong><span>Closed</span></div>
+            </div>
+        `;
+
+        const rentalsHtml = rentals.map(rental => {
+            const status = rental.status || 'pending';
+            const vehicleName = rental.vehicle_name || `${rental.vehicle_make || ''} ${rental.vehicle_model || ''}`.trim() || 'Vehicle';
+            const dailyRate = Number(rental.daily_rate || 0);
+            const totalEstimate = Number(rental.total_estimate || 0);
+            const customerPhone = rental.customer_phone || rental.renter_phone || '';
+            const customerWhatsApp = rental.customer_whatsapp || rental.renter_whatsapp || customerPhone;
+            const safePhone = customerPhone.replace(/[^0-9+]/g, '');
+            const safeWa = customerWhatsApp.replace(/[^0-9]/g, '');
+
+            const actions = [];
+            if (status === 'pending') {
+                actions.push(`
+                    <button class="btn btn-small btn-success" onclick="carHireDashboard.confirmRental(${rental.id})">
+                        <i class="fas fa-check"></i> Confirm
+                    </button>
+                    <button class="btn btn-small btn-danger" onclick="carHireDashboard.declineRental(${rental.id})">
+                        <i class="fas fa-times"></i> Decline
+                    </button>
+                `);
+            }
+
+            if (status === 'confirmed') {
+                actions.push(`
+                    <button class="btn btn-small btn-primary" onclick="carHireDashboard.completeRental(${rental.id})">
+                        <i class="fas fa-flag-checkered"></i> Complete
+                    </button>
+                    <button class="btn btn-small btn-secondary" onclick="carHireDashboard.cancelRental(${rental.id})">
+                        <i class="fas fa-ban"></i> Cancel
+                    </button>
+                `);
+            }
+
+            return `
+            <div class="rental-card rental-${status}">
                 <div class="rental-vehicle">
-                    <h3>${rental.vehicle_make} ${rental.vehicle_model}</h3>
-                    <p>${rental.license_plate}</p>
+                    <h3>${this.escapeHtml(vehicleName)}</h3>
+                    <p>${this.escapeHtml(rental.license_plate || 'No plate recorded')}</p>
                 </div>
                 <div class="rental-details">
                     <div class="rental-info">
-                        <strong>Customer:</strong> ${rental.customer_name}
+                        <strong>Customer:</strong> ${this.escapeHtml(rental.customer_name || 'Customer')}
                     </div>
                     <div class="rental-info">
                         <strong>Period:</strong> ${this.formatDate(rental.start_date)} - ${this.formatDate(rental.end_date)}
                     </div>
                     <div class="rental-info">
-                        <strong>Rate:</strong> ${CONFIG.CURRENCY_CODE || 'MWK'} ${parseInt(rental.daily_rate).toLocaleString()}/day
+                        <strong>Rate:</strong> ${this.formatCurrency(dailyRate)}/day
                     </div>
                     <div class="rental-info">
-                        <strong>Status:</strong> <span class="status-badge status-${rental.status}">${rental.status}</span>
+                        <strong>Total:</strong> ${this.formatCurrency(totalEstimate)} ${rental.duration_days ? `(${rental.duration_days} days)` : ''}
                     </div>
+                    <div class="rental-info">
+                        <strong>Status:</strong> <span class="status-badge status-${status}">${this.formatRentalStatusLabel(status)}</span>
+                    </div>
+                    ${rental.special_requests ? `<div class="rental-info rental-note"><strong>Note:</strong> ${this.escapeHtml(rental.special_requests)}</div>` : ''}
                 </div>
                 <div class="rental-actions">
-                    <button class="btn btn-small btn-primary" onclick="carHireDashboard.completeRental(${rental.id})">
-                        <i class="fas fa-check"></i> Complete Rental
-                    </button>
+                    ${safePhone ? `<a class="btn btn-small btn-secondary" href="tel:${safePhone}"><i class="fas fa-phone"></i> Call</a>` : ''}
+                    ${safeWa ? `<a class="btn btn-small btn-secondary" href="https://wa.me/${safeWa}" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
+                    ${actions.join('')}
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
+
+        container.innerHTML = summaryHtml + rentalsHtml;
     }
 
     displayRecentActivity() {
@@ -410,7 +465,8 @@ class CarHireDashboard {
                     <i class="fas fa-calendar-check"></i>
                 </div>
                 <div class="activity-content">
-                    <strong>${rental.vehicle_make} ${rental.vehicle_model}</strong> rented to ${rental.customer_name}
+                    <strong>${this.escapeHtml(rental.vehicle_name || `${rental.vehicle_make || ''} ${rental.vehicle_model || ''}`.trim() || 'Vehicle')}</strong>
+                    ${this.formatRentalStatusLabel(rental.status || 'pending').toLowerCase()} for ${this.escapeHtml(rental.customer_name || 'Customer')}
                     <div class="activity-time">${this.formatTimeAgo(rental.created_at)}</div>
                 </div>
             </div>
@@ -924,29 +980,67 @@ class CarHireDashboard {
         }
     }
 
-    async completeRental(rentalId) {
-        if (!confirm('Mark this rental as completed?')) {
+    async updateRentalStatus(rentalId, status, confirmMessage, successMessage) {
+        if (confirmMessage && !confirm(confirmMessage)) {
             return;
         }
 
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=complete_rental&rental_id=${rentalId}`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=update_car_hire_booking_status${this.getSelectedCompanyQuery()}`, {
                 method: 'POST',
-                credentials: 'include'
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ rental_id: rentalId, status })
             });
 
             const data = await response.json();
 
             if (data.success) {
-                this.showNotification('Rental completed successfully!', 'success');
+                this.showNotification(successMessage || 'Rental updated successfully!', 'success');
                 await this.loadRentals();
                 await this.loadFleet();
             } else {
-                this.showNotification(data.message || 'Failed to complete rental', 'error');
+                this.showNotification(data.message || 'Failed to update rental', 'error');
             }
         } catch (error) {
             this.showNotification('An error occurred. Please try again.', 'error');
         }
+    }
+
+    confirmRental(rentalId) {
+        return this.updateRentalStatus(
+            rentalId,
+            'confirmed',
+            'Confirm this rental request? The vehicle will be marked as rented out.',
+            'Rental confirmed. Vehicle marked as rented out.'
+        );
+    }
+
+    declineRental(rentalId) {
+        return this.updateRentalStatus(
+            rentalId,
+            'declined',
+            'Decline this rental request?',
+            'Rental request declined.'
+        );
+    }
+
+    cancelRental(rentalId) {
+        return this.updateRentalStatus(
+            rentalId,
+            'cancelled',
+            'Cancel this active rental? The vehicle will be released if no other confirmed rental holds it.',
+            'Rental cancelled.'
+        );
+    }
+
+    completeRental(rentalId) {
+        return this.updateRentalStatus(
+            rentalId,
+            'completed',
+            'Mark this rental as completed? The vehicle will become available again.',
+            'Rental completed. Vehicle released back to the fleet.'
+        );
     }
 
     async handleNotificationSubmit(e) {
@@ -1032,6 +1126,28 @@ class CarHireDashboard {
     formatDate(dateString) {
         const date = new Date(dateString);
         return date.toLocaleDateString('en-GB');
+    }
+
+    formatCurrency(value) {
+        const amount = Number(value || 0);
+        return `${CONFIG.CURRENCY_CODE || 'MWK'} ${amount.toLocaleString()}`;
+    }
+
+    formatRentalStatusLabel(status) {
+        const labels = {
+            pending: 'Pending Request',
+            confirmed: 'Active Rental',
+            declined: 'Declined',
+            cancelled: 'Cancelled',
+            completed: 'Completed'
+        };
+        return labels[status] || status || 'Pending Request';
+    }
+
+    escapeHtml(value) {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
     }
 
     formatTimeAgo(dateString) {

@@ -25,7 +25,7 @@ $db->exec("
         duration_days   SMALLINT UNSIGNED NOT NULL DEFAULT 1,
         total_estimate  DECIMAL(12,2) DEFAULT NULL,
         special_requests TEXT DEFAULT NULL,
-        status          ENUM('pending','confirmed','declined','cancelled') NOT NULL DEFAULT 'pending',
+        status          ENUM('pending','confirmed','declined','cancelled','completed') NOT NULL DEFAULT 'pending',
         wa_sent         TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 if WhatsApp API message was sent to owner',
         wa_message_id   VARCHAR(120) DEFAULT NULL  COMMENT 'Meta Cloud API wamid',
         created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -37,6 +37,9 @@ $db->exec("
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ");
 echo "✓ car_hire_bookings table ready.\n";
+
+$db->exec("\n    ALTER TABLE car_hire_bookings\n    MODIFY status ENUM('pending','confirmed','declined','cancelled','completed') NOT NULL DEFAULT 'pending'\n");
+echo "✓ car_hire_bookings status enum updated.\n";
 
 // 2. Seed WhatsApp API settings into site_settings (blank — admin fills these in)
 $waSettings = [

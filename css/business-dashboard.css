@@ -658,6 +658,22 @@
     color: #95a5a6;
 }
 
+.status-confirmed {
+    background: rgba(39, 174, 96, 0.1);
+    color: #15803d;
+}
+
+.status-declined,
+.status-cancelled {
+    background: rgba(107, 114, 128, 0.12);
+    color: #4b5563;
+}
+
+.status-completed {
+    background: rgba(59, 130, 246, 0.12);
+    color: #1d4ed8;
+}
+
 /* Car hire fleet status badges */
 .status-available {
     background: rgba(39, 174, 96, 0.1);
@@ -714,6 +730,137 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+}
+
+.rentals-list {
+    display: grid;
+    gap: 16px;
+}
+
+.rental-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.rental-summary-card {
+    min-height: 78px;
+    padding: 14px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+}
+
+.rental-summary-card strong {
+    font-size: 26px;
+    line-height: 1;
+    color: var(--text-dark);
+}
+
+.rental-summary-card span {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.rental-summary-card.pending { border-top: 3px solid #f59e0b; }
+.rental-summary-card.confirmed { border-top: 3px solid #22c55e; }
+.rental-summary-card.completed { border-top: 3px solid #3b82f6; }
+.rental-summary-card.closed { border-top: 3px solid #6b7280; }
+
+.rental-card {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) 2fr auto;
+    gap: 18px;
+    align-items: center;
+    padding: 18px;
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #d1d5db;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+}
+
+.rental-card.rental-pending { border-left-color: #f59e0b; }
+.rental-card.rental-confirmed { border-left-color: #22c55e; }
+.rental-card.rental-completed { border-left-color: #3b82f6; }
+.rental-card.rental-declined,
+.rental-card.rental-cancelled { border-left-color: #6b7280; }
+
+.rental-vehicle h3 {
+    margin: 0 0 6px;
+    font-size: 17px;
+    color: var(--text-dark);
+}
+
+.rental-vehicle p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.rental-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+}
+
+.rental-info {
+    font-size: 13px;
+    color: var(--text-dark);
+}
+
+.rental-info strong {
+    color: #111827;
+}
+
+.rental-note {
+    grid-column: 1 / -1;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #475569;
+}
+
+.rental-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 190px;
+}
+
+@media (max-width: 900px) {
+    .rental-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .rental-card {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .rental-actions {
+        justify-content: flex-start;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 560px) {
+    .rental-summary-grid,
+    .rental-details {
+        grid-template-columns: 1fr;
+    }
+
+    .rental-actions .btn {
+        width: 100%;
+    }
 }
 
 /* Checkbox grid for event types in dashboard */

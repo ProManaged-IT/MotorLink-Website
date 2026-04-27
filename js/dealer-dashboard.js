@@ -1333,7 +1333,7 @@ class DealerDashboard {
         }
 
         try {
-            const response = await fetch(`${CONFIG.API_URL}?action=dealer_delete_car&car_id=${carId}`, {
+            const response = await fetch(`${CONFIG.API_URL}?action=dealer_delete_car&car_id=${carId}${this.getSelectedDealerQuery()}`, {
                 method: 'POST',
                 credentials: 'include'
             });
@@ -1363,7 +1363,8 @@ class DealerDashboard {
                 credentials: 'include',
                 body: JSON.stringify({
                     listing_id: carId,
-                    status: 'sold'
+                    status: 'sold',
+                    dealer_id: this.selectedDealerId || null
                 })
             });
 
@@ -1392,7 +1393,8 @@ class DealerDashboard {
                 credentials: 'include',
                 body: JSON.stringify({
                     listing_id: carId,
-                    status: 'active'
+                    status: 'active',
+                    dealer_id: this.selectedDealerId || null
                 })
             });
 

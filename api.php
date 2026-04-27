@@ -1737,6 +1737,7 @@ try {
         case 'update_vehicle_status': requireAuth(); updateVehicleStatus($db); break;
         case 'delete_car_hire_vehicle': requireAuth(); deleteCarHireVehicle($db); break;
         case 'get_car_hire_rentals': requireAuth(); getCarHireRentals($db); break;
+        case 'update_car_hire_booking_status': requireAuth(); updateCarHireBookingStatus($db); break;
         case 'complete_rental': requireAuth(); completeRental($db); break;
         case 'upload_car_hire_logo': requireAuth(); uploadCarHireLogo($db); break;
         case 'get_vehicle': requireAuth(); getVehicleForEdit($db); break;
@@ -5326,6 +5327,7 @@ function updateListingStatus($db) {
     $input = json_decode(file_get_contents('php://input'), true);
     $listingId = $input['listing_id'] ?? null;
     $status = $input['status'] ?? null;
+    $requestedDealerId = isset($input['dealer_id']) && is_numeric($input['dealer_id']) ? (int)$input['dealer_id'] : 0;
 
     if (!$listingId || !$status) {
         sendError('Listing ID and status required', 400);
@@ -5337,9 +5339,16 @@ function updateListingStatus($db) {
     }
 
     try {
-        // Verify ownership
-        $stmt = $db->prepare("SELECT id FROM car_listings WHERE id = ? AND user_id = ?");
-        $stmt->execute([$listingId, $user['id']]);
+        if ($requestedDealerId > 0) {
+            [$businessUser, $dealer] = resolveUserBusiness($db, 'dealer', 'Dealer', $requestedDealerId);
+            $stmt = $db->prepare("\n                SELECT id\n                FROM car_listings\n                WHERE id = ?\n                  AND user_id = ?\n                  AND (dealer_id = ? OR dealer_id IS NULL)\n            ");
+            $stmt->execute([(int)$listingId, (int)$businessUser['id'], (int)$dealer['id']]);
+        } else {
+            // Verify ownership
+            $stmt = $db->prepare("SELECT id FROM car_listings WHERE id = ? AND user_id = ?");
+            $stmt->execute([$listingId, $user['id']]);
+        }
+
         if (!$stmt->fetch()) {
             sendError('Listing not found or access denied', 404);
         }
@@ -7770,7 +7779,13 @@ function dealerAddCar($db) {
  * Delete a car from dealer inventory
  */
 function dealerDeleteCar($db) {
-    $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
+    $requestedDealerId = getRequestedBusinessId('dealer');
+    if ($requestedDealerId) {
+        [$user, $dealer] = resolveUserBusiness($db, 'dealer', 'Dealer', $requestedDealerId);
+    } else {
+        $user = requireBusinessDashboardAccess($db, 'dealer', 'Dealer');
+        $dealer = null;
+    }
 
     $carId = intval($_GET['car_id'] ?? $_POST['car_id'] ?? 0);
 
@@ -7779,9 +7794,14 @@ function dealerDeleteCar($db) {
     }
 
     try {
-        // Verify ownership
-        $stmt = $db->prepare("SELECT id FROM car_listings WHERE id = ? AND user_id = ?");
-        $stmt->execute([$carId, $user['id']]);
+        // Verify ownership and selected dealer scope when provided.
+        if ($dealer) {
+            $stmt = $db->prepare("\n                SELECT id\n                FROM car_listings\n                WHERE id = ?\n                  AND user_id = ?\n                  AND (dealer_id = ? OR dealer_id IS NULL)\n            ");
+            $stmt->execute([$carId, (int)$user['id'], (int)$dealer['id']]);
+        } else {
+            $stmt = $db->prepare("SELECT id FROM car_listings WHERE id = ? AND user_id = ?");
+            $stmt->execute([$carId, $user['id']]);
+        }
         $car = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$car) {
@@ -8602,27 +8622,170 @@ function deleteCarHireVehicle($db) {
     }
 }
 
+function getCarHireBookingAllowedStatuses() {
+    return ['pending', 'confirmed', 'declined', 'cancelled', 'completed'];
+}
+
+function getCarHireBookingForCompany($db, $bookingId, $companyId) {
+    $stmt = $db->prepare("SELECT * FROM car_hire_bookings WHERE id = ? AND company_id = ? LIMIT 1");
+    $stmt->execute([(int)$bookingId, (int)$companyId]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
+function carHireBookingHasDateConflict($db, $booking) {
+    if (empty($booking['fleet_id'])) {
+        return false;
+    }
+
+    $stmt = $db->prepare("\n        SELECT COUNT(*)\n        FROM car_hire_bookings\n        WHERE company_id = ?\n          AND fleet_id = ?\n          AND id <> ?\n          AND status = 'confirmed'\n          AND NOT (end_date <= ? OR start_date >= ?)\n    ");
+    $stmt->execute([
+        (int)$booking['company_id'],
+        (int)$booking['fleet_id'],
+        (int)$booking['id'],
+        $booking['start_date'],
+        $booking['end_date']
+    ]);
+
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+function releaseFleetVehicleIfNoConfirmedBooking($db, $companyId, $fleetId) {
+    if (empty($fleetId)) {
+        return;
+    }
+
+    $stmt = $db->prepare("\n        SELECT COUNT(*)\n        FROM car_hire_bookings\n        WHERE company_id = ? AND fleet_id = ? AND status = 'confirmed'\n    ");
+    $stmt->execute([(int)$companyId, (int)$fleetId]);
+
+    if ((int)$stmt->fetchColumn() === 0) {
+        $update = $db->prepare("\n            UPDATE car_hire_fleet\n            SET status = 'available', is_available = 1, updated_at = NOW()\n            WHERE id = ? AND company_id = ? AND status = 'rented'\n        ");
+        $update->execute([(int)$fleetId, (int)$companyId]);
+    }
+}
+
+function setCarHireBookingStatus($db, $companyId, $bookingId, $newStatus) {
+    if (!in_array($newStatus, getCarHireBookingAllowedStatuses(), true)) {
+        sendError('Invalid rental status', 400);
+    }
+
+    $booking = getCarHireBookingForCompany($db, $bookingId, $companyId);
+    if (!$booking) {
+        sendError('Rental request not found or access denied', 404);
+    }
+
+    if ($newStatus === 'completed' && $booking['status'] !== 'confirmed') {
+        sendError('Only confirmed rentals can be completed', 409);
+    }
+
+    $db->beginTransaction();
+
+    try {
+        if ($newStatus === 'confirmed') {
+            if (empty($booking['fleet_id'])) {
+                throw new Exception('This booking is not linked to a fleet vehicle');
+            }
+
+            $fleetStmt = $db->prepare("\n                SELECT id, status\n                FROM car_hire_fleet\n                WHERE id = ? AND company_id = ? AND is_active = 1\n                LIMIT 1\n                FOR UPDATE\n            ");
+            $fleetStmt->execute([(int)$booking['fleet_id'], (int)$companyId]);
+            $fleetVehicle = $fleetStmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$fleetVehicle) {
+                throw new Exception('Linked fleet vehicle was not found');
+            }
+
+            if (carHireBookingHasDateConflict($db, $booking)) {
+                throw new Exception('This vehicle already has a confirmed rental for those dates');
+            }
+
+            if ($booking['status'] !== 'confirmed' && in_array($fleetVehicle['status'], ['rented', 'maintenance', 'not_available'], true)) {
+                throw new Exception('This vehicle is not currently available to confirm');
+            }
+
+            $fleetUpdate = $db->prepare("\n                UPDATE car_hire_fleet\n                SET status = 'rented', is_available = 0, updated_at = NOW()\n                WHERE id = ? AND company_id = ?\n            ");
+            $fleetUpdate->execute([(int)$booking['fleet_id'], (int)$companyId]);
+        }
+
+        $statusUpdate = $db->prepare("\n            UPDATE car_hire_bookings\n            SET status = ?, updated_at = NOW()\n            WHERE id = ? AND company_id = ?\n        ");
+        $statusUpdate->execute([$newStatus, (int)$bookingId, (int)$companyId]);
+
+        if ($booking['status'] === 'confirmed' && in_array($newStatus, ['pending', 'declined', 'cancelled', 'completed'], true)) {
+            releaseFleetVehicleIfNoConfirmedBooking($db, (int)$companyId, (int)$booking['fleet_id']);
+        }
+
+        $db->commit();
+
+        return [
+            'booking_id' => (int)$bookingId,
+            'status' => $newStatus,
+            'previous_status' => $booking['status']
+        ];
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        throw $e;
+    }
+}
+
 /**
- * Get car hire rentals
+ * Get car hire rentals and booking requests for the selected company.
  */
 function getCarHireRentals($db) {
     [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
+    $requestedStatus = trim($_GET['status'] ?? '');
+    $where = ['b.company_id = ?'];
+    $params = [(int)$company['id']];
+
+    if ($requestedStatus !== '') {
+        if (!in_array($requestedStatus, getCarHireBookingAllowedStatuses(), true)) {
+            sendError('Invalid rental status', 400);
+        }
+        $where[] = 'b.status = ?';
+        $params[] = $requestedStatus;
+    }
+
     try {
-        // For now, return empty array as rental system is not fully implemented
-        // This would connect to a bookings/rentals table when available
-        sendSuccess(['rentals' => []]);
+        $whereSql = implode(' AND ', $where);
+        $stmt = $db->prepare("\n            SELECT\n                b.id, b.company_id, b.fleet_id,\n                COALESCE(b.vehicle_name, f.vehicle_name) AS vehicle_name,\n                COALESCE(f.make_name, '') AS vehicle_make,\n                COALESCE(f.model_name, '') AS vehicle_model,\n                COALESCE(f.registration_number, '') AS license_plate,\n                COALESCE(b.daily_rate, f.daily_rate, 0) AS daily_rate,\n                b.renter_name AS customer_name,\n                b.renter_phone AS customer_phone,\n                b.renter_whatsapp AS customer_whatsapp,\n                b.start_date, b.end_date, b.duration_days, b.total_estimate,\n                b.special_requests, b.status, b.wa_sent, b.created_at, b.updated_at,\n                f.status AS vehicle_status\n            FROM car_hire_bookings b\n            LEFT JOIN car_hire_fleet f ON f.id = b.fleet_id AND f.company_id = b.company_id\n            WHERE {$whereSql}\n            ORDER BY FIELD(b.status, 'pending', 'confirmed', 'completed', 'declined', 'cancelled'), b.created_at DESC\n            LIMIT 200\n        ");
+        $stmt->execute($params);
+
+        sendSuccess(['rentals' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
     } catch (Exception $e) {
         error_log("getCarHireRentals error: " . $e->getMessage());
         sendError('Failed to load rentals', 500);
     }
 }
 
+function updateCarHireBookingStatus($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendError('POST method required', 405);
+    }
+
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
+
+    $input = json_decode(file_get_contents('php://input'), true) ?: [];
+    $bookingId = (int)($input['rental_id'] ?? $input['booking_id'] ?? $_POST['rental_id'] ?? $_POST['booking_id'] ?? 0);
+    $status = trim((string)($input['status'] ?? $_POST['status'] ?? ''));
+
+    if ($bookingId <= 0) {
+        sendError('Invalid rental ID', 400);
+    }
+
+    try {
+        $result = setCarHireBookingStatus($db, (int)$company['id'], $bookingId, $status);
+        sendSuccess(['message' => 'Rental status updated successfully', 'rental' => $result]);
+    } catch (Exception $e) {
+        error_log("updateCarHireBookingStatus error: " . $e->getMessage());
+        sendError($e->getMessage() ?: 'Failed to update rental status', 409);
+    }
+}
+
 /**
- * Complete a rental
+ * Complete a confirmed rental and release the vehicle if no other confirmed rental holds it.
  */
 function completeRental($db) {
-    $user = requireBusinessDashboardAccess($db, 'car_hire', 'Car hire');
+    [$user, $company] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     $rentalId = intval($_GET['rental_id'] ?? $_POST['rental_id'] ?? 0);
 
@@ -8630,9 +8793,13 @@ function completeRental($db) {
         sendError('Invalid rental ID', 400);
     }
 
-    // Placeholder for rental completion logic
-    // Would update rental status and vehicle availability
-    sendSuccess(['message' => 'Rental completed successfully']);
+    try {
+        $result = setCarHireBookingStatus($db, (int)$company['id'], $rentalId, 'completed');
+        sendSuccess(['message' => 'Rental completed successfully', 'rental' => $result]);
+    } catch (Exception $e) {
+        error_log("completeRental error: " . $e->getMessage());
+        sendError($e->getMessage() ?: 'Failed to complete rental', 409);
+    }
 }
 
 /**
