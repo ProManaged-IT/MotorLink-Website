@@ -4375,9 +4375,11 @@ function detectJourneyCostQuery($message) {
         return true;
     }
 
-    // "from X to Y" with fuel language
+    // "from X to Y" with fuel / follow-up language. In conversation, route-bearing
+    // follow-ups like "What about from Lilongwe to Kasungu using the same car"
+    // must stay in the journey calculator instead of falling through to fuel prices.
     if (preg_match('/\bfrom\s+[a-z0-9][^,]*?\s+to\s+[a-z0-9]/i', $normalized)
-        && preg_match('/\b(fuel|petrol|diesel|cost|km|kilometre|kilometer|distance|journey|travel)\b/i', $normalized)) {
+        && preg_match('/\b(fuel|petrol|diesel|cost|km|kilometre|kilometer|distance|journey|travel|trip|drive|route|using|same\s+(?:car|vehicle)|what\s+about|how\s+about|calculate|estimate)\b/i', $normalized)) {
         return true;
     }
 
@@ -4406,6 +4408,9 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
         : $current;
 
     $currentRoute = extractJourneyRouteLocations($db, $current);
+    if ($currentRoute !== null) {
+        return $current;
+    }
 
     // Detect pronoun references like "for this journey", "on this trip", "this route"
     $isPronounRef = preg_match('/\bthis\s+(journey|trip|route|drive)\b/i', $normalized) === 1;
@@ -4422,12 +4427,17 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
         || preg_match('/\b\d+(?:\.\d+)?\s*(?:l|liters?|litres?)\s*\/\s*100\s*km\b/i', $normalized) === 1
     );
 
-    if (detectJourneyCostQuery($normalized) && $currentRoute === null && !$isPronounRef && !$isRefinement) {
+    $isCalculationFollowUp = (
+        preg_match('/\b(calculate|estimate|work\s*out)\b.*\b(trip|journey|route|fuel|cost)\b/i', $normalized) === 1
+        || preg_match('/\b(trip|journey|route)\s+(fuel\s+)?cost\b/i', $normalized) === 1
+    );
+
+    if (detectJourneyCostQuery($normalized) && $currentRoute === null && !$isPronounRef && !$isRefinement && !$isCalculationFollowUp) {
         return false;
     }
 
     $hasDistanceHint = preg_match('/\b\d+(?:\.\d+)?\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $normalized) === 1;
-    if (!$hasDistanceHint && $currentRoute === null && !$isPronounRef && !$isRefinement) {
+    if (!$hasDistanceHint && $currentRoute === null && !$isPronounRef && !$isRefinement && !$isCalculationFollowUp) {
         return false;
     }
 
@@ -4436,9 +4446,10 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
     }
 
     $priorJourneyMessage = '';
+    $priorRoute = null;
     for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
         $item = $conversationHistory[$i];
-        if (!is_array($item) || ($item['role'] ?? '') !== 'user') {
+        if (!is_array($item)) {
             continue;
         }
 
@@ -4447,7 +4458,14 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
             continue;
         }
 
-        if (detectJourneyCostQuery($content) || extractJourneyRouteLocations($db, $content) !== null) {
+        $contentRoute = extractJourneyRouteLocations($db, $content);
+        if ($contentRoute !== null) {
+            $priorJourneyMessage = $content;
+            $priorRoute = $contentRoute;
+            break;
+        }
+
+        if (($item['role'] ?? '') === 'user' && detectJourneyCostQuery($content)) {
             $priorJourneyMessage = $content;
             break;
         }
@@ -4461,18 +4479,11 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
         return false;
     }
 
-    if ($currentRoute !== null) {
-        return $current;
-    }
-
     // For pronoun references and refinements, inject the prior route explicitly so the parser finds it cleanly.
     // e.g. prior: "from Lilongwe to Dedza", current: "How much would it cost for diesel"
     //   => "from Lilongwe to Dedza, How much would it cost for diesel"
-    if ($isPronounRef || $isRefinement) {
-        $priorRoute = extractJourneyRouteLocations($db, $priorJourneyMessage);
-        if ($priorRoute !== null) {
-            return 'from ' . $priorRoute['origin'] . ' to ' . $priorRoute['destination'] . ', ' . $current;
-        }
+    if (($isPronounRef || $isRefinement || $isCalculationFollowUp || detectJourneyCostQuery($normalized)) && $priorRoute !== null) {
+        return 'from ' . $priorRoute['origin'] . ' to ' . $priorRoute['destination'] . ', ' . $current;
     }
 
     return trim($priorJourneyMessage . ' ' . $current);
@@ -4484,9 +4495,9 @@ function trimJourneyRouteLocationCandidate($value) {
         return '';
     }
 
-    $value = preg_replace('/^\s*(?:what\s+about|how\s+about|about|and|then|try|route|journey)\s+/i', '', $value);
+    $value = preg_replace('/^\s*(?:[\x{2022}\-*]\s*)?(?:what\s+about|how\s+about|about|and|then|try|route|journey)\s*[:\-]?\s+/iu', '', $value);
     $value = preg_replace('/\b(?:malawi)\b/i', ' ', $value);
-    $value = preg_replace('/\b(?:in\s+a|in\s+an|with\s+a|with\s+an|using|for|cost|price|today|right\s+now|please|thanks)\b.*$/i', '', (string)$value);
+    $value = preg_replace('/\b(?:in\s+a|in\s+an|with\s+a|with\s+an|using|for|cost|price|distance|consumption|vehicle\s+context|fuel\s+needed|fuel\s+price|estimated\s+cost|source|synced|today|right\s+now|please|thanks)\b.*$/i', '', (string)$value);
     $value = preg_replace('/[^\p{L}\p{N}\s\-]/u', ' ', (string)$value);
     $value = preg_replace('/\s+/', ' ', (string)$value);
 
@@ -4521,9 +4532,10 @@ function extractJourneyRouteLocations($db, $message) {
     }
 
     $patterns = [
+        '/\broute\s*[:\-]\s*(.+?)\s+to\s+(.+?)(?=[ \t]*(?:[\r\n]|[\x{2022}\-*]\s*(?:distance|consumption|vehicle|fuel|source|synced)\b|distance\b|consumption\b|vehicle\b|fuel\b|source\b|synced\b|[?.!,]|$))/iu',
         '/\bfrom\s+(.+?)\s+to\s+(.+?)(?=\s+(?:in\s+a|in\s+an|with\s+a|with\s+an|using|for|cost|price|today|right\s+now|please)\b|[?.!,]|$)/i',
         '/\bfrom\s+(.+?)\s+to\s+(.+)$/i',
-        '/\b((?:what\s+about|how\s+about|about|and|then|try|route|journey)?\s*[\p{L}][\p{L}\s\-]{1,70}?)\s+to\s+([\p{L}][\p{L}\s\-]{1,70}?)(?=\s+(?:in\s+a|in\s+an|with\s+a|with\s+an|using|for|cost|price|today|right\s+now|please)\b|[?.!,]|$)/iu'
+        '/\b((?:what\s+about|how\s+about|about|and|then|try|route\s*[:\-]?|journey\s*[:\-]?)?\s*[\p{L}][\p{L}\s\-]{1,70}?)\s+to\s+([\p{L}][\p{L}\s\-]{1,70}?)(?=[ \t]*(?:[\r\n]|[\x{2022}\-*]\s*(?:distance|consumption|vehicle|fuel|source|synced)\b|distance\b|consumption\b|vehicle\b|fuel\b|source\b|synced\b|in\s+a\b|in\s+an\b|with\s+a\b|with\s+an\b|using\b|for\b|cost\b|price\b|today\b|right\s+now\b|please\b|[?.!,]|$))/iu'
     ];
 
     foreach ($patterns as $pattern) {
