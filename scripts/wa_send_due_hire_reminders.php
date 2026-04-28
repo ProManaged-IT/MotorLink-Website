@@ -13,7 +13,7 @@ $pdo = motorlink_script_pdo();
 function waReminderSettingRows(PDO $pdo): array {
     $stmt = $pdo->prepare(
         "SELECT setting_key, setting_value FROM site_settings
-         WHERE setting_key IN ('wa_enabled','wa_api_token','wa_phone_number_id','wa_api_version')"
+            WHERE setting_key IN ('wa_enabled','wa_pickup_reminders_enabled','wa_api_token','wa_phone_number_id','wa_api_version')"
     );
     $stmt->execute();
     return $stmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
@@ -103,6 +103,11 @@ function waReminderSendTemplate(array $settings, string $toNumber, array $params
 $rows = waReminderSettingRows($pdo);
 if (($rows['wa_enabled'] ?? '0') !== '1') {
     echo "WhatsApp API disabled. No reminders sent.\n";
+    exit(0);
+}
+
+if (($rows['wa_pickup_reminders_enabled'] ?? '0') !== '1') {
+    echo "WhatsApp pickup reminders disabled. No reminders sent.\n";
     exit(0);
 }
 

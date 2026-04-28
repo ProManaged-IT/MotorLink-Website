@@ -14,7 +14,7 @@
  *  - Separate cache: _scrape_v2_cache.json (won't conflict with v1)
  *
  * Usage:
- *   php scripts/scrape_v2.php                       # Full run
+ *   php scripts/scrape_v2.php --allow-google-places-cost  # Full run (billable Google Places)
  *   php scripts/scrape_v2.php --refresh             # Re-discover (new cache)
  *   php scripts/scrape_v2.php --enrich-only         # Phase 3 only
  *   php scripts/scrape_v2.php --insert-only         # Phase 2 only
@@ -37,6 +37,8 @@ set_time_limit(0);
 
 // ── CLI ARGS ─────────────────────────────────────────────────────────────────
 $args        = array_slice($argv ?? [], 1);
+$allowGooglePlacesCost = in_array('--allow-google-places-cost', $args, true)
+    || getenv('MOTORLINK_ALLOW_GOOGLE_PLACES_SCRAPER') === '1';
 $doRefresh   = in_array('--refresh',      $args, true);
 $insertOnly  = in_array('--insert-only',  $args, true);
 $enrichOnly  = in_array('--enrich-only',  $args, true);
@@ -47,6 +49,12 @@ $targetPerType = null;
 $targetOverrides = [];
 $onlyType    = null;
 $jobId       = null;
+
+if (!$allowGooglePlacesCost) {
+    echo "ABORTED: scrape_v2.php uses billable Google Places APIs. Add --allow-google-places-cost or set MOTORLINK_ALLOW_GOOGLE_PLACES_SCRAPER=1 to run it intentionally.\n";
+    exit(1);
+}
+
 foreach ($args as $a) {
     if (preg_match('/^--type=(.+)$/',         $a, $m)) $onlyType    = strtolower(trim($m[1]));
     if (preg_match('/^--enrich-limit=(\d+)$/', $a, $m)) $enrichLimit = max(1, (int)$m[1]);

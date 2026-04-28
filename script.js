@@ -2727,42 +2727,31 @@ class DealersManager {
     }
 
     async geocodeDealerAddress(address, locationName) {
-        // Validate parameters
         if (!address || !address.trim()) return null;
-        
+
         const fullAddress = buildRuntimeAddress([address, locationName, getRuntimeCountryName()]);
-        
-        // Check cache first
-        if (this.geocodedDealers.has(fullAddress)) {
-            return this.geocodedDealers.get(fullAddress);
-        }
-        
-        // Check if Google Maps is available
-        if (typeof google === 'undefined' || !google.maps || !google.maps.Geocoder) {
-            return null;
-        }
-        
+
+        if (this.geocodedDealers.has(fullAddress)) return this.geocodedDealers.get(fullAddress);
+
+        // Respect Nominatim 1 req/s usage policy
+        const now = Date.now();
+        const elapsed = now - (window._nominatimDealerLastCall || 0);
+        if (elapsed < 1100) await new Promise(r => setTimeout(r, 1100 - elapsed));
+        window._nominatimDealerLastCall = Date.now();
+
         try {
-            const geocoder = new google.maps.Geocoder();
-            
-            return new Promise((resolve) => {
-                geocoder.geocode({ address: fullAddress }, (results, status) => {
-                    if (status === 'OK' && results[0]) {
-                        const location = {
-                            lat: results[0].geometry.location.lat(),
-                            lng: results[0].geometry.location.lng()
-                        };
-                        this.geocodedDealers.set(fullAddress, location);
-                        resolve(location);
-                    } else {
-                        resolve(null);
-                    }
-                });
-            });
-        } catch (error) {
-            console.error('Error geocoding address:', error);
-            return null;
-        }
+            const resp = await fetch(
+                'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q: fullAddress, format: 'json', limit: '1' }),
+                { headers: { 'Accept': 'application/json', 'User-Agent': 'MotorLink/1.0 (motorlink.mw)' } }
+            );
+            const data = await resp.json();
+            if (data && data[0]) {
+                const location = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+                this.geocodedDealers.set(fullAddress, location);
+                return location;
+            }
+        } catch (e) { /* ignore */ }
+        return null;
     }
 
     async geocodeAndRenderDealers() {
@@ -3854,14 +3843,13 @@ class ShowroomManager {
         }
     }
 
-    // Initialize Google Map for dealer location
+    // Initialize dealer map using Google Maps Embed (free, no API key, never billed)
     initializeDealerMap(dealer) {
         const mapContainer = document.getElementById('dealerMapContainer');
         const mapDiv = document.getElementById('map');
 
         if (!mapContainer || !mapDiv) return;
 
-        // Get full address for geocoding
         let address = '';
         if (dealer.address && dealer.location_name) {
             address = buildRuntimeAddress([dealer.address, dealer.location_name, getRuntimeCountryName()]);
@@ -3871,76 +3859,17 @@ class ShowroomManager {
             address = buildRuntimeAddress([dealer.location_name, getRuntimeCountryName()]);
         }
 
-        if (!address) {
-            // No address available, don't show map
-            return;
-        }
+        if (!address) return;
 
-        // Show map container
         mapContainer.style.display = 'block';
-
-        // Wait for Google Maps to load
-        const initMap = () => {
-            if (typeof google === 'undefined' || !google.maps || typeof google.maps.Map !== 'function') {
-                // Google Maps not loaded yet, try again in 500ms
-                setTimeout(initMap, 500);
-                return;
-            }
-
-            // Default center from runtime market config when available
-            const defaultCenter = getRuntimeMapCenter();
-
-            // Initialize map
-            const map = new google.maps.Map(mapDiv, {
-                zoom: 15,
-                center: defaultCenter,
-                mapTypeControl: true,
-                streetViewControl: true,
-                fullscreenControl: true
-            });
-
-            // Geocode address to get coordinates
-            const geocoder = new google.maps.Geocoder();
-            geocoder.geocode({ address: address }, (results, status) => {
-                if (status === 'OK' && results[0]) {
-                    const location = results[0].geometry.location;
-
-                    // Center map on location
-                    map.setCenter(location);
-
-                    // Add marker
-                    new google.maps.Marker({
-                        map: map,
-                        position: location,
-                        title: dealer.business_name,
-                        animation: google.maps.Animation.DROP
-                    });
-
-                    // Add info window
-                    const infoWindow = new google.maps.InfoWindow({
-                        content: `
-                            <div style="padding: 8px; max-width: 200px;">
-                                <h3 style="margin: 0 0 8px 0; font-size: 1rem; color: #333;">${dealer.business_name}</h3>
-                                <p style="margin: 0; font-size: 0.85rem; color: #666;">
-                                    <i class="fas fa-map-marker-alt" style="color: var(--primary-green);"></i> ${address}
-                                </p>
-                                ${dealer.phone ? `<p style="margin: 4px 0 0 0; font-size: 0.85rem; color: #666;">
-                                    <i class="fas fa-phone" style="color: var(--primary-green);"></i> ${dealer.phone}
-                                </p>` : ''}
-                            </div>
-                        `
-                    });
-
-                    // Open info window by default
-                    infoWindow.open(map);
-                } else {
-                    // Still show a fallback message when geocoding fails
-                    mapDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Unable to load map for this location</div>';
-                }
-            });
-        };
-
-        initMap();
+        const embedSrc = 'https://maps.google.com/maps?q=' + encodeURIComponent(address) + '&output=embed&z=15';
+        mapDiv.style.padding = '0';
+        mapDiv.style.overflow = 'hidden';
+        mapDiv.innerHTML =
+            '<iframe src="' + embedSrc + '" width="100%" height="100%"' +
+            ' style="border:0;display:block;min-height:320px;"' +
+            ' allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"' +
+            ' title="Map for ' + (dealer.business_name || 'dealer').replace(/"/g, '') + '"></iframe>';
     }
 
     // Update contact information display

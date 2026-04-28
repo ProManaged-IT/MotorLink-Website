@@ -3,7 +3,7 @@
  * MotorLink — WhatsApp template smoke test
  * Sends one test message per template to a target number.
  *
- * Usage: php scripts/wa_test_all_templates.php [+353860081635]
+ * Usage: php scripts/wa_test_all_templates.php --send [+353860081635]
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -18,17 +18,31 @@ $apiVer  = $rows['wa_api_version']     ?? 'v25.0';
 
 if (!$token || !$phoneId) { echo "ERROR: missing WA credentials in DB\n"; exit(1); }
 
-$to = isset($argv[1]) ? preg_replace('/[^0-9]/', '', $argv[1]) : '353860081635';
+$sendConfirmed = in_array('--send', $argv, true);
+$targetArg = null;
+foreach (array_slice($argv, 1) as $arg) {
+    if ($arg !== '--send') {
+        $targetArg = $arg;
+        break;
+    }
+}
+
+$to = $targetArg ? preg_replace('/[^0-9]/', '', $targetArg) : '353860081635';
 echo "=== MotorLink WhatsApp Template Smoke Tests ===\n";
 echo "To:       +$to\n";
 echo "Phone ID: $phoneId\n";
 echo "Token:    ..." . substr($token, -6) . "\n\n";
 
+if (!$sendConfirmed) {
+    echo "DRY RUN ONLY — no WhatsApp messages sent. Add --send to intentionally send paid template test messages.\n";
+    exit(0);
+}
+
 // ---------------------------------------------------------------------------
 // Helper: send one template message
 // ---------------------------------------------------------------------------
 function sendTpl(string $phoneId, string $apiVer, string $token, string $to,
-                 string $name, array $bodyParams, array $headerParams = []): void {
+                 string $name, array $bodyParams, array $headerParams = [], array $buttonPayloads = []): void {
     $url      = "https://graph.facebook.com/{$apiVer}/{$phoneId}/messages";
     $comps    = [];
     if ($headerParams) {
@@ -39,6 +53,14 @@ function sendTpl(string $phoneId, string $apiVer, string $token, string $to,
     $comps[] = ['type' => 'body', 'parameters' => array_map(
         fn($v) => ['type' => 'text', 'text' => (string)$v], $bodyParams
     )];
+    foreach ($buttonPayloads as $idx => $payload) {
+        $comps[] = [
+            'type'       => 'button',
+            'sub_type'   => 'quick_reply',
+            'index'      => (string)$idx,
+            'parameters' => [['type' => 'payload', 'payload' => (string)$payload]],
+        ];
+    }
 
     $payload = json_encode([
         'messaging_product' => 'whatsapp',
@@ -78,21 +100,25 @@ function sendTpl(string $phoneId, string $apiVer, string $token, string $to,
 // Test cases — realistic sample data matching each template's parameters
 // ---------------------------------------------------------------------------
 
-// 1. motorlink_booking — new booking request → car hire owner
+// 1. motorlink_booking_v2 — new booking request → car hire owner
 // Params: vehicle, customer name, customer phone, from date, to date
-echo "── 1. motorlink_booking ─────────────────────────────────────\n";
-sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_booking', [
+echo "── 1. motorlink_booking_v2 ──────────────────────────────────\n";
+sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_booking_v2', [
     'Toyota Hilux 2023',
     'Grace Mwale',
     '+353860081635',
     '01 May 2026',
     '04 May 2026',
+], [], [
+    'ACCEPT_BOOKING_0',
+    'DECLINE_BOOKING_0',
+    'PROPOSE_DATES_0',
 ]);
 
-// 2. motorlink_booking_confirmed — booking confirmed → renter
+// 2. motorlink_booking_confirmed_v2 — booking confirmed → renter
 // Params: renter name, vehicle, pickup date, return date, owner phone
-echo "── 2. motorlink_booking_confirmed ──────────────────────────\n";
-sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_booking_confirmed', [
+echo "── 2. motorlink_booking_confirmed_v2 ───────────────────────\n";
+sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_booking_confirmed_v2', [
     'Grace Mwale',
     'Toyota Hilux 2023',
     '01 May 2026',
@@ -100,64 +126,67 @@ sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_booking_confirmed', [
     '+265888123456',
 ]);
 
-// 3. motorlink_booking_declined — booking declined → renter
+// 3. motorlink_booking_declined_v2 — booking declined → renter
 // Params: renter name, vehicle, dates
-echo "── 3. motorlink_booking_declined ───────────────────────────\n";
-sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_booking_declined', [
+echo "── 3. motorlink_booking_declined_v2 ────────────────────────\n";
+sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_booking_declined_v2', [
     'Grace Mwale',
     'Toyota Hilux 2023',
     '01-04 May 2026',
 ]);
 
-// 4. motorlink_hire_reminder — pickup reminder → renter
+// 4. motorlink_hire_reminder_v2 — pickup reminder → renter
 // Params: renter name, vehicle, pickup date, owner phone
-echo "── 4. motorlink_hire_reminder ──────────────────────────────\n";
-sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_hire_reminder', [
+echo "── 4. motorlink_hire_reminder_v2 ───────────────────────────\n";
+sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_hire_reminder_v2', [
     'Grace Mwale',
     'Toyota Hilux 2023',
     '01 May 2026',
     '+265888123456',
+], [], [
+    'REMINDER_ACK_0',
+    'CANCEL_BOOKING_0',
 ]);
 
-// 5. motorlink_new_lead — new buyer enquiry → dealer/seller
+// 5. motorlink_new_lead_v2 — new buyer enquiry → dealer/seller
 // Params: seller name, listing, buyer name, message
-echo "── 5. motorlink_new_lead ───────────────────────────────────\n";
-sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_new_lead', [
+echo "── 5. motorlink_new_lead_v2 ────────────────────────────────\n";
+sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_new_lead_v2', [
     'James Dealer',
     '2021 Nissan Navara Double Cab',
     'Peter Buyer',
     'Hi, is this still available for viewing this weekend?',
 ]);
 
-// 6. motorlink_listing_live — listing approved/live → seller
+// 6. motorlink_listing_live_v2 — listing approved/live → seller
 // Params: seller name, vehicle
-echo "── 6. motorlink_listing_live ───────────────────────────────\n";
-sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_listing_live', [
+echo "── 6. motorlink_listing_live_v2 ────────────────────────────\n";
+sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_listing_live_v2', [
     'James Dealer',
     '2021 Nissan Navara Double Cab',
 ]);
 
-// 7. motorlink_listing_rejected — listing needs attention → seller
+// 7. motorlink_listing_rejected_v2 — listing needs attention → seller
 // Params: seller name, vehicle, reason
-echo "── 7. motorlink_listing_rejected ───────────────────────────\n";
-sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_listing_rejected', [
+echo "── 7. motorlink_listing_rejected_v2 ────────────────────────\n";
+sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_listing_rejected_v2', [
     'James Dealer',
     '2021 Nissan Navara Double Cab',
     'Photos are too blurry. Please upload clear, well-lit images.',
 ]);
 
-// 8. motorlink_rate_experience — post-hire review request → renter
+// 8. motorlink_rate_experience_v2 — post-hire review request → renter
 // Params: renter name, business name
-echo "── 8. motorlink_rate_experience ────────────────────────────\n";
-sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_rate_experience', [
+echo "── 8. motorlink_rate_experience_v2 ─────────────────────────\n";
+sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_rate_experience_v2', [
     'Grace Mwale',
     'Lilongwe Car Rentals',
 ]);
 
-// 9. motorlink_new_user — welcome new registrant
+// 9. motorlink_new_user_v2 — welcome new registrant
 // Params: user name
-echo "── 9. motorlink_new_user ───────────────────────────────────\n";
-sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_new_user', [
+echo "── 9. motorlink_new_user_v2 ────────────────────────────────\n";
+sendTpl($phoneId, $apiVer, $token, $to, 'motorlink_new_user_v2', [
     'Grace Mwale',
 ]);
 

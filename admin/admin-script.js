@@ -6724,6 +6724,12 @@ async function loadWhatsAppSettings() {
         const leadEl = document.getElementById('wa-lead-notifications');
         if (leadEl) leadEl.checked = s.wa_lead_notifications === '1';
 
+        const welcomeEl = document.getElementById('wa-welcome-notifications');
+        if (welcomeEl) welcomeEl.checked = s.wa_welcome_notifications === '1';
+
+        const pickupEl = document.getElementById('wa-pickup-reminders-enabled');
+        if (pickupEl) pickupEl.checked = s.wa_pickup_reminders_enabled === '1';
+
         const wabaEl = document.getElementById('wa-business-account-id');
         if (wabaEl) wabaEl.value = s.wa_business_account_id || '';
 
@@ -6765,6 +6771,8 @@ async function saveWhatsAppSettings() {
         wa_enabled:              document.getElementById('wa-enabled')?.checked ? '1' : '0',
         wa_public_buttons_enabled: document.getElementById('wa-public-buttons-enabled')?.checked ? '1' : '0',
         wa_lead_notifications:   document.getElementById('wa-lead-notifications')?.checked ? '1' : '0',
+        wa_welcome_notifications: document.getElementById('wa-welcome-notifications')?.checked ? '1' : '0',
+        wa_pickup_reminders_enabled: document.getElementById('wa-pickup-reminders-enabled')?.checked ? '1' : '0',
         wa_api_token:            document.getElementById('wa-api-token')?.value || '',
         wa_phone_number_id:      document.getElementById('wa-phone-number-id')?.value?.trim() || '',
         wa_business_account_id:  document.getElementById('wa-business-account-id')?.value?.trim() || '',

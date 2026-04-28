@@ -3034,6 +3034,11 @@ function sendWhatsAppMessage($settings, string $toNumber, string $messageBody): 
         return ['success' => false, 'wamid' => null, 'error' => 'Invalid recipient number'];
     }
 
+    if (empty($settings['allow_text_messages'])) {
+        error_log('WhatsApp text send blocked: template-only mode is active');
+        return ['success' => false, 'wamid' => null, 'error' => 'WhatsApp text sends are disabled; use an approved template'];
+    }
+
     $url = "https://graph.facebook.com/{$settings['api_version']}/{$settings['phone_number_id']}/messages";
     $payload = json_encode([
         'messaging_product' => 'whatsapp',
@@ -3218,29 +3223,12 @@ function handleWaWebhook($db): void {
             error_log("wa_webhook: booking $bookingId DECLINED via WhatsApp by $senderPhone");
 
         } elseif ($action === 'PROPOSE_DATES' && $booking['status'] === 'pending') {
-            // No status change — send a free-form message back to the owner with renter contact
-            if ($waSettings['enabled'] && !empty($waSettings['api_token']) && !empty($waSettings['phone_number_id'])) {
-                $renterContact = $booking['renter_whatsapp'] ?: $booking['renter_phone'] ?? 'N/A';
-                $refId = str_pad($bookingId, 6, '0', STR_PAD_LEFT);
-                $msg   = "To propose new dates for booking #{$refId}, please contact the customer directly:\n\n"
-                       . "*Name:* {$booking['renter_name']}\n"
-                       . "*Phone:* {$renterContact}\n\n"
-                       . "Once agreed, update the booking in your MotorLink dashboard.";
-                sendWhatsAppMessage($waSettings, $senderPhone, $msg);
-            }
+            // No status change. Do not send free-form WhatsApp text here; the owner can contact the renter from the dashboard.
             error_log("wa_webhook: booking $bookingId PROPOSE_DATES requested by $senderPhone");
 
         } elseif ($action === 'CANCEL_BOOKING' && in_array($booking['status'], ['pending', 'confirmed'], true)) {
             $db->prepare("UPDATE car_hire_bookings SET status='cancelled', updated_at=NOW() WHERE id=?")->execute([$bookingId]);
-            // Notify owner
-            $ownerNum = preg_replace('/[^0-9]/', '', $booking['owner_whatsapp'] ?: $booking['owner_phone'] ?? '');
-            if ($ownerNum && $waSettings['enabled'] && !empty($waSettings['api_token'])) {
-                $refId = str_pad($bookingId, 6, '0', STR_PAD_LEFT);
-                $msg   = "MotorLink — Booking #{$refId} has been *cancelled* by the customer ({$booking['renter_name']}) via WhatsApp.\n\n"
-                       . "*Vehicle:* {$booking['vehicle_name']}\n"
-                       . "*Dates:* {$booking['start_date']} - {$booking['end_date']}";
-                sendWhatsAppMessage($waSettings, $ownerNum, $msg);
-            }
+            // Do not send a free-form owner notification; dashboard status is updated immediately.
             error_log("wa_webhook: booking $bookingId CANCELLED by renter $senderPhone");
 
         } elseif ($action === 'REMINDER_ACK') {
@@ -3437,15 +3425,6 @@ function sendDealerLeadNotification($db, array $conversation, string $buyerName,
             $buyerName,
             $preview,
         ]);
-        // Fallback to free-form if template not yet approved
-        if (!$result['success']) {
-            $msgBody = "*New Lead - MotorLink*\n\n"
-                     . "*Listing:* {$listingTitle}\n"
-                     . "*From:* {$buyerName}\n\n"
-                     . "*Message:*\n{$preview}\n\n"
-                     . "Reply via MotorLink chat or contact the buyer directly.";
-            $result = sendWhatsAppMessage($waSettings, $recipientNumber, $msgBody);
-        }
         if (!$result['success']) {
             error_log("sendDealerLeadNotification failed for seller {$conversation['seller_id']}: " . ($result['error'] ?? 'unknown'));
         }
@@ -3576,7 +3555,7 @@ function carHireBookWhatsapp($db) {
 
     if ($waSettings['enabled'] && !empty($waSettings['api_token']) && !empty($waSettings['phone_number_id'])) {
         if ($ownerWhatsApp) {
-            // Try approved template first; fall back to free-form text.
+            // Send approved template only. Free-form fallback is disabled to avoid unexpected WhatsApp charges.
             // Button payloads embed the bookingId so the webhook can act on Accept/Decline/Propose.
             $result = sendWhatsAppTemplate($waSettings, $ownerWhatsApp, 'motorlink_booking_v2', [
                 $vehicleName,
@@ -3589,11 +3568,6 @@ function carHireBookWhatsapp($db) {
                 "DECLINE_BOOKING_{$bookingId}",
                 "PROPOSE_DATES_{$bookingId}",
             ]);
-            if (!$result['success']) {
-                // Template not approved yet — fall back to free-form
-                $message = buildOwnerBookingMessage($bookingData, $currency);
-                $result  = sendWhatsAppMessage($waSettings, $ownerWhatsApp, $message);
-            }
             $waSent  = $result['success'];
             $wamid   = $result['wamid'];
             $waError = $result['error'];
@@ -4052,9 +4026,9 @@ function handleRegister($db) {
             try {
                 $regWaRows = $db->query(
                     "SELECT setting_key, setting_value FROM site_settings
-                     WHERE setting_key IN ('wa_enabled','wa_api_token','wa_phone_number_id','wa_api_version')"
+                     WHERE setting_key IN ('wa_enabled','wa_welcome_notifications','wa_api_token','wa_phone_number_id','wa_api_version')"
                 )->fetchAll(PDO::FETCH_KEY_PAIR);
-                if (($regWaRows['wa_enabled'] ?? '0') === '1' && !empty($regWaRows['wa_api_token'])) {
+                if (($regWaRows['wa_enabled'] ?? '0') === '1' && ($regWaRows['wa_welcome_notifications'] ?? '0') === '1' && !empty($regWaRows['wa_api_token'])) {
                     $regWaSettings = [
                         'enabled'         => true,
                         'api_token'       => $regWaRows['wa_api_token'],

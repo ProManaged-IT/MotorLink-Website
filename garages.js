@@ -13,126 +13,19 @@ const GARAGE_NEARBY_RADIUS_KM = 10;
 
 // Global variables
 let userLocation = null;
-let googleMapsAvailable = false;
 let currentGarages = [];
-let googleGarages = [];
+let googleGarages = []; // kept for compatibility but always empty now
 let geocodedGarages = new Map(); // Cache for geocoded garage addresses
-let shouldGeocodeOnMapsReady = false; // Flag to geocode when Maps API loads
 let nearbyGarageSearchActive = false;
 
 // Pagination state
 let garagesPerPage = 25;
 let garagesCurrentPage = 1;
 
-// Suppress Google Maps analytics errors (gen_204) that are blocked by ad blockers
-// This doesn't affect Maps functionality, just analytics tracking
-const originalError = window.onerror;
-window.onerror = function(msg, url, line, col, error) {
-    // Suppress gen_204 errors (Google Maps analytics blocked by ad blockers)
-    if (msg && (msg.includes('gen_204') || msg.includes('ERR_BLOCKED_BY_CLIENT'))) {
-        return true; // Suppress the error
-    }
-    // Call original error handler if it exists
-    if (originalError) {
-        return originalError.apply(this, arguments);
-    }
-    return false;
-};
-
-// Also catch fetch/network errors
-window.addEventListener('unhandledrejection', function(event) {
-    if (event.reason && event.reason.message && event.reason.message.includes('gen_204')) {
-        event.preventDefault();
-    }
-});
-
-// Define initMap globally BEFORE loading the API
-window.initMap = function() {
-    window.googleMapsReady = true;
-    googleMapsAvailable = true;
-    
-    // If main script is already loaded, trigger the callback
-    if (window.mainScriptLoaded && typeof window.onGoogleMapsReady === 'function') {
-        window.onGoogleMapsReady();
-    }
-};
-
-// Load Google Maps API dynamically with proper async loading
-async function loadGoogleMapsAPI() {
-    // Check if already loaded
-    if (window.google) {
-        return;
-    }
-    
-    // Check if already loading
-    if (window.googleMapsLoading) {
-        return;
-    }
-    
-    window.googleMapsLoading = true;
-    
-    let mapConfig;
-    try {
-        mapConfig = await window.getGoogleMapsConfig();
-    } catch (error) {
-        showSearchStatus('Failed to load map configuration.', 'error');
-        window.googleMapsLoading = false;
-        return;
-    }
-
-    if (!mapConfig || !mapConfig.apiKey) {
-        showSearchStatus('Google Maps API key is not configured.', 'error');
-        window.googleMapsLoading = false;
-        return;
-    }
-
-    // Create the script element with proper async loading
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${mapConfig.apiKey}&libraries=places&callback=initMap&loading=async`;
-    script.async = true;
-    script.defer = true;
-    
-    script.onload = function() {
-        window.googleMapsLoading = false;
-    };
-    
-    script.onerror = function() {
-        showSearchStatus('Failed to load Google Maps. Please check your connection.', 'error');
-        window.googleMapsLoading = false;
-    };
-    
-    document.head.appendChild(script);
-}
-
-// Google Maps callback
-window.onGoogleMapsReady = function() {
-    googleMapsAvailable = true;
-    
-    // If we have user location and need to geocode, do it now
-    if (userLocation && shouldGeocodeOnMapsReady && currentGarages.length > 0) {
-        geocodeAndUpdateGarageDistances().then(() => {
-            // Re-display garages with updated distances
-            displayGarages(currentGarages);
-            updateResultsCount(currentGarages);
-        }).catch((error) => {
-            // Silently handle geocoding errors - garages still display without distances
-            console.error('Geocoding failed:', error);
-        });
-        shouldGeocodeOnMapsReady = false;
-    }
-    
-    // If we need to search nearby (from "Nearby" button), trigger it
-    // This is different from the automatic geocoding above
-    if (userLocation && window.shouldSearchNearby) {
-        findNearbyGarages();
-        window.shouldSearchNearby = false;
-    }
-};
+// Define initMap as no-op in case any stale reference exists
+window.initMap = function() {};
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Load Google Maps API first with proper loading pattern
-    loadGoogleMapsAPI();
-    
     // Initialize all components
     // Mobile menu handled by global js/mobile-menu.js
     loadDistricts();
@@ -538,14 +431,7 @@ function requestUserLocationForDistances() {
                 lat: position.coords.latitude,
                 lng: position.coords.longitude
             };
-            
-            // Wait for Google Maps to be ready
-            if (!googleMapsAvailable) {
-                // Set a flag to geocode when maps is ready
-                shouldGeocodeOnMapsReady = true;
-                return;
-            }
-            
+
             // Geocode addresses and update distances for current garages
             if (currentGarages.length > 0) {
                 try {
@@ -608,22 +494,10 @@ function findNearbyGarages() {
             
             showSearchStatus('Searching for nearby garages...', 'info');
             
-            if (!googleMapsAvailable) {
-                showSearchStatus('Google Maps is still loading. Please wait...', 'warning');
-                window.shouldSearchNearby = true;
-                return;
-            }
-            
-            // Load both database garages and Google Maps garages
+            // Load database garages with geocoding for distance sorting
             try {
-                await Promise.all([
-                    loadDatabaseGarages(),
-                    loadGoogleMapsGarages()
-                ]);
-                
+                await loadDatabaseGarages();
                 combineAndDisplayGarages();
-                window.shouldSearchNearby = false;
-                
             } catch (error) {
                 showSearchStatus('Error searching for garages. Please try again.', 'error');
             }
@@ -703,7 +577,7 @@ async function loadDatabaseGarages() {
             }));
             
             // Geocode addresses and calculate distances if user location is available
-            if (userLocation && googleMapsAvailable) {
+            if (userLocation) {
                 await geocodeAndUpdateGarageDistances();
             }
         } else {
@@ -714,145 +588,13 @@ async function loadDatabaseGarages() {
     }
 }
 
+// Google Places search removed — was billable. Nearby search now uses database garages only.
 async function loadGoogleMapsGarages() {
-    if (!userLocation || !googleMapsAvailable || !window.google) {
-        googleGarages = [];
-        return;
-    }
-    
-    try {
-        showSearchStatus('Searching Google Maps for nearby garages...', 'info');
-        
-        // Use the new Place API with minimal, supported parameters
-        const { Place } = await google.maps.importLibrary("places");
-        
-        // Simple text query that should work with the new API
-        // Enhanced to fetch contact information
-        const request = {
-            textQuery: `car repair garage near ${userLocation.lat},${userLocation.lng}`,
-            maxResultCount: 20,
-            fields: ['displayName', 'formattedAddress', 'rating', 'userRatingCount', 'location', 'internationalPhoneNumber', 'websiteURI', 'googleMapsURI']
-        };
-        
-        
-        // Use the new Place.searchByText method
-        const { places } = await Place.searchByText(request);
-        
-        if (places && places.length > 0) {
-            
-            googleGarages = await Promise.all(
-                places.map(async (place) => {
-                    try {
-                        // Fetch additional details for each place including contact info
-                        await place.fetchFields({
-                            fields: ['displayName', 'formattedAddress', 'rating', 'userRatingCount', 'location', 'internationalPhoneNumber', 'websiteURI', 'googleMapsURI']
-                        });
-                        
-                        let placeLat = userLocation.lat;
-                        let placeLng = userLocation.lng;
-                        
-                        // Safely get location coordinates
-                        if (place.location) {
-                            try {
-                                placeLat = place.location.lat();
-                                placeLng = place.location.lng();
-                            } catch (locError) {
-                            }
-                        }
-                        
-                        const distance = calculateDistance(
-                            userLocation.lat,
-                            userLocation.lng,
-                            placeLat,
-                            placeLng
-                        );
-                        
-                        // Filter out places outside the explicit nearby radius
-                        if (distance > GARAGE_NEARBY_RADIUS_KM) {
-                            return null;
-                        }
-                        
-                        return {
-                            id: 'google_' + place.id,
-                            name: place.displayName || 'Unknown Garage',
-                            address: place.formattedAddress || '',
-                            phone: place.internationalPhoneNumber || null,
-                            website: place.websiteURI || null,
-                            google_maps_url: place.googleMapsURI || null,
-                            rating: place.rating || 0,
-                            total_reviews: place.userRatingCount || 0,
-                            source: 'google',
-                            distance: distance,
-                            place_id: place.id,
-                            location: {
-                                lat: placeLat,
-                                lng: placeLng
-                            }
-                        };
-                    } catch (placeError) {
-                        return null;
-                    }
-                })
-            );
-            
-            // Filter out any null results from failed place processing or distance filtering
-            googleGarages = googleGarages.filter(garage => garage !== null);
-            
-            
-        } else {
-            googleGarages = [];
-        }
-        
-    } catch (error) {
-        // Try the legacy API as fallback
-        await loadGoogleMapsGaragesLegacy();
-    }
+    googleGarages = [];
 }
 
-// Legacy API fallback using nearbySearch
 async function loadGoogleMapsGaragesLegacy() {
-    try {
-        
-        const service = new google.maps.places.PlacesService(document.createElement('div'));
-        const request = {
-            location: new google.maps.LatLng(userLocation.lat, userLocation.lng),
-            radius: GARAGE_NEARBY_RADIUS_KM * 1000,
-            type: 'car_repair',
-            keyword: 'auto repair garage mechanic'
-        };
-        
-        return new Promise((resolve) => {
-            service.nearbySearch(request, (results, status) => {
-                if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-                    googleGarages = results.map(place => ({
-                        id: 'google_' + place.place_id,
-                        name: place.name,
-                        address: place.vicinity || '',
-                        rating: place.rating || 0,
-                        total_reviews: place.user_ratings_total || 0,
-                        source: 'google',
-                        distance: calculateDistance(
-                            userLocation.lat,
-                            userLocation.lng,
-                            place.geometry.location.lat(),
-                            place.geometry.location.lng()
-                        ),
-                        place_id: place.place_id,
-                        location: {
-                            lat: place.geometry.location.lat(),
-                            lng: place.geometry.location.lng()
-                        }
-                    }));
-                } else {
-                    googleGarages = [];
-                }
-                resolve();
-            });
-        });
-        
-    } catch (error) {
-        googleGarages = [];
-    }
+    googleGarages = [];
 }
 
 function combineAndDisplayGarages() {
@@ -901,46 +643,34 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     return Math.round(distance * 10) / 10; // Round to 1 decimal place
 }
 
-// Geocode a garage address to get coordinates
+// Geocode a garage address using Nominatim (OpenStreetMap, free, no API key)
 async function geocodeGarageAddress(address, locationName) {
-    // Validate parameters
     if (!address || !address.trim()) return null;
-    
-    // Create a full address string
-    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : '';
-    const fullAddress = [address, locationName, countryName].map((part) => String(part || '').trim()).filter(Boolean).join(', ');
-    
-    // Check cache first
-    if (geocodedGarages.has(fullAddress)) {
-        return geocodedGarages.get(fullAddress);
-    }
-    
-    // Check if Google Maps is available
-    if (!googleMapsAvailable || typeof google === 'undefined' || !google.maps || !google.maps.Geocoder) {
-        return null;
-    }
-    
+
+    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : 'Malawi';
+    const fullAddress = [address, locationName, countryName].map(p => String(p || '').trim()).filter(Boolean).join(', ');
+
+    if (geocodedGarages.has(fullAddress)) return geocodedGarages.get(fullAddress);
+
+    // Respect Nominatim 1 req/s usage policy
+    const now = Date.now();
+    const elapsed = now - (window._nominatimGarageLastCall || 0);
+    if (elapsed < 1100) await new Promise(r => setTimeout(r, 1100 - elapsed));
+    window._nominatimGarageLastCall = Date.now();
+
     try {
-        const geocoder = new google.maps.Geocoder();
-        
-        return new Promise((resolve) => {
-            geocoder.geocode({ address: fullAddress }, (results, status) => {
-                if (status === 'OK' && results[0]) {
-                    const location = {
-                        lat: results[0].geometry.location.lat(),
-                        lng: results[0].geometry.location.lng()
-                    };
-                    geocodedGarages.set(fullAddress, location);
-                    resolve(location);
-                } else {
-                    resolve(null);
-                }
-            });
-        });
-    } catch (error) {
-        console.error('Error geocoding garage address:', error);
-        return null;
-    }
+        const resp = await fetch(
+            'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q: fullAddress, format: 'json', limit: '1' }),
+            { headers: { 'Accept': 'application/json', 'User-Agent': 'MotorLink/1.0 (motorlink.mw)' } }
+        );
+        const data = await resp.json();
+        if (data && data[0]) {
+            const location = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+            geocodedGarages.set(fullAddress, location);
+            return location;
+        }
+    } catch (e) { /* ignore */ }
+    return null;
 }
 
 // Geocode all database garages and update distances

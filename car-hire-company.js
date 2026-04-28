@@ -823,92 +823,25 @@ function copyAddress() {
     }
 }
 
-// Load Leaflet CSS + JS from CDN (free, no API key)
-function loadLeaflet() {
-    return new Promise((resolve, reject) => {
-        if (typeof L !== 'undefined') { resolve(); return; }
-        if (window._leafletLoading) {
-            const t = setInterval(() => { if (typeof L !== 'undefined') { clearInterval(t); resolve(); } }, 50);
-            return;
-        }
-        window._leafletLoading = true;
-        const css = document.createElement('link');
-        css.rel = 'stylesheet';
-        css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-        document.head.appendChild(css);
-        const script = document.createElement('script');
-        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-        script.onload = () => { window._leafletLoading = false; resolve(); };
-        script.onerror = () => { window._leafletLoading = false; reject(new Error('Leaflet failed to load')); };
-        document.head.appendChild(script);
-    });
-}
-
-// Geocode an address using Nominatim (OpenStreetMap, completely free)
-async function nominatimGeocode(address) {
-    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : 'Malawi';
-    const q = [address, countryName].filter(Boolean).join(', ');
-    try {
-        const resp = await fetch(
-            'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q, format: 'json', limit: '1' }),
-            { headers: { 'Accept': 'application/json', 'User-Agent': 'MotorLink/1.0 (motorlink.mw)' } }
-        );
-        const data = await resp.json();
-        if (data && data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    } catch (e) { /* fall through */ }
-    return null;
-}
-
-// Initialize map with address using Leaflet + OpenStreetMap (free)
+// Initialize Google Maps embed iframe — completely free, no API key, never billed
 function initMap(address) {
-    if (mapInitialized) return;
-    loadLeaflet()
-        .then(() => initMapWithAddress(address))
-        .catch(() => showMapError(address));
-}
-
-async function initMapWithAddress(address) {
     if (mapInitialized) return;
     const mapElement = document.getElementById('companyMap');
     if (!mapElement) return;
 
-    const coords = await nominatimGeocode(address);
-    if (!coords) { showMapError(address); return; }
+    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : 'Malawi';
+    const fullAddress = [address, countryName].filter(Boolean).join(', ');
+    const embedSrc = 'https://maps.google.com/maps?q=' + encodeURIComponent(fullAddress) + '&output=embed&z=15';
 
-    try {
-        const map = L.map(mapElement).setView([coords.lat, coords.lng], 15);
+    mapElement.style.padding = '0';
+    mapElement.style.overflow = 'hidden';
+    mapElement.innerHTML =
+        '<iframe src="' + embedSrc + '" width="100%" height="100%"' +
+        ' style="border:0;display:block;min-height:320px;"' +
+        ' allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"' +
+        ' title="Map for ' + escapeHtml(companyData?.business_name || address) + '"></iframe>';
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            maxZoom: 19
-        }).addTo(map);
-
-        const markerIcon = L.divIcon({
-            html: '<i class="fas fa-map-marker-alt" style="font-size:32px;color:#ff6f00;"></i>',
-            className: '',
-            iconSize: [32, 32],
-            iconAnchor: [16, 32],
-            popupAnchor: [0, -34]
-        });
-
-        const marker = L.marker([coords.lat, coords.lng], { icon: markerIcon }).addTo(map);
-
-        const popupContent = `
-            <div style="padding:6px;max-width:230px;">
-                <strong style="color:#333;font-size:14px;">${escapeHtml(companyData?.business_name || 'Car Hire Company')}</strong>
-                <p style="margin:4px 0;color:#666;font-size:13px;">${escapeHtml(address)}</p>
-                <a href="https://www.openstreetmap.org/directions?to=${coords.lat},${coords.lng}"
-                   target="_blank" style="color:#ff6f00;font-size:12px;text-decoration:none;">
-                    <i class="fas fa-directions"></i> Get Directions
-                </a>
-            </div>`;
-
-        marker.bindPopup(popupContent).openPopup();
-        mapInitialized = true;
-        mapElement.style.opacity = '1';
-    } catch (e) {
-        showMapError(address);
-    }
+    mapInitialized = true;
 }
 
 // Function to show map error state
@@ -921,9 +854,9 @@ function showMapError(address) {
                 <h4 style="margin: 0 0 8px 0;">Map Unavailable</h4>
                 <p style="margin: 0 0 16px 0; font-size: 14px;">We couldn't load the map for this location.</p>
                 <p style="margin: 0 0 16px 0; font-size: 12px; color: #999;">Address: ${escapeHtml(address)}</p>
-                <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}" 
-                   target="_blank" 
-                   class="btn-directions" 
+                     <a href="https://maps.google.com/maps?q=${encodeURIComponent(address)}"
+                         target="_blank"
+                         class="btn-directions"
                    style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; background: #ff6f00; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">
                     <i class="fas fa-external-link-alt"></i> Open in Google Maps
                 </a>

@@ -5,7 +5,7 @@
  * 3. Sends a live test once approved
  * 4. Reports full result
  *
- * Usage: php scripts/wa_create_booking_template.php
+ * Usage: php scripts/wa_create_booking_template.php --create-template [--send-test]
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -20,6 +20,13 @@ $phoneNumId = $rows['wa_phone_number_id']    ?? '';
 $wabaId     = $rows['wa_business_account_id'] ?? '';
 $apiVersion = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v25.0';
 $testTo     = '353860081635';
+$allowTemplateCreate = in_array('--create-template', $argv, true);
+$sendLiveTest = in_array('--send-test', $argv, true);
+
+if (!$allowTemplateCreate) {
+    echo "This legacy helper can create outdated booking templates. No template changes made. Use --create-template only if you intentionally need it.\n";
+    exit(0);
+}
 
 echo "=== WA Settings ===" . PHP_EOL;
 echo "api_version:  {$apiVersion}" . PHP_EOL;
@@ -149,6 +156,11 @@ if ($status !== 'APPROVED') {
 
 // --- 3. Send test using the template ---
 echo "=== Step 3: Send template test to +{$testTo} ===" . PHP_EOL;
+
+if (!$sendLiveTest) {
+    echo "Skipping live WhatsApp test send. Re-run with --send-test to intentionally send a paid test message." . PHP_EOL;
+    exit(0);
+}
 
 if ($status !== 'APPROVED') {
     echo "Template status is '{$status}' — cannot send yet. Templates sometimes take a few minutes." . PHP_EOL;

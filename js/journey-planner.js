@@ -1,15 +1,14 @@
 // ============================================================================
 // Journey Planner JavaScript
 // ============================================================================
-// Handles journey planning with Google Maps integration and fuel calculations
+// Handles journey planning with free map/location services and fuel calculations
 // ============================================================================
 
-let journeyMap = null;
-let directionsService = null;
-let journeyRoutePolyline = null;
-let journeyRouteMarkers = [];
+let journeyRoutePoints = [];
 let currentFuelPrices = {};
 let currentFuelPriceMeta = {};
+const JOURNEY_NOMINATIM_DELAY_MS = 1100;
+const journeyGeocodeCache = new Map();
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -19,7 +18,6 @@ function escapeHtml(value) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
-
 function cleanJourneyVehicleLabel(label) {
     return String(label || '').replace(/\s*★$/, '').trim();
 }
@@ -118,75 +116,11 @@ function toggleJourneyLookupButton(button, isLoading) {
 
 document.addEventListener('DOMContentLoaded', function() {
     loadFuelPrices();
-    loadGoogleMapsAPI();
+    initializeJourneyPlanner();
 });
 
-async function loadGoogleMapsAPI() {
-    // Check if already loaded
-    if (typeof google !== 'undefined' && google.maps) {
-        initializeJourneyPlanner();
-        return;
-    }
-    
-    // Check if already loading
-    if (window.googleMapsLoading) {
-        const checkInterval = setInterval(() => {
-            if (typeof google !== 'undefined' && google.maps) {
-                clearInterval(checkInterval);
-                initializeJourneyPlanner();
-            }
-        }, 100);
-        return;
-    }
-    
-    window.googleMapsLoading = true;
-    
-    let mapConfig;
-    try {
-        mapConfig = await window.getGoogleMapsConfig();
-    } catch (error) {
-        console.error('Failed to load Google Maps runtime config', error);
-        window.googleMapsLoading = false;
-        return;
-    }
-
-    if (!mapConfig || !mapConfig.apiKey) {
-        console.error('Google Maps API key is not configured');
-        window.googleMapsLoading = false;
-        return;
-    }
-
-    // Load Google Maps API with places + geometry (geometry is used to decode encoded polylines)
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${mapConfig.apiKey}&libraries=places,geometry&loading=async&callback=initJourneyPlanner`;
-    script.async = true;
-    script.defer = true;
-    
-    script.onerror = function() {
-        console.error('Failed to load Google Maps API');
-        window.googleMapsLoading = false;
-    };
-    
-    document.head.appendChild(script);
-}
-
-// Global callback for Google Maps
-window.initJourneyPlanner = function() {
-    window.googleMapsLoading = false;
-    initializeJourneyPlanner();
-};
-
 function initializeJourneyPlanner() {
-    // Wait a bit to ensure all libraries are loaded
-    setTimeout(() => {
-        // Initialize Google Maps
-        if (typeof google !== 'undefined' && google.maps) {
-            initMap();
-            initAutocomplete();
-        } else {
-            console.error('Google Maps API not loaded');
-        }
-    }, 100);
+    initMap();
     
     // Setup event listeners (these can be set up immediately)
     const calculateBtn = document.getElementById('calculateJourneyBtn');
@@ -255,81 +189,23 @@ function initializeJourneyPlanner() {
 }
 
 function initMap() {
-    // Initialize map centered on configured country
-    journeyMap = new google.maps.Map(document.getElementById('journeyMap'), {
-        center: { lat: -13.9626, lng: 33.7741 }, // Default center
-        zoom: 7,
-        mapTypeControl: true,
-        streetViewControl: false
-    });
-    
-    // Prefer Routes API route computation and render route manually.
+    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : 'Malawi';
+    renderJourneyMapEmbed({ query: countryName, zoom: 7, title: 'Journey map' });
 }
 
-function initAutocomplete() {
-    if (!google || !google.maps || !google.maps.places) {
-        console.error('Google Maps Places API not loaded');
-        return;
-    }
-    
-    const originInput = document.getElementById('journeyOrigin');
-    const destinationInput = document.getElementById('journeyDestination');
-    
-    if (originInput) {
-        try {
-            // Use new PlaceAutocompleteElement API
-            const originAutocomplete = new google.maps.places.PlaceAutocompleteElement({
-                componentRestrictions: { country: (CONFIG.COUNTRY_CODE || 'mw').toLowerCase() }, // Restrict to configured country
-            });
-            
-            originAutocomplete.addEventListener('gmp-placeselect', async ({ place }) => {
-                await place.fetchFields({
-                    fields: ['displayName', 'formattedAddress', 'location']
-                });
-                
-                if (place.location) {
-                    journeyMap.setCenter(place.location);
-                }
-            });
-            
-            // Replace the input with the autocomplete element
-            originInput.parentNode.replaceChild(originAutocomplete, originInput);
-            originAutocomplete.id = 'journeyOrigin';
-            originAutocomplete.className = 'journey-place-autocomplete';
-            originAutocomplete.placeholder = 'Enter origin location';
-        } catch (error) {
-            console.warn('PlaceAutocompleteElement initialization error (user can still type addresses):', error);
-            // Fallback: user can still type addresses manually
-        }
-    }
-    
-    if (destinationInput) {
-        try {
-            // Use new PlaceAutocompleteElement API
-            const destinationAutocomplete = new google.maps.places.PlaceAutocompleteElement({
-                componentRestrictions: { country: (CONFIG.COUNTRY_CODE || 'mw').toLowerCase() }, // Restrict to configured country
-            });
-            
-            destinationAutocomplete.addEventListener('gmp-placeselect', async ({ place }) => {
-                await place.fetchFields({
-                    fields: ['displayName', 'formattedAddress', 'location']
-                });
-                
-                if (place.location) {
-                    journeyMap.setCenter(place.location);
-                }
-            });
-            
-            // Replace the input with the autocomplete element
-            destinationInput.parentNode.replaceChild(destinationAutocomplete, destinationInput);
-            destinationAutocomplete.id = 'journeyDestination';
-            destinationAutocomplete.className = 'journey-place-autocomplete';
-            destinationAutocomplete.placeholder = 'Enter destination location';
-        } catch (error) {
-            console.warn('PlaceAutocompleteElement initialization error (user can still type addresses):', error);
-            // Fallback: user can still type addresses manually
-        }
-    }
+function renderJourneyMapEmbed({ query = '', origin = '', destination = '', zoom = 7, title = 'Journey map' } = {}) {
+    const mapElement = document.getElementById('journeyMap');
+    if (!mapElement) return;
+
+    const src = origin && destination
+        ? 'https://maps.google.com/maps?saddr=' + encodeURIComponent(origin) + '&daddr=' + encodeURIComponent(destination) + '&output=embed'
+        : 'https://maps.google.com/maps?q=' + encodeURIComponent(query) + '&output=embed&z=' + encodeURIComponent(String(zoom));
+
+    mapElement.innerHTML =
+        '<iframe src="' + src + '" width="100%" height="100%"' +
+        ' style="border:0;display:block;min-height:320px;"' +
+        ' allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"' +
+        ' title="' + escapeHtml(title) + '"></iframe>';
 }
 
 async function loadFuelPrices() {
@@ -352,7 +228,6 @@ async function loadFuelPrices() {
         console.error('Error loading fuel prices:', error);
     }
 }
-
 function displayFuelPrices(prices, meta = {}) {
     const displayContainer = document.getElementById('fuelPricesDisplay');
     const updateTimeContainer = document.getElementById('fuelPricesUpdateTime');
@@ -453,7 +328,7 @@ async function calculateJourney() {
     calculateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculating...';
     
     try {
-        // Get route from Google Maps
+        // Get route from free location/routing services
         const route = await getRoute(origin, destination);
         
         if (!route) {
@@ -569,177 +444,106 @@ async function handleJourneyOnlineFuelEstimate() {
 }
 
 async function getRoute(origin, destination) {
+    const originCoords = await geocodeJourneyLocation(origin);
+    const destinationCoords = await geocodeJourneyLocation(destination);
+
     try {
-        if (!google || !google.maps) {
-            throw new Error('Google Maps is not available. Please refresh the page.');
+        const coords = `${originCoords.lng},${originCoords.lat};${destinationCoords.lng},${destinationCoords.lat}`;
+        const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&alternatives=false&steps=false`);
+        if (!response.ok) {
+            throw new Error(`OSRM HTTP ${response.status}`);
         }
 
-        let RouteApi = google.maps?.routes?.Route;
-        if (!RouteApi && typeof google.maps.importLibrary === 'function') {
-            const routesLib = await google.maps.importLibrary('routes');
-            RouteApi = routesLib?.Route;
+        const data = await response.json();
+        const primaryRoute = data.routes && data.routes[0];
+        if (!primaryRoute || !Number.isFinite(primaryRoute.distance)) {
+            throw new Error('No route found');
         }
 
-        if (RouteApi && typeof RouteApi.computeRoutes === 'function') {
-            const routesResult = await RouteApi.computeRoutes({
-                origin: { address: origin },
-                destination: { address: destination },
-                travelMode: 'DRIVE',
-                regionCode: 'MW'
-            });
+        journeyRoutePoints = (primaryRoute.geometry?.coordinates || []).map(([lng, lat]) => ({ lat, lng }));
+        renderJourneyMapEmbed({ origin, destination, title: `Route from ${origin} to ${destination}` });
 
-            const primaryRoute = routesResult?.routes?.[0];
-            const primaryLeg = primaryRoute?.legs?.[0];
-            if (!primaryRoute || !primaryLeg) {
-                throw new Error('No route found');
-            }
-
-            const startLoc = normalizeRouteLocation(primaryLeg.startLocation);
-            const endLoc = normalizeRouteLocation(primaryLeg.endLocation);
-            renderComputedRoute(primaryRoute, startLoc, endLoc);
-
-            return {
-                distance: { value: primaryRoute.distanceMeters ?? primaryLeg.distanceMeters ?? 0 },
-                duration: { value: parseRouteDurationSeconds(primaryRoute.duration ?? primaryLeg.duration) },
-                start_location: {
-                    lat: () => startLoc.lat,
-                    lng: () => startLoc.lng
-                },
-                end_location: {
-                    lat: () => endLoc.lat,
-                    lng: () => endLoc.lng
-                }
-            };
-        }
-    } catch (routesError) {
-        console.warn('Routes API computeRoutes failed, attempting legacy fallback:', routesError);
+        return buildJourneyRouteResult(primaryRoute.distance, primaryRoute.duration || 0, originCoords, destinationCoords);
+    } catch (error) {
+        console.warn('OSRM route lookup failed, using road-distance fallback:', error);
+        const distanceKm = calculateGreatCircleDistanceKm(originCoords, destinationCoords) * 1.35;
+        const durationSeconds = (distanceKm / 65) * 3600;
+        journeyRoutePoints = [originCoords, destinationCoords];
+        renderJourneyMapEmbed({ origin, destination, title: `Route from ${origin} to ${destination}` });
+        return buildJourneyRouteResult(distanceKm * 1000, durationSeconds, originCoords, destinationCoords);
     }
-
-    // Fallback path for older Maps runtimes where Routes library isn't available yet.
-    return new Promise((resolve, reject) => {
-        if (!directionsService) {
-            if (typeof google !== 'undefined' && google.maps && google.maps.DirectionsService) {
-                directionsService = new google.maps.DirectionsService();
-            } else {
-                reject(new Error('Route service not available. Please refresh the page.'));
-                return;
-            }
-        }
-
-        directionsService.route({
-            origin: origin,
-            destination: destination,
-            travelMode: google.maps.TravelMode.DRIVING,
-            unitSystem: google.maps.UnitSystem.METRIC
-        }, (result, status) => {
-            if (status === 'OK' && result.routes && result.routes.length > 0) {
-                const route = result.routes[0].legs[0];
-                const path = result.routes[0].overview_path || [];
-                renderPathOnMap(path, route.start_location, route.end_location);
-                resolve(route);
-            } else {
-                reject(new Error('Route calculation failed: ' + status));
-            }
-        });
-    });
 }
 
-function parseRouteDurationSeconds(durationValue) {
-    if (typeof durationValue === 'number') {
-        return durationValue;
-    }
-    if (typeof durationValue === 'string') {
-        const cleaned = durationValue.trim();
-        if (cleaned.endsWith('s')) {
-            return parseInt(cleaned.slice(0, -1), 10) || 0;
-        }
-        return parseInt(cleaned, 10) || 0;
-    }
-    return 0;
-}
+async function geocodeJourneyLocation(locationName) {
+    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : 'Malawi';
+    const countryCode = (window.CONFIG && CONFIG.COUNTRY_CODE) ? String(CONFIG.COUNTRY_CODE).toLowerCase() : 'mw';
+    const query = [locationName, countryName].map(part => String(part || '').trim()).filter(Boolean).join(', ');
+    const cacheKey = `${countryCode}:${query.toLowerCase()}`;
 
-function normalizeRouteLocation(locationObj) {
-    if (!locationObj) {
-        return { lat: -13.9626, lng: 33.7741 };
+    if (journeyGeocodeCache.has(cacheKey)) {
+        return journeyGeocodeCache.get(cacheKey);
     }
 
-    if (typeof locationObj.lat === 'function' && typeof locationObj.lng === 'function') {
-        return { lat: locationObj.lat(), lng: locationObj.lng() };
+    const now = Date.now();
+    const elapsed = now - (window._nominatimJourneyLastCall || 0);
+    if (elapsed < JOURNEY_NOMINATIM_DELAY_MS) {
+        await new Promise(resolve => setTimeout(resolve, JOURNEY_NOMINATIM_DELAY_MS - elapsed));
     }
+    window._nominatimJourneyLastCall = Date.now();
 
-    if (typeof locationObj.lat === 'number' && typeof locationObj.lng === 'number') {
-        return { lat: locationObj.lat, lng: locationObj.lng };
-    }
-
-    const latLng = locationObj.latLng || locationObj.location || null;
-    if (latLng) {
-        if (typeof latLng.lat === 'function' && typeof latLng.lng === 'function') {
-            return { lat: latLng.lat(), lng: latLng.lng() };
-        }
-        if (typeof latLng.lat === 'number' && typeof latLng.lng === 'number') {
-            return { lat: latLng.lat, lng: latLng.lng };
-        }
-        if (typeof latLng.latitude === 'number' && typeof latLng.longitude === 'number') {
-            return { lat: latLng.latitude, lng: latLng.longitude };
-        }
-    }
-
-    return { lat: -13.9626, lng: 33.7741 };
-}
-
-function renderComputedRoute(routeObj, startLoc, endLoc) {
-    if (!journeyMap) return;
-
-    let decodedPath = [];
-    const encodedPolyline = routeObj?.polyline?.encodedPolyline;
-    if (encodedPolyline && google.maps.geometry && google.maps.geometry.encoding) {
-        decodedPath = google.maps.geometry.encoding.decodePath(encodedPolyline);
-    }
-
-    if (decodedPath.length === 0) {
-        decodedPath = [startLoc, endLoc];
-    }
-
-    renderPathOnMap(decodedPath, startLoc, endLoc);
-}
-
-function renderPathOnMap(path, startLoc, endLoc) {
-    if (!journeyMap) return;
-
-    if (journeyRoutePolyline) {
-        journeyRoutePolyline.setMap(null);
-    }
-
-    journeyRouteMarkers.forEach(marker => marker.setMap(null));
-    journeyRouteMarkers = [];
-
-    journeyRoutePolyline = new google.maps.Polyline({
-        path: path,
-        geodesic: true,
-        strokeColor: '#1a73e8',
-        strokeOpacity: 0.9,
-        strokeWeight: 5,
-        map: journeyMap
+    const params = new URLSearchParams({
+        q: query,
+        format: 'jsonv2',
+        limit: '1',
+        addressdetails: '0',
+        countrycodes: countryCode
     });
 
-    const startMarker = new google.maps.Marker({
-        position: startLoc,
-        map: journeyMap,
-        label: 'A'
+    if (window.CONFIG && CONFIG.SUPPORT_EMAIL) {
+        params.set('email', CONFIG.SUPPORT_EMAIL);
+    }
+
+    const response = await fetch('https://nominatim.openstreetmap.org/search?' + params.toString(), {
+        headers: { 'Accept': 'application/json' }
     });
+    if (!response.ok) {
+        throw new Error(`Location lookup failed for ${locationName}`);
+    }
 
-    const endMarker = new google.maps.Marker({
-        position: endLoc,
-        map: journeyMap,
-        label: 'B'
-    });
+    const data = await response.json();
+    if (!data || !data[0]) {
+        throw new Error(`Could not find ${locationName}. Try adding the city or district.`);
+    }
 
-    journeyRouteMarkers.push(startMarker, endMarker);
+    const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    journeyGeocodeCache.set(cacheKey, coords);
+    return coords;
+}
 
-    const bounds = new google.maps.LatLngBounds();
-    const points = Array.isArray(path) && path.length ? path : [startLoc, endLoc];
-    points.forEach(point => bounds.extend(point));
-    journeyMap.fitBounds(bounds, 60);
+function buildJourneyRouteResult(distanceMeters, durationSeconds, originCoords, destinationCoords) {
+    return {
+        distance: { value: distanceMeters },
+        duration: { value: durationSeconds },
+        start_location: {
+            lat: () => originCoords.lat,
+            lng: () => originCoords.lng
+        },
+        end_location: {
+            lat: () => destinationCoords.lat,
+            lng: () => destinationCoords.lng
+        }
+    };
+}
+
+function calculateGreatCircleDistanceKm(originCoords, destinationCoords) {
+    const toRadians = value => value * Math.PI / 180;
+    const earthRadiusKm = 6371;
+    const dLat = toRadians(destinationCoords.lat - originCoords.lat);
+    const dLng = toRadians(destinationCoords.lng - originCoords.lng);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+        + Math.cos(toRadians(originCoords.lat)) * Math.cos(toRadians(destinationCoords.lat))
+        * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function formatJourneyCurrency(value, currencyCode, currencySymbol, decimals = 2) {
@@ -895,7 +699,7 @@ async function saveJourneyToHistory(journeyData) {
             }
             throw new Error('Please log in to save journey history.');
         }
-        
+
         const data = await response.json();
 
         if (!data.success) {
@@ -908,9 +712,3 @@ async function saveJourneyToHistory(journeyData) {
         throw error;
     }
 }
-
-// Initialize when Google Maps API loads
-if (typeof google !== 'undefined' && google.maps) {
-    document.addEventListener('DOMContentLoaded', initializeJourneyPlanner);
-}
-

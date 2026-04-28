@@ -8418,7 +8418,7 @@ function handleSaveFooterSupportSettings($db) {
 function handleGetWhatsAppSettings($db) {
     requireSuperAdmin($db);
     try {
-        $keys = ['wa_enabled', 'wa_public_buttons_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_business_account_id', 'wa_api_version', 'wa_lead_notifications', 'wa_webhook_verify_token', 'wa_app_secret'];
+        $keys = ['wa_enabled', 'wa_public_buttons_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_business_account_id', 'wa_api_version', 'wa_lead_notifications', 'wa_welcome_notifications', 'wa_pickup_reminders_enabled', 'wa_webhook_verify_token', 'wa_app_secret'];
         $placeholders = implode(',', array_fill(0, count($keys), '?'));
         $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
         $stmt->execute($keys);
@@ -8436,6 +8436,8 @@ function handleGetWhatsAppSettings($db) {
                 'wa_business_account_id'   => $rows['wa_business_account_id']   ?? '',
                 'wa_api_version'           => $rows['wa_api_version']           ?? 'v25.0',
                 'wa_lead_notifications'    => $rows['wa_lead_notifications']    ?? '0',
+                'wa_welcome_notifications' => $rows['wa_welcome_notifications'] ?? '0',
+                'wa_pickup_reminders_enabled' => $rows['wa_pickup_reminders_enabled'] ?? '0',
                 'wa_webhook_verify_token'  => $rows['wa_webhook_verify_token']  ?? '',
                 'token_configured'         => $token !== '',
                 'app_secret_configured'    => $appSecret !== '',
@@ -8467,6 +8469,8 @@ function handleSaveWhatsAppSettings($db) {
     $enabled      = isset($input['wa_enabled']) && $input['wa_enabled'] ? '1' : '0';
     $publicButtons = isset($input['wa_public_buttons_enabled']) && $input['wa_public_buttons_enabled'] ? '1' : '0';
     $leadNotifs   = isset($input['wa_lead_notifications']) && $input['wa_lead_notifications'] ? '1' : '0';
+    $welcomeNotifs = isset($input['wa_welcome_notifications']) && $input['wa_welcome_notifications'] ? '1' : '0';
+    $pickupReminders = isset($input['wa_pickup_reminders_enabled']) && $input['wa_pickup_reminders_enabled'] ? '1' : '0';
     $token        = trim((string)($input['wa_api_token'] ?? ''));
     $phoneNumId   = trim(preg_replace('/[^0-9]/', '', (string)($input['wa_phone_number_id'] ?? '')));
     $wabaId       = trim(preg_replace('/[^0-9]/', '', (string)($input['wa_business_account_id'] ?? '')));
@@ -8498,6 +8502,8 @@ function handleSaveWhatsAppSettings($db) {
         $upsert->execute(['wa_enabled', $enabled, 'boolean', 'Enable WhatsApp Cloud API integration', 0]);
         $upsert->execute(['wa_public_buttons_enabled', $publicButtons, 'boolean', 'Show public WhatsApp buttons and wa.me chat links', 1]);
         $upsert->execute(['wa_lead_notifications', $leadNotifs, 'boolean', 'Send WhatsApp notification to dealer on new lead/message', 0]);
+        $upsert->execute(['wa_welcome_notifications', $welcomeNotifs, 'boolean', 'Send WhatsApp welcome template messages for new registrations', 0]);
+        $upsert->execute(['wa_pickup_reminders_enabled', $pickupReminders, 'boolean', 'Send scheduled WhatsApp pickup reminder templates', 0]);
         if (!$tokenIsPlaceholder) {
             $upsert->execute(['wa_api_token', $token, 'string', 'Meta WhatsApp Cloud API bearer token', 0]);
         }
@@ -8526,7 +8532,7 @@ function handleSaveWhatsAppSettings($db) {
 }
 
 /**
- * Send a test WhatsApp text message to a supplied number using the stored API credentials.
+ * Send a test WhatsApp template message to a supplied number using the stored API credentials.
  * POST body: { test_phone: "+265888000000" }
  */
 function handleTestWhatsAppMessage($db) {
@@ -8566,12 +8572,17 @@ function handleTestWhatsAppMessage($db) {
     $url = "https://graph.facebook.com/{$apiVersion}/{$phoneNumId}/messages";
     $body = json_encode([
         'messaging_product' => 'whatsapp',
-        'recipient_type'    => 'individual',
         'to'                => $toNumber,
-        'type'              => 'text',
-        'text'              => [
-            'preview_url' => false,
-            'body'        => "✅ MotorLink WhatsApp API test message.\n\nYour WhatsApp integration is working correctly. Booking notifications will be sent via this number.\n\n_Sent from MotorLink Admin Panel_",
+        'type'              => 'template',
+        'template'          => [
+            'name'       => 'motorlink_new_user_v2',
+            'language'   => ['code' => 'en_US'],
+            'components' => [[
+                'type'       => 'body',
+                'parameters' => [
+                    ['type' => 'text', 'text' => 'Admin Test'],
+                ],
+            ]],
         ],
     ]);
 
@@ -8614,12 +8625,12 @@ function handleTestWhatsAppMessage($db) {
 
     if ($httpCode === 200 && $wamid) {
         logActivity($db, 'whatsapp_test_sent',
-            'WhatsApp test message sent',
+            'WhatsApp test template sent',
             "To: {$toNumber}, wamid: {$wamid}", $_SESSION['admin_id'] ?? null);
 
         $note = $usingTestNumber
             ? "API accepted the message (wamid issued). If you did NOT receive it: the Meta test number can only deliver to verified recipients. Go to Meta → WhatsApp → API Setup → \"To\" dropdown → Add phone number → verify +{$toNumber} with OTP."
-            : "Message delivered to +{$toNumber}.";
+            : "Template test delivered to +{$toNumber}.";
 
         echo json_encode([
             'success'    => true,
@@ -8704,7 +8715,7 @@ function adminSendWaTemplate($db, string $toNumber, string $templateName, array 
 }
 
 /**
- * Send a test motorlink_booking template message.
+ * Send a test motorlink_booking_v2 template message.
  * POST ?action=test_wa_booking_template  body: { test_phone }
  */
 function handleTestWaBookingTemplate($db) {
@@ -8741,7 +8752,7 @@ function handleTestWaBookingTemplate($db) {
         'to'                => $toNumber,
         'type'              => 'template',
         'template'          => [
-            'name'       => 'motorlink_booking',
+            'name'       => 'motorlink_booking_v2',
             'language'   => ['code' => 'en_US'],
             'components' => [
                 [
@@ -8754,6 +8765,9 @@ function handleTestWaBookingTemplate($db) {
                         ['type' => 'text', 'text' => date('d M Y', strtotime('+4 days'))],
                     ],
                 ],
+                ['type' => 'button', 'sub_type' => 'quick_reply', 'index' => '0', 'parameters' => [['type' => 'payload', 'payload' => 'ACCEPT_BOOKING_0']]],
+                ['type' => 'button', 'sub_type' => 'quick_reply', 'index' => '1', 'parameters' => [['type' => 'payload', 'payload' => 'DECLINE_BOOKING_0']]],
+                ['type' => 'button', 'sub_type' => 'quick_reply', 'index' => '2', 'parameters' => [['type' => 'payload', 'payload' => 'PROPOSE_DATES_0']]],
             ],
         ],
     ]);

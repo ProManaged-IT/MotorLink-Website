@@ -97,7 +97,12 @@ case 'start':
     }
 
     // Build flags from POST params
-    $flags   = [];
+    if (empty($_POST['allow_google_places_cost'])) {
+        echo json_encode(['success' => false, 'error' => 'Google Places scraper is billable. Confirm allow_google_places_cost=1 before starting.']);
+        exit;
+    }
+
+    $flags   = ['--allow-google-places-cost'];
     $postType = preg_replace('/[^a-z_]/', '', strtolower($_POST['type'] ?? 'all'));
     if ($postType && $postType !== 'all') $flags[] = '--type=' . $postType;
     if (!empty($_POST['refresh']))      $flags[] = '--refresh';
