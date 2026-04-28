@@ -4395,17 +4395,34 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
         return false;
     }
 
+    // Use typo-normalized form for detection so "diesal"→"diesel", "kilomter"→"kilometer", etc.
+    $normalized = function_exists('normalizeAIChatIntentTypos')
+        ? normalizeAIChatIntentTypos($current)
+        : $current;
+
     $currentRoute = extractJourneyRouteLocations($db, $current);
 
     // Detect pronoun references like "for this journey", "on this trip", "this route"
-    $isPronounRef = preg_match('/\bthis\s+(journey|trip|route|drive)\b/i', $current) === 1;
+    $isPronounRef = preg_match('/\bthis\s+(journey|trip|route|drive)\b/i', $normalized) === 1;
 
-    if (detectJourneyCostQuery($current) && $currentRoute === null && !$isPronounRef) {
+    // Detect refinement follow-ups that change one parameter (fuel/vehicle/cost) without re-stating the route.
+    // Examples: "How much would it cost for diesel", "Using the same car", "What about with petrol",
+    // "If I was using a Hilux", "At 12 L/100km".
+    $isRefinement = (
+        preg_match('/\b(diesel|petrol|gasoline|lpg|cng|autogas)\b/i', $normalized) === 1
+        || preg_match('/\b(same|that|the)\s+(car|vehicle|truck|suv|hilux)\b/i', $normalized) === 1
+        || preg_match('/\bwhat\s+about\b.*\b(diesel|petrol|cost|price|fuel)\b/i', $normalized) === 1
+        || preg_match('/\bhow\s+much\b.*\b(cost|spend|fuel|diesel|petrol)\b/i', $normalized) === 1
+        || preg_match('/\b(using|with|for|in)\s+(a|an|the)?\s*(diesel|petrol|hilux|toyota|nissan|isuzu|ford|sedan|suv|truck|car|vehicle)\b/i', $normalized) === 1
+        || preg_match('/\b\d+(?:\.\d+)?\s*(?:l|liters?|litres?)\s*\/\s*100\s*km\b/i', $normalized) === 1
+    );
+
+    if (detectJourneyCostQuery($normalized) && $currentRoute === null && !$isPronounRef && !$isRefinement) {
         return false;
     }
 
-    $hasDistanceHint = preg_match('/\b\d+(?:\.\d+)?\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $current) === 1;
-    if (!$hasDistanceHint && $currentRoute === null && !$isPronounRef) {
+    $hasDistanceHint = preg_match('/\b\d+(?:\.\d+)?\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $normalized) === 1;
+    if (!$hasDistanceHint && $currentRoute === null && !$isPronounRef && !$isRefinement) {
         return false;
     }
 
@@ -4443,9 +4460,10 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
         return $current;
     }
 
-    // For pronoun references, inject the prior route explicitly so the parser finds it cleanly.
-    // e.g. prior: "What about Dedza to Blantyre", current: "... for this journey" => "from Dedza to Blantyre, ..."
-    if ($isPronounRef) {
+    // For pronoun references and refinements, inject the prior route explicitly so the parser finds it cleanly.
+    // e.g. prior: "from Lilongwe to Dedza", current: "How much would it cost for diesel"
+    //   => "from Lilongwe to Dedza, How much would it cost for diesel"
+    if ($isPronounRef || $isRefinement) {
         $priorRoute = extractJourneyRouteLocations($db, $priorJourneyMessage);
         if ($priorRoute !== null) {
             return 'from ' . $priorRoute['origin'] . ' to ' . $priorRoute['destination'] . ', ' . $current;
@@ -4663,6 +4681,301 @@ function motorlinkJourneyResolveRouteDistance($origin, $destination) {
     return null;
 }
 
+/**
+ * Live web search for the AI chat. Tries Brave Search API first (if key configured in
+ * site_settings.brave_search_api_key), then falls back to DuckDuckGo Instant Answer
+ * (keyless). Results are cached in ai_web_cache so repeated journey/spec queries
+ * don't repeatedly hit external APIs.
+ *
+ * Returns array{snippets:array<int,array{title:string,url:string,description:string}>, source:string} or null.
+ */
+function motorlinkLiveWebSearch($db, $query, $maxResults = 3) {
+    $query = trim((string)$query);
+    if ($query === '') {
+        return null;
+    }
+
+    $cacheKey = 'live_web::' . mb_substr($query, 0, 240);
+    $queryHash = hash('sha256', $cacheKey);
+
+    // 1. Cache lookup (fresh within 24h)
+    try {
+        $stmt = $db->prepare("SELECT summary, sources_json, updated_at FROM ai_web_cache WHERE query_hash = ? LIMIT 1");
+        $stmt->execute([$queryHash]);
+        $cached = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($cached && !empty($cached['sources_json'])) {
+            $age = time() - strtotime((string)$cached['updated_at']);
+            if ($age < 86400) {
+                $decoded = json_decode((string)$cached['sources_json'], true);
+                if (is_array($decoded) && !empty($decoded['snippets'])) {
+                    return [
+                        'snippets' => $decoded['snippets'],
+                        'source' => (string)($decoded['source'] ?? 'cache'),
+                        'from_cache' => true
+                    ];
+                }
+            }
+        }
+    } catch (Exception $e) {
+        // Non-fatal — proceed to live fetch
+    }
+
+    $snippets = [];
+    $source = '';
+
+    // 2. Brave Search API
+    try {
+        $stmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'brave_search_api_key' LIMIT 1");
+        $stmt->execute();
+        $braveKey = trim((string)($stmt->fetchColumn() ?: ''));
+    } catch (Exception $e) {
+        $braveKey = '';
+    }
+
+    if ($braveKey !== '') {
+        $braveUrl = 'https://api.search.brave.com/res/v1/web/search?count=' . (int)$maxResults . '&q=' . urlencode($query);
+        $braveResponse = motorlinkJourneyFetchJson($braveUrl, [
+            'X-Subscription-Token: ' . $braveKey,
+            'Accept-Encoding: gzip'
+        ], 8);
+        if (is_array($braveResponse) && !empty($braveResponse['web']['results'])) {
+            foreach ($braveResponse['web']['results'] as $r) {
+                if (count($snippets) >= $maxResults) break;
+                $title = trim((string)($r['title'] ?? ''));
+                $desc = trim((string)($r['description'] ?? ''));
+                $url = trim((string)($r['url'] ?? ''));
+                if ($title === '' && $desc === '') continue;
+                $snippets[] = [
+                    'title' => mb_substr(strip_tags($title), 0, 140),
+                    'url' => $url,
+                    'description' => mb_substr(strip_tags($desc), 0, 280)
+                ];
+            }
+            if (!empty($snippets)) {
+                $source = 'brave';
+            }
+        }
+    }
+
+    // 3. DuckDuckGo Instant Answer fallback (keyless, entity-style)
+    if (empty($snippets)) {
+        $ddgUrl = 'https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=' . urlencode($query);
+        $ddg = motorlinkJourneyFetchJson($ddgUrl, [], 8);
+        if (is_array($ddg)) {
+            $abstract = trim((string)($ddg['AbstractText'] ?? ''));
+            $abstractUrl = trim((string)($ddg['AbstractURL'] ?? ''));
+            $heading = trim((string)($ddg['Heading'] ?? $query));
+            if ($abstract !== '') {
+                $snippets[] = [
+                    'title' => mb_substr($heading, 0, 140),
+                    'url' => $abstractUrl,
+                    'description' => mb_substr($abstract, 0, 280)
+                ];
+            }
+            if (!empty($ddg['RelatedTopics']) && is_array($ddg['RelatedTopics'])) {
+                foreach ($ddg['RelatedTopics'] as $topic) {
+                    if (count($snippets) >= $maxResults) break;
+                    if (!is_array($topic) || empty($topic['Text'])) continue;
+                    $snippets[] = [
+                        'title' => mb_substr((string)($topic['Text'] ?? ''), 0, 140),
+                        'url' => (string)($topic['FirstURL'] ?? ''),
+                        'description' => mb_substr((string)($topic['Text'] ?? ''), 0, 280)
+                    ];
+                }
+            }
+            if (!empty($snippets)) {
+                $source = 'duckduckgo';
+            }
+        }
+    }
+
+    // 4. Wikipedia REST API fallback (keyless, content-rich for places/vehicles).
+    // Strategy: use the OpenSearch endpoint to find page titles, then fetch summaries
+    // for the top matches. Wikipedia opensearch is title-prefix-based, so when the
+    // query is a long natural-language string and returns nothing, retry with each
+    // capitalized noun phrase (e.g. "Lilongwe", "Zomba", "Toyota Hilux").
+    if (empty($snippets)) {
+        $wikiCandidates = [$query];
+        if (preg_match_all('/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\b/', $query, $nounMatches)) {
+            foreach ($nounMatches[1] as $noun) {
+                if (mb_strlen($noun) >= 3 && !in_array($noun, $wikiCandidates, true)) {
+                    $wikiCandidates[] = $noun;
+                }
+            }
+        }
+        foreach ($wikiCandidates as $candidate) {
+            if (count($snippets) >= $maxResults) break;
+            $wikiSearchUrl = 'https://en.wikipedia.org/w/api.php?action=opensearch&format=json&limit=3&search=' . urlencode($candidate);
+            $wikiSearch = motorlinkJourneyFetchJson($wikiSearchUrl, [], 6);
+            if (!is_array($wikiSearch) || empty($wikiSearch[1]) || !is_array($wikiSearch[1])) continue;
+            // Take only the top match per candidate so multi-entity queries
+            // (e.g. route endpoints) get balanced coverage.
+            $title = trim((string)($wikiSearch[1][0] ?? ''));
+            if ($title === '') continue;
+            // Skip duplicates already in snippets
+            foreach ($snippets as $existing) {
+                if (strcasecmp((string)($existing['title'] ?? ''), $title) === 0) {
+                    continue 2;
+                }
+            }
+            $summaryUrl = 'https://en.wikipedia.org/api/rest_v1/page/summary/' . rawurlencode(str_replace(' ', '_', $title));
+            $summary = motorlinkJourneyFetchJson($summaryUrl, [], 6);
+            if (!is_array($summary) || empty($summary['extract'])) continue;
+            $snippets[] = [
+                'title' => mb_substr((string)($summary['title'] ?? $title), 0, 140),
+                'url' => (string)($summary['content_urls']['desktop']['page'] ?? ''),
+                'description' => mb_substr((string)$summary['extract'], 0, 280)
+            ];
+        }
+        if (!empty($snippets)) {
+            $source = 'wikipedia';
+        }
+    }
+
+    if (empty($snippets)) {
+        return null;
+    }
+
+    $payload = ['snippets' => $snippets, 'source' => $source];
+    $summaryText = '';
+    foreach ($snippets as $s) {
+        $summaryText .= '- ' . ($s['title'] !== '' ? $s['title'] : 'Result') . ': ' . $s['description'] . "\n";
+    }
+
+    // 4. Cache result
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO ai_web_cache (query_hash, query_text, summary, sources_json, learning_provider, learning_status, usage_count, helpfulness_score)
+            VALUES (?, ?, ?, ?, 'live_web_search', 'success', 1, 0)
+            ON DUPLICATE KEY UPDATE
+                summary = VALUES(summary),
+                sources_json = VALUES(sources_json),
+                learning_provider = VALUES(learning_provider),
+                learning_status = VALUES(learning_status),
+                usage_count = usage_count + 1,
+                updated_at = CURRENT_TIMESTAMP
+        ");
+        $stmt->execute([$queryHash, $cacheKey, $summaryText, json_encode($payload)]);
+    } catch (Exception $e) {
+        // Non-fatal
+    }
+
+    return ['snippets' => $snippets, 'source' => $source, 'from_cache' => false];
+}
+
+/**
+ * AI fallback for journey-cost questions. Builds a system prompt with authoritative
+ * DB fuel prices, parsed route info, and live web research snippets, then calls the
+ * configured AI provider so the user gets a real answer instead of a "please give me
+ * the distance" canned message. Returns null if the AI is unavailable.
+ */
+function motorlinkJourneyAIFallback($db, $message, $conversationHistory, $deterministicContext) {
+    $user = getCurrentUser(true);
+    if (!$user || empty($user['id'])) {
+        return null;
+    }
+
+    $meta = $deterministicContext['fuel_meta'] ?? [];
+    $routeInfo = $deterministicContext['route'] ?? null;
+    $fuelRows = $deterministicContext['fuel_rows'] ?? [];
+    $distanceKm = $deterministicContext['distance_km'] ?? null;
+    $consumption = $deterministicContext['consumption'] ?? null;
+    $vehicleAssumption = $deterministicContext['vehicle_assumption'] ?? '';
+
+    // Build the web research query
+    $researchQuery = '';
+    if ($routeInfo !== null) {
+        $researchQuery = 'driving distance road km from ' . $routeInfo['origin'] . ' to ' . $routeInfo['destination'] . ' Malawi';
+    } else {
+        $researchQuery = 'fuel consumption ' . $message;
+    }
+    $webResults = motorlinkLiveWebSearch($db, $researchQuery, 3);
+
+    // Authoritative DB fuel prices block
+    $fuelPricesContext = "AUTHORITATIVE FUEL PRICES (from MotorLink database — these MUST be used as-is):\n";
+    if (!empty($fuelRows)) {
+        foreach ($fuelRows as $row) {
+            $code = strtoupper((string)($row['fuel_type'] ?? ''));
+            $mwk = number_format((float)($row['price_per_liter_mwk'] ?? 0), 2);
+            $fuelPricesContext .= "- {$code}: MWK {$mwk}/L\n";
+        }
+    } else {
+        $fuelPricesContext .= "- (no rows available; tell the user fuel prices are unavailable)\n";
+    }
+    if (!empty($meta['source_label'])) {
+        $fuelPricesContext .= "Source: {$meta['source_label']}\n";
+    }
+    if (!empty($meta['last_updated'])) {
+        $fuelPricesContext .= "Last synced: " . $meta['last_updated'] . "\n";
+    }
+
+    $routeContext = '';
+    if ($routeInfo !== null) {
+        $routeContext .= "PARSED ROUTE: {$routeInfo['origin']} -> {$routeInfo['destination']}\n";
+    }
+    if ($distanceKm !== null) {
+        $routeContext .= "PARSED DISTANCE: " . number_format((float)$distanceKm, 1) . " km\n";
+    }
+    if ($consumption !== null) {
+        $routeContext .= "PARSED CONSUMPTION: " . number_format((float)$consumption, 1) . " L/100km\n";
+    }
+    if ($vehicleAssumption !== '') {
+        $routeContext .= "VEHICLE CONTEXT: {$vehicleAssumption}\n";
+    }
+
+    $webContext = '';
+    if ($webResults !== null && !empty($webResults['snippets'])) {
+        $webContext .= "LIVE WEB RESEARCH (source: {$webResults['source']}):\n";
+        foreach ($webResults['snippets'] as $s) {
+            $webContext .= "- " . ($s['title'] !== '' ? $s['title'] : 'Result') . ": " . $s['description'] . "\n";
+        }
+    } else {
+        $webContext .= "LIVE WEB RESEARCH: No external snippets available — rely on your training knowledge.\n";
+    }
+
+    $systemPrompt = "You are MotorLink AI — an automotive specialist for Malawi.\n\n"
+        . "TASK: Answer this journey/trip fuel cost question accurately. "
+        . "Use the authoritative MotorLink fuel prices below for any cost calculation; do not invent fuel prices.\n\n"
+        . $fuelPricesContext . "\n"
+        . $routeContext
+        . $webContext . "\n"
+        . "RULES:\n"
+        . "- If you can estimate the road distance from your knowledge or web research, use it and STATE the source.\n"
+        . "- Compute: liters_needed = distance_km * consumption_L_per_100km / 100; cost = liters_needed * fuel_price_MWK_per_L.\n"
+        . "- For a Malawian Toyota Hilux 2.8 diesel, use ~8.5 L/100km unless the user gave another value.\n"
+        . "- For a typical petrol sedan use ~9.5 L/100km. Disclose the assumption.\n"
+        . "- Be concise: max 120 words. Use bullet points. Always show route, distance, consumption, fuel price, liters, and total MWK cost.\n"
+        . "- Never claim live browsing; phrase web data as 'estimated from public road data'.\n"
+        . "- If you genuinely cannot estimate the distance, ask ONE specific clarifying question.";
+
+    $messages = [['role' => 'system', 'content' => $systemPrompt]];
+    if (is_array($conversationHistory)) {
+        $tail = array_slice($conversationHistory, -8);
+        foreach ($tail as $h) {
+            if (!isset($h['role'], $h['content'])) continue;
+            $messages[] = ['role' => $h['role'], 'content' => (string)$h['content']];
+        }
+    }
+    $messages[] = ['role' => 'user', 'content' => (string)$message];
+
+    $response = callOpenAIAPIForSpecs($db, $user, $messages);
+    if (!$response || empty($response['response'])) {
+        return null;
+    }
+
+    return [
+        'response' => $response['response'],
+        'fuel_prices_meta' => $meta,
+        'journey' => [
+            'distance_km' => $distanceKm,
+            'route_origin' => $routeInfo['origin'] ?? null,
+            'route_destination' => $routeInfo['destination'] ?? null,
+            'web_research_source' => $webResults['source'] ?? null,
+            'fallback' => 'ai_provider'
+        ]
+    ];
+}
+
 function inferJourneyVehicleProfile($message, $conversationHistory) {
     $combined = trim((string)$message);
     $activeVehicle = extractActiveVehicleFromConversation($conversationHistory);
@@ -4821,12 +5134,19 @@ function handleJourneyCostQuery($db, $message, $conversationHistory, $userContex
         // Parse fuel type and infer from the discussed vehicle when absent.
         $fuelType = 'petrol';
         $fuelAssumption = '';
+        $fuelTypeIsExplicit = false;
         if (preg_match('/\bdiesel\b/i', $message)) {
             $fuelType = 'diesel';
+            $fuelTypeIsExplicit = true;
+        } elseif (preg_match('/\b(petrol|gasoline)\b/i', $message)) {
+            $fuelType = 'petrol';
+            $fuelTypeIsExplicit = true;
         } elseif (preg_match('/\blpg|autogas\b/i', $message)) {
             $fuelType = 'lpg';
+            $fuelTypeIsExplicit = true;
         } elseif (preg_match('/\bcng\b/i', $message)) {
             $fuelType = 'cng';
+            $fuelTypeIsExplicit = true;
         } else {
             $vehicleProfile = inferJourneyVehicleProfile($message, $conversationHistory);
             if (!empty($vehicleProfile['fuel_type'])) {
@@ -4845,7 +5165,11 @@ function handleJourneyCostQuery($db, $message, $conversationHistory, $userContex
         }
         if (!$consumption) {
             $vehicleProfile = isset($vehicleProfile) && is_array($vehicleProfile) ? $vehicleProfile : inferJourneyVehicleProfile($message, $conversationHistory);
-            if (!empty($vehicleProfile['consumption'])) {
+            // Only inherit consumption from vehicle history when its fuel type matches the user's explicit choice
+            // (or when no explicit fuel was given). Avoids using a diesel Hilux 8.5 figure when user asked "with petrol".
+            $profileFuel = strtolower((string)($vehicleProfile['fuel_type'] ?? ''));
+            $consumptionMatchesFuel = !$fuelTypeIsExplicit || $profileFuel === '' || $profileFuel === $fuelType;
+            if (!empty($vehicleProfile['consumption']) && $consumptionMatchesFuel) {
                 $consumption = (float)$vehicleProfile['consumption'];
                 if ($fuelAssumption === '') {
                     $fuelAssumption = (string)($vehicleProfile['assumption'] ?? '');
@@ -4873,6 +5197,20 @@ function handleJourneyCostQuery($db, $message, $conversationHistory, $userContex
         $displayDecimals = $displayCode === 'USD' ? 4 : 2;
 
         if ($distanceKm === null) {
+            // Try AI provider with DB fuel prices + live web research instead of a canned message.
+            $aiFallback = motorlinkJourneyAIFallback($db, $message, $conversationHistory, [
+                'fuel_meta' => $meta,
+                'fuel_rows' => is_array($snapshot['prices'] ?? null) ? $snapshot['prices'] : [],
+                'route' => $routeInfo,
+                'distance_km' => $distanceKm,
+                'consumption' => $consumption,
+                'vehicle_assumption' => $fuelAssumption
+            ]);
+            if ($aiFallback !== null) {
+                sendSuccess($aiFallback);
+                return;
+            }
+
             $response = "I can calculate the fuel cost for your trip";
             if ($routeInfo !== null) {
                 $response .= " from {$routeInfo['origin']} to {$routeInfo['destination']}";
