@@ -63,6 +63,7 @@ function motorlink_get_default_site_runtime_config($runtimeBaseUrl = '') {
         'contact_email' => 'info@example.com',
         'contact_support_email' => 'support@example.com',
         'admin_contact_email' => 'admin@example.com',
+        'wa_public_buttons_enabled' => '1',
         'smtp_from_name' => 'MotorLink'
     ];
 }
@@ -89,6 +90,7 @@ function motorlink_get_site_runtime_config_keys($includePrivate = false) {
         'contact_email',
         'contact_support_email',
         'phone_dial_code',
+        'wa_public_buttons_enabled',
         'smtp_from_name'
     ];
 

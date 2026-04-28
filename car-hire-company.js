@@ -12,6 +12,12 @@ let mapInitialized = false;
 let userLocation = null;
 let companyDistanceKm = null; // distance from user to this company
 
+function isWhatsAppUiEnabled() {
+    return typeof window.motorlinkWhatsAppButtonsEnabled === 'function'
+        ? window.motorlinkWhatsAppButtonsEnabled()
+        : !(window.CONFIG && CONFIG.WHATSAPP_BUTTONS_ENABLED === false);
+}
+
 async function fetchJsonWithRetry(url, options = {}, attempts = 2, timeoutMs = 10000) {
     let lastError = null;
 
@@ -248,6 +254,7 @@ function renderCompanyHeader(company) {
     const isFeatured = company.featured == 1;
     const isCertified = company.certified == 1;
     const hireCategory = company.hire_category || 'standard';
+    const waEnabled = isWhatsAppUiEnabled();
 
     // Parse event types
     let eventTypes = [];
@@ -306,13 +313,13 @@ function renderCompanyHeader(company) {
                     </div>
                 </div>
 
-                ${company.phone || company.whatsapp || company.address ? `
+                ${company.phone || (waEnabled && company.whatsapp) || company.address ? `
                     <div class="quick-contact-box">
                         <h4><i class="fas fa-phone-alt"></i> Quick Contact</h4>
                         <div class="quick-contact-buttons">
-                            ${company.whatsapp ? `
+                            ${waEnabled && company.whatsapp ? `
                                 <a href="https://wa.me/${company.whatsapp.replace(/[^0-9]/g, '')}" 
-                                   class="quick-contact-btn whatsapp" target="_blank">
+                                   class="quick-contact-btn whatsapp" target="_blank" data-whatsapp-cta>
                                     <i class="fab fa-whatsapp"></i> WhatsApp
                                 </a>
                             ` : ''}
@@ -425,7 +432,7 @@ function renderFleet(data) {
         // Check status - either from status field or is_available field
         const status = vehicle.status || (vehicle.is_available == 1 ? 'available' : 'rented');
         const blocksBookings = status === 'maintenance' || status === 'not_available';
-        const isBookable = !blocksBookings && companyData?.whatsapp;
+        const isBookable = !blocksBookings && companyData?.whatsapp && isWhatsAppUiEnabled();
         
         // Determine badge based on status
         let statusBadge = '';
@@ -574,7 +581,7 @@ function renderFleet(data) {
                     ${bookedDatesHtml}
 
                     ${isBookable ? `
-                        <button class="fleet-wa-book-btn"
+                        <button class="fleet-wa-book-btn" data-whatsapp-cta
                             onclick="carHireBooking.open(${vehicle.id}, ${vehicle.company_id}, '${escapeHtml(vehicle.vehicle_name).replace(/'/g, "\\'")}', ${vehicle.daily_rate})">
                             <i class="fab fa-whatsapp"></i> ${bookingButtonLabel}
                         </button>
@@ -587,6 +594,7 @@ function renderFleet(data) {
 
 function renderContactCard(company) {
     const card = document.getElementById('contactCard');
+    const waEnabled = isWhatsAppUiEnabled();
 
     // Check if company has social media links
     const hasSocialMedia = company.facebook_url || company.instagram_url || company.twitter_url || company.linkedin_url;
@@ -655,12 +663,12 @@ function renderContactCard(company) {
                     </div>
                 </div>
             ` : ''}
-            ${company.whatsapp ? `
-                <div class="contact-info-item">
+            ${waEnabled && company.whatsapp ? `
+                <div class="contact-info-item" data-whatsapp-wrapper>
                     <i class="fab fa-whatsapp" style="color:#25d366;"></i>
                     <div>
                         <strong>WhatsApp</strong>
-                        <p><a href="https://wa.me/${company.whatsapp.replace(/[^0-9]/g, '')}" target="_blank">${escapeHtml(company.whatsapp)}</a></p>
+                        <p><a href="https://wa.me/${company.whatsapp.replace(/[^0-9]/g, '')}" target="_blank" data-whatsapp-cta>${escapeHtml(company.whatsapp)}</a></p>
                     </div>
                 </div>
             ` : ''}
@@ -682,8 +690,8 @@ function renderContactCard(company) {
                     <i class="fas fa-phone"></i> Call
                 </a>
             ` : ''}
-            ${company.whatsapp ? `
-                <a href="https://wa.me/${company.whatsapp.replace(/[^0-9]/g, '')}" class="quick-action-btn whatsapp" target="_blank">
+            ${waEnabled && company.whatsapp ? `
+                <a href="https://wa.me/${company.whatsapp.replace(/[^0-9]/g, '')}" class="quick-action-btn whatsapp" target="_blank" data-whatsapp-cta>
                     <i class="fab fa-whatsapp"></i> WhatsApp
                 </a>
             ` : ''}
@@ -1019,6 +1027,11 @@ function showMapError(address) {
 }
 
 function inquireVehicle(vehicleName) {
+    if (!isWhatsAppUiEnabled()) {
+        alert('WhatsApp chat is currently unavailable. Please call or email this company.');
+        return;
+    }
+
     if (companyData) {
         const message = `Hello, I'm interested in renting the ${vehicleName} from ${companyData.business_name}.`;
         const phone = companyData.whatsapp || companyData.phone;

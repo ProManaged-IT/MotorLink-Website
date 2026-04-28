@@ -299,6 +299,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const phone = (contact.phone || businessContactDefaults.phone).trim();
         const email = (contact.email || businessContactDefaults.email).trim();
         const whatsapp = (contact.whatsapp || phone || businessContactDefaults.whatsapp).trim();
+        const waEnabled = typeof window.motorlinkWhatsAppButtonsEnabled === 'function'
+            ? window.motorlinkWhatsAppButtonsEnabled()
+            : !(window.CONFIG && CONFIG.WHATSAPP_BUTTONS_ENABLED === false);
 
         if (businessOnboardingPhone) {
             businessOnboardingPhone.href = `tel:${toTelephoneHref(phone)}`;
@@ -306,8 +309,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (businessOnboardingWhatsapp) {
-            businessOnboardingWhatsapp.href = `https://wa.me/${toWhatsappHref(whatsapp)}`;
-            businessOnboardingWhatsapp.querySelector('span').textContent = `WhatsApp ${whatsapp}`;
+            if (waEnabled && whatsapp) {
+                businessOnboardingWhatsapp.href = `https://wa.me/${toWhatsappHref(whatsapp)}`;
+                businessOnboardingWhatsapp.querySelector('span').textContent = `WhatsApp ${whatsapp}`;
+                businessOnboardingWhatsapp.style.display = '';
+                businessOnboardingWhatsapp.setAttribute('data-whatsapp-cta', '');
+            } else {
+                businessOnboardingWhatsapp.style.display = 'none';
+                businessOnboardingWhatsapp.setAttribute('aria-hidden', 'true');
+            }
         }
 
         if (businessOnboardingEmail) {

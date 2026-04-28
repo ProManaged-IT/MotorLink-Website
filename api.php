@@ -3009,16 +3009,17 @@ function getCarHireFleet($db) {
  * Load WhatsApp integration settings from site_settings.
  */
 function getWhatsAppSettings($db) {
-    $keys = ['wa_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_api_version'];
+    $keys = ['wa_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_api_version', 'wa_public_buttons_enabled'];
     $placeholders = implode(',', array_fill(0, count($keys), '?'));
     $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
     $stmt->execute($keys);
     $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
     return [
         'enabled'         => !empty($rows['wa_enabled']) && $rows['wa_enabled'] === '1',
+        'public_buttons_enabled' => ($rows['wa_public_buttons_enabled'] ?? '1') !== '0',
         'api_token'       => $rows['wa_api_token']       ?? '',
         'phone_number_id' => $rows['wa_phone_number_id'] ?? '',
-        'api_version'     => !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v19.0',
+        'api_version'     => !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v25.0',
     ];
 }
 
@@ -3188,7 +3189,7 @@ function buildOwnerBookingMessage(array $booking, string $currency): string {
  * Flow:
  *   1. Validate + save booking to car_hire_bookings.
  *   2. If WhatsApp API enabled: send owner notification via Meta Cloud API.
- *   3. Always return a wa.me deep-link so the customer can also message the owner directly.
+ *   3. Return a wa.me deep-link only when public WhatsApp buttons are enabled.
  */
 
 // ============================================================================
@@ -3219,7 +3220,7 @@ function sendDealerLeadNotification($db, array $conversation, string $buyerName,
 
         $token      = $rows['wa_api_token']       ?? '';
         $phoneNumId = $rows['wa_phone_number_id'] ?? '';
-        $apiVersion = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v19.0';
+        $apiVersion = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v25.0';
 
         if (!$token || !$phoneNumId) return;
 
@@ -3237,12 +3238,6 @@ function sendDealerLeadNotification($db, array $conversation, string $buyerName,
         $preview      = mb_substr($firstMessage, 0, 120);
         if (mb_strlen($firstMessage) > 120) $preview .= '…';
 
-        $msgBody = "🔔 *New Lead — MotorLink*\n\n"
-                 . "*Listing:* {$listingTitle}\n"
-                 . "*From:* {$buyerName}\n\n"
-                 . "*Message:*\n{$preview}\n\n"
-                 . "_Reply via MotorLink chat or WhatsApp the buyer directly._";
-
         $waSettings = [
             'enabled'         => true,
             'api_token'       => $token,
@@ -3250,7 +3245,22 @@ function sendDealerLeadNotification($db, array $conversation, string $buyerName,
             'api_version'     => $apiVersion,
         ];
 
-        $result = sendWhatsAppMessage($waSettings, $recipientNumber, $msgBody);
+        // Use motorlink_new_lead template (params: seller name, listing, buyer name, message preview)
+        $result = sendWhatsAppTemplate($waSettings, $recipientNumber, 'motorlink_new_lead', [
+            $seller['full_name'],
+            $listingTitle,
+            $buyerName,
+            $preview,
+        ]);
+        // Fallback to free-form if template not yet approved
+        if (!$result['success']) {
+            $msgBody = "*New Lead - MotorLink*\n\n"
+                     . "*Listing:* {$listingTitle}\n"
+                     . "*From:* {$buyerName}\n\n"
+                     . "*Message:*\n{$preview}\n\n"
+                     . "Reply via MotorLink chat or contact the buyer directly.";
+            $result = sendWhatsAppMessage($waSettings, $recipientNumber, $msgBody);
+        }
         if (!$result['success']) {
             error_log("sendDealerLeadNotification failed for seller {$conversation['seller_id']}: " . ($result['error'] ?? 'unknown'));
         }
@@ -3410,10 +3420,9 @@ function carHireBookWhatsapp($db) {
         $waError = $waSettings['enabled'] ? 'WhatsApp API not fully configured' : 'WhatsApp API disabled';
     }
 
-    // --- Build wa.me deep-link so customer can message owner directly ---
-    // This works regardless of API credentials
+    // --- Build wa.me deep-link only when public WhatsApp buttons are enabled ---
     $waDeepLink = null;
-    if ($ownerWhatsApp) {
+    if ($ownerWhatsApp && !empty($waSettings['public_buttons_enabled'])) {
         $ownerNum   = preg_replace('/[^0-9]/', '', $ownerWhatsApp);
         $refId      = str_pad($bookingId, 6, '0', STR_PAD_LEFT);
         $customerMsg = "Hi! I just submitted a car hire booking request via MotorLink (Ref #{$refId}) "
@@ -3845,7 +3854,32 @@ function handleRegister($db) {
         } else {
             $responseMessage .= 'A verification email has been queued. If you don\'t receive it within a few minutes, please contact support.';
         }
-        
+
+        // Send motorlink_new_user WhatsApp welcome (non-blocking)
+        $regWaNum = preg_replace('/[^0-9]/', '',
+            !empty($input['whatsapp']) ? $input['whatsapp'] : ($input['phone'] ?? ''));
+        if (strlen($regWaNum) >= 7) {
+            try {
+                $regWaRows = $db->query(
+                    "SELECT setting_key, setting_value FROM site_settings
+                     WHERE setting_key IN ('wa_enabled','wa_api_token','wa_phone_number_id','wa_api_version')"
+                )->fetchAll(PDO::FETCH_KEY_PAIR);
+                if (($regWaRows['wa_enabled'] ?? '0') === '1' && !empty($regWaRows['wa_api_token'])) {
+                    $regWaSettings = [
+                        'enabled'         => true,
+                        'api_token'       => $regWaRows['wa_api_token'],
+                        'phone_number_id' => $regWaRows['wa_phone_number_id'] ?? '',
+                        'api_version'     => !empty($regWaRows['wa_api_version']) ? $regWaRows['wa_api_version'] : 'v25.0',
+                    ];
+                    sendWhatsAppTemplate($regWaSettings, $regWaNum, 'motorlink_new_user', [
+                        $input['full_name'],
+                    ]);
+                }
+            } catch (Exception $waEx) {
+                error_log("handleRegister WA welcome error: " . $waEx->getMessage());
+            }
+        }
+
         sendSuccess([
             'message' => $responseMessage,
             'email_sent' => $emailSent,
@@ -9003,6 +9037,60 @@ function setCarHireBookingStatus($db, $companyId, $bookingId, $newStatus) {
 
         $db->commit();
 
+        // ── WhatsApp notifications to renter ───────────────────────────────
+        $renterNum = preg_replace('/[^0-9]/', '',
+            !empty($booking['renter_whatsapp']) ? $booking['renter_whatsapp'] : ($booking['renter_phone'] ?? ''));
+        if ($booking['status'] !== $newStatus && strlen($renterNum) >= 7) {
+            try {
+                $waRows = $db->query(
+                    "SELECT setting_key, setting_value FROM site_settings
+                     WHERE setting_key IN ('wa_enabled','wa_api_token','wa_phone_number_id','wa_api_version')"
+                )->fetchAll(PDO::FETCH_KEY_PAIR);
+                if (($waRows['wa_enabled'] ?? '0') === '1' && !empty($waRows['wa_api_token'])) {
+                    $waSettings = [
+                        'enabled'         => true,
+                        'api_token'       => $waRows['wa_api_token'],
+                        'phone_number_id' => $waRows['wa_phone_number_id'] ?? '',
+                        'api_version'     => !empty($waRows['wa_api_version']) ? $waRows['wa_api_version'] : 'v25.0',
+                    ];
+                    // Fetch company contact for renter-facing templates
+                    $companyRow = $db->prepare("SELECT business_name, phone, whatsapp FROM car_hire_companies WHERE id = ? LIMIT 1");
+                    $companyRow->execute([(int)$companyId]);
+                    $comp = $companyRow->fetch(PDO::FETCH_ASSOC) ?: [];
+                    $ownerContact = !empty($comp['whatsapp']) ? $comp['whatsapp'] : ($comp['phone'] ?? '');
+                    $businessName = $comp['business_name'] ?? 'the car hire company';
+
+                    if ($newStatus === 'confirmed') {
+                        // motorlink_booking_confirmed: renter, vehicle, pickup, return, owner phone
+                        sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_confirmed', [
+                            $booking['renter_name'],
+                            $booking['vehicle_name'] ?? 'your vehicle',
+                            $booking['start_date'],
+                            $booking['end_date'],
+                            $ownerContact,
+                        ]);
+                    } elseif ($newStatus === 'declined') {
+                        // motorlink_booking_declined: renter, vehicle, dates
+                        $dates = $booking['start_date'] . ' - ' . $booking['end_date'];
+                        sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_declined', [
+                            $booking['renter_name'],
+                            $booking['vehicle_name'] ?? 'your vehicle',
+                            $dates,
+                        ]);
+                    } elseif ($newStatus === 'completed') {
+                        // motorlink_rate_experience: renter name, business name
+                        sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_rate_experience', [
+                            $booking['renter_name'],
+                            $businessName,
+                        ]);
+                    }
+                }
+            } catch (Exception $waEx) {
+                error_log("setCarHireBookingStatus WA notify error: " . $waEx->getMessage());
+            }
+        }
+        // ────────────────────────────────────────────────────────────────────
+
         return [
             'booking_id' => (int)$bookingId,
             'status' => $newStatus,
@@ -9619,6 +9707,9 @@ function getSiteSettings($db) {
             'contact' => [
                 'contact_email',
                 'contact_support_email'
+            ],
+            'whatsapp' => [
+                'wa_public_buttons_enabled'
             ]
         ];
 
@@ -9826,7 +9917,8 @@ function getPublicClientConfig($db) {
             'ga_measurement_id',
             'cookie_consent_enabled',
             'cookie_consent_version',
-            'cookie_consent_log_enabled'
+            'cookie_consent_log_enabled',
+            'wa_public_buttons_enabled'
         ];
 
         $placeholders = implode(',', array_fill(0, count($allowedKeys), '?'));
@@ -9840,7 +9932,8 @@ function getPublicClientConfig($db) {
             'ga_measurement_id'  => '',
             'cookie_consent_enabled' => '1',
             'cookie_consent_version' => '1.0',
-            'cookie_consent_log_enabled' => '1'
+            'cookie_consent_log_enabled' => '1',
+            'wa_public_buttons_enabled' => '1'
         ];
 
         foreach ($rows as $row) {

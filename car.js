@@ -30,6 +30,12 @@ class CarDetailManager {
         return urlParams.get('id');
     }
 
+    whatsAppEnabled() {
+        return typeof window.motorlinkWhatsAppButtonsEnabled === 'function'
+            ? window.motorlinkWhatsAppButtonsEnabled()
+            : !(window.CONFIG && CONFIG.WHATSAPP_BUTTONS_ENABLED === false);
+    }
+
     async loadCarDetail() {
         try {
             // Fetch user info if not already available
@@ -424,9 +430,9 @@ class CarDetailManager {
                                     <i class="fas fa-phone"></i> Call Seller
                                 </a>
                             ` : ''}
-                            ${listing.contact_phone ? `
+                            ${listing.contact_phone && this.whatsAppEnabled() ? `
                                 <a href="https://wa.me/${listing.contact_phone.replace(/[^0-9]/g, '')}?text=Hi, I'm interested in your car listing: ${encodeURIComponent(listing.title)}"
-                                   class="contact-btn secondary" target="_blank">
+                                   class="contact-btn secondary" target="_blank" data-whatsapp-cta>
                                     <i class="fab fa-whatsapp"></i> WhatsApp
                                 </a>
                             ` : ''}

@@ -44,21 +44,22 @@ echo "✓ car_hire_bookings status enum updated.\n";
 // 2. Seed WhatsApp API settings into site_settings (blank — admin fills these in)
 $waSettings = [
     'wa_enabled'         => ['value' => '0',  'desc' => 'Enable WhatsApp Cloud API integration (1=on, 0=off)'],
+    'wa_public_buttons_enabled' => ['value' => '1', 'desc' => 'Show public WhatsApp buttons and wa.me chat links (1=show, 0=hide)', 'public' => 1],
     'wa_api_token'       => ['value' => '',   'desc' => 'Meta WhatsApp Cloud API bearer token (permanent token)'],
     'wa_phone_number_id' => ['value' => '',   'desc' => 'Meta WhatsApp Phone Number ID from Business Manager'],
-    'wa_api_version'     => ['value' => 'v19.0', 'desc' => 'Meta Graph API version (e.g. v19.0)'],
+    'wa_api_version'     => ['value' => 'v25.0', 'desc' => 'Meta Graph API version (e.g. v25.0)'],
 ];
 
 $check  = $db->prepare("SELECT id FROM site_settings WHERE setting_key = ? LIMIT 1");
 $insert = $db->prepare(
     "INSERT INTO site_settings (setting_key, setting_value, setting_group, setting_type, description, is_public)
-     VALUES (?, ?, 'whatsapp', 'string', ?, 0)"
+    VALUES (?, ?, 'whatsapp', 'string', ?, ?)"
 );
 
 foreach ($waSettings as $key => $cfg) {
     $check->execute([$key]);
     if (!$check->fetch()) {
-        $insert->execute([$key, $cfg['value'], $cfg['desc']]);
+        $insert->execute([$key, $cfg['value'], $cfg['desc'], !empty($cfg['public']) ? 1 : 0]);
         echo "  + Seeded site_settings[$key]\n";
     } else {
         echo "  ~ site_settings[$key] already exists, skipped.\n";

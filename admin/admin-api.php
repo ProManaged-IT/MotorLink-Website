@@ -1344,6 +1344,42 @@ function handleApproveCar($db) {
 
         if ($result) {
             $actionText = ($action === 'approve') ? 'approved' : 'rejected';
+
+            // ── WhatsApp notification to seller ──────────────────────────────
+            try {
+                $listingInfo = $db->prepare(
+                    "SELECT cl.title, u.full_name, u.whatsapp, u.phone
+                     FROM car_listings cl
+                     JOIN users u ON u.id = cl.user_id
+                     WHERE cl.id = ? LIMIT 1"
+                );
+                $listingInfo->execute([$id]);
+                $li = $listingInfo->fetch(PDO::FETCH_ASSOC);
+                if ($li) {
+                    $sellerNum = preg_replace('/[^0-9]/',  '',
+                        !empty($li['whatsapp']) ? $li['whatsapp'] : ($li['phone'] ?? ''));
+                    if (strlen($sellerNum) >= 7) {
+                        if ($action === 'approve') {
+                            // motorlink_listing_live: seller name, vehicle
+                            adminSendWaTemplate($db, $sellerNum, 'motorlink_listing_live', [
+                                $li['full_name'],
+                                $li['title'],
+                            ]);
+                        } else {
+                            // motorlink_listing_rejected: seller name, vehicle, reason
+                            adminSendWaTemplate($db, $sellerNum, 'motorlink_listing_rejected', [
+                                $li['full_name'],
+                                $li['title'],
+                                trim($rejectionReason) ?: 'Please contact support for details.',
+                            ]);
+                        }
+                    }
+                }
+            } catch (Exception $waEx) {
+                error_log("handleApproveCar WA notify error: " . $waEx->getMessage());
+            }
+            // ─────────────────────────────────────────────────────────────────
+
             echo json_encode(['success' => true, 'message' => "Car $actionText successfully"]);
             exit();
         } else {
@@ -8382,7 +8418,7 @@ function handleSaveFooterSupportSettings($db) {
 function handleGetWhatsAppSettings($db) {
     requireSuperAdmin($db);
     try {
-        $keys = ['wa_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_business_account_id', 'wa_api_version', 'wa_lead_notifications'];
+        $keys = ['wa_enabled', 'wa_public_buttons_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_business_account_id', 'wa_api_version', 'wa_lead_notifications'];
         $placeholders = implode(',', array_fill(0, count($keys), '?'));
         $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
         $stmt->execute($keys);
@@ -8393,10 +8429,11 @@ function handleGetWhatsAppSettings($db) {
             'success' => true,
             'settings' => [
                 'wa_enabled'              => $rows['wa_enabled']              ?? '0',
+                'wa_public_buttons_enabled' => $rows['wa_public_buttons_enabled'] ?? '1',
                 'wa_api_token'            => $token !== '' ? '••••••••' . substr($token, -4) : '',
                 'wa_phone_number_id'      => $rows['wa_phone_number_id']      ?? '',
                 'wa_business_account_id'  => $rows['wa_business_account_id']  ?? '',
-                'wa_api_version'          => $rows['wa_api_version']          ?? 'v19.0',
+                'wa_api_version'          => $rows['wa_api_version']          ?? 'v25.0',
                 'wa_lead_notifications'   => $rows['wa_lead_notifications']   ?? '0',
                 'token_configured'        => $token !== '',
             ],
@@ -8425,18 +8462,19 @@ function handleSaveWhatsAppSettings($db) {
     }
 
     $enabled      = isset($input['wa_enabled']) && $input['wa_enabled'] ? '1' : '0';
+    $publicButtons = isset($input['wa_public_buttons_enabled']) && $input['wa_public_buttons_enabled'] ? '1' : '0';
     $leadNotifs   = isset($input['wa_lead_notifications']) && $input['wa_lead_notifications'] ? '1' : '0';
     $token        = trim((string)($input['wa_api_token'] ?? ''));
     $phoneNumId   = trim(preg_replace('/[^0-9]/', '', (string)($input['wa_phone_number_id'] ?? '')));
     $wabaId       = trim(preg_replace('/[^0-9]/', '', (string)($input['wa_business_account_id'] ?? '')));
-    $apiVersion   = trim((string)($input['wa_api_version'] ?? 'v19.0'));
+    $apiVersion   = trim((string)($input['wa_api_version'] ?? 'v25.0'));
 
     // Reject placeholder value — don't overwrite existing token with mask
     $tokenIsPlaceholder = ($token === '' || preg_match('/^[•\*]+/', $token));
 
     // Validate api version format
     if (!preg_match('/^v\d+\.\d+$/', $apiVersion)) {
-        $apiVersion = 'v19.0';
+        $apiVersion = 'v25.0';
     }
 
     try {
@@ -8444,19 +8482,24 @@ function handleSaveWhatsAppSettings($db) {
 
         $upsert = $db->prepare(
             "INSERT INTO site_settings (setting_key, setting_value, setting_group, setting_type, description, is_public)
-             VALUES (?, ?, 'whatsapp', 'string', ?, 0)
+             VALUES (?, ?, 'whatsapp', ?, ?, ?)
              ON DUPLICATE KEY UPDATE
-             setting_value = VALUES(setting_value)"
+             setting_value = VALUES(setting_value),
+             setting_group = VALUES(setting_group),
+             setting_type = VALUES(setting_type),
+             description = VALUES(description),
+             is_public = VALUES(is_public)"
         );
 
-        $upsert->execute(['wa_enabled', $enabled, 'Enable WhatsApp Cloud API integration']);
-        $upsert->execute(['wa_lead_notifications', $leadNotifs, 'Send WhatsApp notification to dealer on new lead/message']);
+        $upsert->execute(['wa_enabled', $enabled, 'boolean', 'Enable WhatsApp Cloud API integration', 0]);
+        $upsert->execute(['wa_public_buttons_enabled', $publicButtons, 'boolean', 'Show public WhatsApp buttons and wa.me chat links', 1]);
+        $upsert->execute(['wa_lead_notifications', $leadNotifs, 'boolean', 'Send WhatsApp notification to dealer on new lead/message', 0]);
         if (!$tokenIsPlaceholder) {
-            $upsert->execute(['wa_api_token', $token, 'Meta WhatsApp Cloud API bearer token']);
+            $upsert->execute(['wa_api_token', $token, 'string', 'Meta WhatsApp Cloud API bearer token', 0]);
         }
-        $upsert->execute(['wa_phone_number_id', $phoneNumId, 'Meta WhatsApp Phone Number ID']);
-        $upsert->execute(['wa_business_account_id', $wabaId, 'Meta WhatsApp Business Account ID (WABA ID)']);
-        $upsert->execute(['wa_api_version', $apiVersion, 'Meta Graph API version']);
+        $upsert->execute(['wa_phone_number_id', $phoneNumId, 'string', 'Meta WhatsApp Phone Number ID', 0]);
+        $upsert->execute(['wa_business_account_id', $wabaId, 'string', 'Meta WhatsApp Business Account ID (WABA ID)', 0]);
+        $upsert->execute(['wa_api_version', $apiVersion, 'string', 'Meta Graph API version', 0]);
 
         $db->commit();
 
@@ -8502,7 +8545,7 @@ function handleTestWhatsAppMessage($db) {
 
     $token       = $rows['wa_api_token']       ?? '';
     $phoneNumId  = $rows['wa_phone_number_id'] ?? '';
-    $apiVersion  = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v19.0';
+    $apiVersion  = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v25.0';
 
     if (empty($token)) {
         sendAdminError('WhatsApp API token is not configured. Save your settings first.', 'WA_TEST_NO_TOKEN', 400);
@@ -8587,6 +8630,68 @@ function handleTestWhatsAppMessage($db) {
         ]);
     }
     exit();
+}
+
+/**
+ * Internal helper: load WA settings from DB and send a template message.
+ * Returns ['success'=>bool, 'wamid'=>string|null, 'error'=>string|null]
+ */
+function adminSendWaTemplate($db, string $toNumber, string $templateName, array $bodyParams): array {
+    try {
+        $rows = $db->query(
+            "SELECT setting_key, setting_value FROM site_settings
+             WHERE setting_key IN ('wa_enabled','wa_api_token','wa_phone_number_id','wa_api_version')"
+        )->fetchAll(PDO::FETCH_KEY_PAIR);
+        if (($rows['wa_enabled'] ?? '0') !== '1') return ['success' => false, 'error' => 'WA disabled'];
+        $token      = $rows['wa_api_token']       ?? '';
+        $phoneNumId = $rows['wa_phone_number_id'] ?? '';
+        $apiVersion = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v25.0';
+        if (!$token || !$phoneNumId) return ['success' => false, 'error' => 'WA not configured'];
+
+        $toNumber = preg_replace('/[^0-9]/', '', $toNumber);
+        if (strlen($toNumber) < 7) return ['success' => false, 'error' => 'Invalid number'];
+
+        $parameters = array_map(fn($v) => ['type' => 'text', 'text' => (string)$v], $bodyParams);
+        $payload = json_encode([
+            'messaging_product' => 'whatsapp',
+            'to'                => $toNumber,
+            'type'              => 'template',
+            'template'          => [
+                'name'       => $templateName,
+                'language'   => ['code' => 'en_US'],
+                'components' => [['type' => 'body', 'parameters' => $parameters]],
+            ],
+        ]);
+
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        $isLocal = in_array($host, ['localhost', '127.0.0.1', '::1'], true)
+                || strpos($host, 'localhost:') === 0
+                || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $host);
+
+        $ch = curl_init("https://graph.facebook.com/{$apiVersion}/{$phoneNumId}/messages");
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_SSL_VERIFYPEER => !$isLocal,
+            CURLOPT_SSL_VERIFYHOST => $isLocal ? 0 : 2,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ' . $token],
+        ]);
+        $resp = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err  = curl_error($ch);
+        curl_close($ch);
+
+        if ($err) return ['success' => false, 'error' => $err];
+        $data  = json_decode($resp, true);
+        $wamid = $data['messages'][0]['id'] ?? null;
+        return $code === 200 && $wamid
+            ? ['success' => true,  'wamid' => $wamid]
+            : ['success' => false, 'wamid' => null, 'error' => $data['error']['message'] ?? "HTTP {$code}"];
+    } catch (Exception $e) {
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
 }
 
 /**

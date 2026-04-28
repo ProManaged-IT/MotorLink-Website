@@ -390,6 +390,9 @@ class CarHireDashboard {
             const customerWhatsApp = rental.customer_whatsapp || rental.renter_whatsapp || customerPhone;
             const safePhone = customerPhone.replace(/[^0-9+]/g, '');
             const safeWa = customerWhatsApp.replace(/[^0-9]/g, '');
+            const waEnabled = typeof window.motorlinkWhatsAppButtonsEnabled === 'function'
+                ? window.motorlinkWhatsAppButtonsEnabled()
+                : !(window.CONFIG && CONFIG.WHATSAPP_BUTTONS_ENABLED === false);
 
             const actions = [];
             if (status === 'pending') {
@@ -440,7 +443,7 @@ class CarHireDashboard {
                 </div>
                 <div class="rental-actions">
                     ${safePhone ? `<a class="btn btn-small btn-secondary" href="tel:${safePhone}"><i class="fas fa-phone"></i> Call</a>` : ''}
-                    ${safeWa ? `<a class="btn btn-small btn-secondary" href="https://wa.me/${safeWa}" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
+                    ${waEnabled && safeWa ? `<a class="btn btn-small btn-secondary" href="https://wa.me/${safeWa}" target="_blank" rel="noopener" data-whatsapp-cta><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
                     ${actions.join('')}
                 </div>
             </div>

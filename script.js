@@ -38,6 +38,12 @@
     // Intentionally silent in production to avoid console noise.
 })();
 
+function motorlinkCanShowWhatsApp() {
+    return typeof window.motorlinkWhatsAppButtonsEnabled === 'function'
+        ? window.motorlinkWhatsAppButtonsEnabled()
+        : !(window.CONFIG && CONFIG.WHATSAPP_BUTTONS_ENABLED === false);
+}
+
 function getRuntimeSiteName() {
     if (typeof window.CONFIG !== 'undefined' && window.CONFIG) {
         return CONFIG.SITE_NAME || CONFIG.SITE_SHORT_NAME || 'MotorLink';
@@ -2012,21 +2018,27 @@ class MotorLink {
                 // WhatsApp share button — prevent bubbling into the card click
                 const shareBtn = card.querySelector('.car-share-btn');
                 if (shareBtn) {
-                    shareBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        const id = shareBtn.dataset.shareId;
-                        const title = shareBtn.dataset.shareTitle || 'this car';
-                        const rawPrice = parseInt(shareBtn.dataset.sharePrice || '0', 10);
-                        const priceText = rawPrice > 0
-                            ? `${CONFIG.CURRENCY_CODE || 'MWK'} ${this.formatNumber(rawPrice)}`
-                            : 'Price on request';
-                        const origin = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
-                        const url = `${origin}car.html?id=${id}`;
-                        const msg = `Check out this car on MotorLink Malawi:\n\n${title}\nPrice: ${priceText}\n\n${url}`;
-                        const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                        window.open(waUrl, '_blank', 'noopener');
-                    });
+                    if (!motorlinkCanShowWhatsApp()) {
+                        shareBtn.style.display = 'none';
+                        shareBtn.setAttribute('aria-hidden', 'true');
+                    } else {
+                        shareBtn.setAttribute('data-whatsapp-cta', '');
+                        shareBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            const id = shareBtn.dataset.shareId;
+                            const title = shareBtn.dataset.shareTitle || 'this car';
+                            const rawPrice = parseInt(shareBtn.dataset.sharePrice || '0', 10);
+                            const priceText = rawPrice > 0
+                                ? `${CONFIG.CURRENCY_CODE || 'MWK'} ${this.formatNumber(rawPrice)}`
+                                : 'Price on request';
+                            const origin = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
+                            const url = `${origin}car.html?id=${id}`;
+                            const msg = `Check out this car on MotorLink Malawi:\n\n${title}\nPrice: ${priceText}\n\n${url}`;
+                            const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                            window.open(waUrl, '_blank', 'noopener');
+                        });
+                    }
                 }
 
                 card.addEventListener('click', (e) => {
@@ -3093,7 +3105,7 @@ class DealersManager {
                     </div>
                 </div>
                 
-                ${dealer.whatsapp ? `
+                ${dealer.whatsapp && motorlinkCanShowWhatsApp() ? `
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px;">
                     <i class="fab fa-whatsapp" style="color: #25D366;"></i>
                     <div>
@@ -3114,7 +3126,7 @@ class DealersManager {
             
             <div style="display: flex; gap: 10px;">
                 ${dealer.phone ? `<a href="tel:${dealer.phone}" class="btn btn-primary" style="flex: 1; text-align: center;"><i class="fas fa-phone"></i> Call Now</a>` : ''}
-                ${dealer.whatsapp ? `<a href="https://wa.me/${dealer.whatsapp.replace(/[^0-9]/g, '')}" class="btn btn-success" style="flex: 1; text-align: center;"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
+                ${dealer.whatsapp && motorlinkCanShowWhatsApp() ? `<a href="https://wa.me/${dealer.whatsapp.replace(/[^0-9]/g, '')}" class="btn btn-success" style="flex: 1; text-align: center;" data-whatsapp-cta><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
             </div>
         `;
         
@@ -3668,7 +3680,7 @@ class ShowroomManager {
         }
 
         const dealerWhatsappLink = document.getElementById('dealerWhatsappLink');
-        if (dealerWhatsappLink && (dealer.whatsapp || dealer.phone)) {
+        if (dealerWhatsappLink && motorlinkCanShowWhatsApp() && (dealer.whatsapp || dealer.phone)) {
             const whatsappNumber = (dealer.whatsapp || dealer.phone).replace(/[^0-9]/g, '');
             dealerWhatsappLink.href = `https://wa.me/${whatsappNumber}`;
             dealerWhatsappLink.style.display = 'inline-flex';
@@ -3702,7 +3714,7 @@ class ShowroomManager {
             dealerHeaderPhoneLink.style.display = 'inline-flex';
         }
 
-        if (dealerHeaderWhatsappLink && (dealer.whatsapp || dealer.phone)) {
+        if (dealerHeaderWhatsappLink && motorlinkCanShowWhatsApp() && (dealer.whatsapp || dealer.phone)) {
             const whatsappNumber = (dealer.whatsapp || dealer.phone).replace(/[^0-9]/g, '');
             dealerHeaderWhatsappLink.href = `https://wa.me/${whatsappNumber}`;
             dealerHeaderWhatsappLink.style.display = 'inline-flex';
@@ -3943,13 +3955,13 @@ class ShowroomManager {
         }
 
         // WhatsApp
-        if (dealer.whatsapp) {
+        if (motorlinkCanShowWhatsApp() && dealer.whatsapp) {
             const whatsappNumber = dealer.whatsapp.replace(/\D/g, '');
             const dealerWhatsapp = document.getElementById('dealerWhatsapp');
             const dealerWhatsappContainer = document.getElementById('dealerWhatsappContainer');
             if (dealerWhatsapp) dealerWhatsapp.href = `https://wa.me/${whatsappNumber}`;
             if (dealerWhatsappContainer) dealerWhatsappContainer.style.display = 'flex';
-        } else if (dealer.phone) {
+        } else if (motorlinkCanShowWhatsApp() && dealer.phone) {
             const phoneNumber = dealer.phone.replace(/\D/g, '');
             const dealerWhatsapp = document.getElementById('dealerWhatsapp');
             const dealerWhatsappContainer = document.getElementById('dealerWhatsappContainer');

@@ -139,6 +139,7 @@ const DEFAULT_PUBLIC_SITE_CONFIG = {
     market_scope_label: 'nationwide',
     contact_support_email: 'support@example.com',
     phone_dial_code: '',
+    wa_public_buttons_enabled: '1',
     fuel_price_country_slug: '',
     geo_region: '',
     geo_placename: '',
@@ -360,6 +361,7 @@ function applyRuntimeSiteConfig(runtimeConfig = {}) {
     CONFIG.MARKET_SCOPE_LABEL = merged.market_scope_label || DEFAULT_PUBLIC_SITE_CONFIG.market_scope_label;
     CONFIG.SUPPORT_EMAIL = merged.contact_support_email || DEFAULT_PUBLIC_SITE_CONFIG.contact_support_email;
     CONFIG.PHONE_DIAL_CODE = merged.phone_dial_code || '';
+    CONFIG.WHATSAPP_BUTTONS_ENABLED = merged.wa_public_buttons_enabled !== '0' && merged.wa_public_buttons_enabled !== false;
     CONFIG.FUEL_PRICE_COUNTRY_SLUG = merged.fuel_price_country_slug || '';
     CONFIG.GEO_REGION = merged.geo_region || '';
     CONFIG.GEO_PLACENAME = merged.geo_placename || '';
@@ -381,6 +383,7 @@ function applyRuntimeSiteConfig(runtimeConfig = {}) {
     }
 
     applyBrandingToDocument();
+    applyWhatsAppButtonVisibility(document);
 
     window.dispatchEvent(new CustomEvent('motorlink:site-config-ready', {
         detail: getPublicSiteConfigSnapshot()
@@ -403,6 +406,7 @@ function getPublicSiteConfigSnapshot() {
         market_scope_label: CONFIG.MARKET_SCOPE_LABEL,
         contact_support_email: CONFIG.SUPPORT_EMAIL,
         phone_dial_code: CONFIG.PHONE_DIAL_CODE,
+        wa_public_buttons_enabled: CONFIG.WHATSAPP_BUTTONS_ENABLED ? '1' : '0',
         fuel_price_country_slug: CONFIG.FUEL_PRICE_COUNTRY_SLUG,
         geo_region: CONFIG.GEO_REGION,
         geo_placename: CONFIG.GEO_PLACENAME,
@@ -472,6 +476,34 @@ function injectGA4(measurementId) {
 
 window.enableMotorLinkAnalytics = enableMotorLinkAnalytics;
 window.disableMotorLinkAnalytics = disableMotorLinkAnalytics;
+
+function motorlinkWhatsAppButtonsEnabled() {
+    return !(window.CONFIG && CONFIG.WHATSAPP_BUTTONS_ENABLED === false);
+}
+
+function ensureWhatsAppVisibilityStyle() {
+    if (!document || document.getElementById('motorlink-whatsapp-visibility-style')) return;
+    const style = document.createElement('style');
+    style.id = 'motorlink-whatsapp-visibility-style';
+    style.textContent = 'html[data-whatsapp-buttons="disabled"] [data-whatsapp-cta],html[data-whatsapp-buttons="disabled"] a[href*="wa.me"],html[data-whatsapp-buttons="disabled"] .js-whatsapp-link{display:none!important;}';
+    document.head.appendChild(style);
+}
+
+function applyWhatsAppButtonVisibility(root = document) {
+    if (!document || !document.documentElement) return;
+    ensureWhatsAppVisibilityStyle();
+    const enabled = motorlinkWhatsAppButtonsEnabled();
+    document.documentElement.dataset.whatsappButtons = enabled ? 'enabled' : 'disabled';
+    if (enabled || !root || typeof root.querySelectorAll !== 'function') return;
+
+    root.querySelectorAll('[data-whatsapp-wrapper], .js-whatsapp-wrapper').forEach((element) => {
+        element.style.display = 'none';
+        element.setAttribute('aria-hidden', 'true');
+    });
+}
+
+window.motorlinkWhatsAppButtonsEnabled = motorlinkWhatsAppButtonsEnabled;
+window.applyWhatsAppButtonVisibility = applyWhatsAppButtonVisibility;
 
 function applyBrandingToDocument() {
     if (document && document.documentElement) {
@@ -623,6 +655,7 @@ const CONFIG = {
     MARKET_SCOPE_LABEL: DEFAULT_PUBLIC_SITE_CONFIG.market_scope_label,
     SUPPORT_EMAIL: DEFAULT_PUBLIC_SITE_CONFIG.contact_support_email,
     PHONE_DIAL_CODE: DEFAULT_PUBLIC_SITE_CONFIG.phone_dial_code,
+    WHATSAPP_BUTTONS_ENABLED: DEFAULT_PUBLIC_SITE_CONFIG.wa_public_buttons_enabled !== '0',
     FUEL_PRICE_COUNTRY_SLUG: DEFAULT_PUBLIC_SITE_CONFIG.fuel_price_country_slug,
     GEO_REGION: DEFAULT_PUBLIC_SITE_CONFIG.geo_region,
     GEO_PLACENAME: DEFAULT_PUBLIC_SITE_CONFIG.geo_placename,
@@ -723,10 +756,14 @@ async function getGoogleMapsConfig() {
 }
 
 applyBrandingToDocument();
+applyWhatsAppButtonVisibility(document);
 window.getPublicClientConfig = getPublicClientConfig;
 window.getPublicSiteConfig = getPublicSiteConfig;
 window.getGoogleMapsConfig = getGoogleMapsConfig;
-window.addEventListener('DOMContentLoaded', applyBrandingToDocument, { once: true });
+window.addEventListener('DOMContentLoaded', () => {
+    applyBrandingToDocument();
+    applyWhatsAppButtonVisibility(document);
+}, { once: true });
 getPublicSiteConfig().catch(() => {});
 
 // Debug: Show which configuration is being used (only if DEBUG is enabled)

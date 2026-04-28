@@ -822,6 +822,12 @@ class AdminDashboard {
                 this.loadCarHire();
                 loadWhatsAppBookings();
                 return;
+            case 'whatsapp':
+                ensureWhatsAppSettingsSection();
+                return Promise.all([
+                    loadWhatsAppSettings(),
+                    loadWhatsAppBookingStats()
+                ]);
             case 'makes-models':
                 return this.loadMakesModels();
             case 'locations':
@@ -6666,6 +6672,14 @@ async function saveFooterSupportSettings() {
 
 // ── WhatsApp Integration Settings ───────────────────────────────────────────
 
+function ensureWhatsAppSettingsSection() {
+    const mount = document.getElementById('whatsappSettingsMount');
+    const card = document.getElementById('waSettingsCard');
+    if (mount && card && card.parentElement !== mount) {
+        mount.appendChild(card);
+    }
+}
+
 function _setWaStatusBadge(enabled, tokenConfigured, phoneIdConfigured) {
     const badge = document.getElementById('waStatusBadge');
     if (!badge) return;
@@ -6696,12 +6710,16 @@ function toggleWaTokenVisibility() {
 
 async function loadWhatsAppSettings() {
     try {
+        ensureWhatsAppSettingsSection();
         const response = await admin.apiCall('get_whatsapp_settings', 'GET', null);
         if (!response.success || !response.settings) return;
         const s = response.settings;
 
         const enabledEl = document.getElementById('wa-enabled');
         if (enabledEl) enabledEl.checked = s.wa_enabled === '1';
+
+        const publicButtonsEl = document.getElementById('wa-public-buttons-enabled');
+        if (publicButtonsEl) publicButtonsEl.checked = s.wa_public_buttons_enabled !== '0';
 
         const leadEl = document.getElementById('wa-lead-notifications');
         if (leadEl) leadEl.checked = s.wa_lead_notifications === '1';
@@ -6713,7 +6731,7 @@ async function loadWhatsAppSettings() {
         if (numEl) numEl.value = s.wa_phone_number_id || '';
 
         const verEl = document.getElementById('wa-api-version');
-        if (verEl) verEl.value = s.wa_api_version || 'v19.0';
+        if (verEl) verEl.value = s.wa_api_version || 'v25.0';
 
         const tokenStatusEl = document.getElementById('waTokenStatus');
         if (tokenStatusEl) {
@@ -6739,11 +6757,12 @@ async function saveWhatsAppSettings() {
     const btn = document.getElementById('waSaveBtn');
     const payload = {
         wa_enabled:              document.getElementById('wa-enabled')?.checked ? '1' : '0',
+        wa_public_buttons_enabled: document.getElementById('wa-public-buttons-enabled')?.checked ? '1' : '0',
         wa_lead_notifications:   document.getElementById('wa-lead-notifications')?.checked ? '1' : '0',
         wa_api_token:            document.getElementById('wa-api-token')?.value || '',
         wa_phone_number_id:      document.getElementById('wa-phone-number-id')?.value?.trim() || '',
         wa_business_account_id:  document.getElementById('wa-business-account-id')?.value?.trim() || '',
-        wa_api_version:          document.getElementById('wa-api-version')?.value?.trim() || 'v19.0',
+        wa_api_version:          document.getElementById('wa-api-version')?.value?.trim() || 'v25.0',
     };
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…'; }
@@ -7274,19 +7293,16 @@ async function loadSettings() {
             // Admin DB credentials are managed separately in site_settings.
             await loadAdminDbCredentials();
             await loadFooterSupportSettings();
-            await loadWhatsAppSettings();
 
         } else {
             debugLog('No settings found or error loading settings');
             await loadAdminDbCredentials();
             await loadFooterSupportSettings();
-            await loadWhatsAppSettings();
         }
     } catch (error) {
         debugLog('Error loading settings:', error);
         await loadAdminDbCredentials();
         await loadFooterSupportSettings();
-        await loadWhatsAppSettings();
     }
 }
 

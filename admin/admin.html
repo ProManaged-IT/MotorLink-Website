@@ -260,6 +260,9 @@
 
                 <div class="nav-section">
                     <h4>System</h4>
+                    <a href="#" class="nav-item" data-section="whatsapp">
+                        <i class="fab fa-whatsapp"></i> WhatsApp
+                    </a>
                     <a href="#" class="nav-item" data-section="settings">
                         <i class="fas fa-cog"></i> Settings
                     </a>
@@ -1135,6 +1138,15 @@
                     </div>
                 </div>
 
+                <!-- WhatsApp Section -->
+                <div class="content-section" id="whatsapp-section">
+                    <div class="section-header">
+                        <h2><i class="fab fa-whatsapp"></i> WhatsApp Settings</h2>
+                    </div>
+
+                    <div class="settings-container" id="whatsappSettingsMount"></div>
+                </div>
+
                 <!-- Makes & Models Section -->
                 <div class="content-section" id="makes-models-section">
                     <div class="section-header">
@@ -1655,7 +1667,14 @@
                                     <label for="wa-enabled">
                                         <input type="checkbox" id="wa-enabled"> Enable WhatsApp API notifications
                                     </label>
-                                    <small class="form-text">When enabled, booking requests automatically notify the car hire owner via WhatsApp.</small>
+                                    <small class="form-text">Controls automated Meta WhatsApp Business sends for bookings, leads, listings, and registration messages.</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="wa-public-buttons-enabled">
+                                        <input type="checkbox" id="wa-public-buttons-enabled"> Show WhatsApp buttons on the public website
+                                    </label>
+                                    <small class="form-text">Turn this off to hide public wa.me links and WhatsApp booking/chat buttons without deleting saved business numbers.</small>
                                 </div>
 
                                 <div class="form-group">
@@ -1685,8 +1704,8 @@
                                     <div class="form-group">
                                         <label for="wa-api-version">Graph API Version</label>
                                         <input type="text" id="wa-api-version" class="form-control"
-                                               placeholder="v19.0" value="v19.0" maxlength="10">
-                                        <small class="form-text">Use latest stable, e.g. v19.0</small>
+                                                 placeholder="v25.0" value="v25.0" maxlength="10">
+                                             <small class="form-text">Use latest stable, e.g. v25.0</small>
                                     </div>
                                 </div>
 

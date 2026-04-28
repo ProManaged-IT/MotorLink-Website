@@ -177,6 +177,9 @@ class FooterLoader {
         const phoneSecondary = contact.contact_phone_secondary || '';
         const email = contact.contact_email || '';
         const whatsapp = contact.contact_whatsapp || '';
+        const waEnabled = typeof window.motorlinkWhatsAppButtonsEnabled === 'function'
+            ? window.motorlinkWhatsAppButtonsEnabled()
+            : !(window.CONFIG && CONFIG.WHATSAPP_BUTTONS_ENABLED === false);
         
         const address = business.business_address || '';
         const city = business.business_city || '';
@@ -255,7 +258,7 @@ class FooterLoader {
                     ${email ? `<p><i class="fas fa-envelope"></i> <strong>Email:</strong> <a href="mailto:${this.escapeHtml(email)}">${this.escapeHtml(email)}</a></p>` : ''}
                     ${phone ? `<p><i class="fas fa-phone"></i> <strong>Phone:</strong> <a href="tel:${this.escapeHtml(this.normalizePhoneForTel(phone))}">${this.escapeHtml(phone)}</a></p>` : ''}
                     ${phoneSecondary ? `<p><i class="fas fa-mobile-alt"></i> <strong>Alt:</strong> <a href="tel:${this.escapeHtml(this.normalizePhoneForTel(phoneSecondary))}">${this.escapeHtml(phoneSecondary)}</a></p>` : ''}
-                    ${whatsapp ? `<p><i class="fab fa-whatsapp"></i> <strong>WhatsApp:</strong> <a href="https://wa.me/${this.escapeHtml(this.normalizePhoneForWhatsApp(whatsapp))}" target="_blank" rel="noopener">${this.escapeHtml(whatsapp)}</a></p>` : ''}
+                    ${waEnabled && whatsapp ? `<p data-whatsapp-wrapper><i class="fab fa-whatsapp"></i> <strong>WhatsApp:</strong> <a href="https://wa.me/${this.escapeHtml(this.normalizePhoneForWhatsApp(whatsapp))}" target="_blank" rel="noopener" data-whatsapp-cta>${this.escapeHtml(whatsapp)}</a></p>` : ''}
                     
                     ${address || city ? `
                     <div style="margin-top: 15px;">

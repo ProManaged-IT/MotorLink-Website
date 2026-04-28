@@ -62,6 +62,9 @@
             const mainEmail = this.getValue('contact_email', supportEmail);
             const phone = this.getValue('contact_phone', '');
             const whatsapp = this.getValue('contact_whatsapp', phone);
+            const waEnabled = typeof window.motorlinkWhatsAppButtonsEnabled === 'function'
+                ? window.motorlinkWhatsAppButtonsEnabled()
+                : !(window.CONFIG && CONFIG.WHATSAPP_BUTTONS_ENABLED === false);
             const address = this.getValue('business_address', '');
             const city = this.getValue('business_city', '');
             const district = this.getValue('business_district', '');
@@ -82,8 +85,16 @@
             this.applyText('.js-phone-text', phone);
             this.applyLink('.js-phone-link', `tel:${telNumber}`, phone);
 
-            this.applyText('.js-whatsapp-text', whatsapp);
-            this.applyLink('.js-whatsapp-link', `https://wa.me/${whatsappDigits}`, whatsapp);
+            if (waEnabled && whatsappDigits) {
+                this.applyText('.js-whatsapp-text', whatsapp);
+                this.applyLink('.js-whatsapp-link', `https://wa.me/${whatsappDigits}`, whatsapp);
+            } else {
+                document.querySelectorAll('.js-whatsapp-link').forEach((el) => {
+                    const wrapper = el.closest('li, p, .js-whatsapp-wrapper') || el;
+                    wrapper.style.display = 'none';
+                    wrapper.setAttribute('aria-hidden', 'true');
+                });
+            }
 
             this.applyText('.js-address-text', address || runtimeSiteName);
             this.applyText('.js-location-text', locationLine || runtimeCountryName);
