@@ -3376,6 +3376,7 @@ function handleAICarChat($db) {
             detectGarageQuery($message) ||
             detectFuelPriceQuery($message) ||
             detectJourneyCostQuery($message) ||
+            extractJourneyRouteLocations($db, $message) !== null ||
             detectSearchQuery($message) ||
             detectCarSpecQuery($message) ||
             detectCarRecommendationQuery($message) ||
@@ -4352,7 +4353,11 @@ function detectFuelPriceQuery($message) {
  * Detect journey / trip fuel-cost questions that should run the journey planner.
  */
 function detectJourneyCostQuery($message) {
-    $lower = strtolower($message);
+    // Normalize typos so "jurney" → "journey", "diesal" → "diesel", etc.
+    $normalized = function_exists('normalizeAIChatIntentTypos')
+        ? normalizeAIChatIntentTypos($message)
+        : (string)$message;
+    $lower = strtolower($normalized);
 
     $triggerWords = ['trip', 'travel', 'drive', 'driving', 'journey', 'road trip'];
     $costWords = ['cost', 'fuel cost', 'how much', 'price', 'budget', 'spend'];
@@ -4371,18 +4376,18 @@ function detectJourneyCostQuery($message) {
     }
 
     // "from X to Y" with fuel language
-    if (preg_match('/\bfrom\s+[a-z0-9][^,]*?\s+to\s+[a-z0-9]/i', $message)
-        && preg_match('/\b(fuel|petrol|diesel|cost|km|kilometre|kilometer|distance|journey)\b/i', $message)) {
+    if (preg_match('/\bfrom\s+[a-z0-9][^,]*?\s+to\s+[a-z0-9]/i', $normalized)
+        && preg_match('/\b(fuel|petrol|diesel|cost|km|kilometre|kilometer|distance|journey|travel)\b/i', $normalized)) {
         return true;
     }
 
-    if (preg_match('/\b(fuel|petrol|diesel)\s+(needed|required|consumption|use)\b/i', $message)
-        && preg_match('/\b(trip|journey|drive|km|kilometre|kilometer)\b/i', $message)) {
+    if (preg_match('/\b(fuel|petrol|diesel)\s+(needed|required|consumption|use)\b/i', $normalized)
+        && preg_match('/\b(trip|journey|drive|km|kilometre|kilometer)\b/i', $normalized)) {
         return true;
     }
 
-    if (preg_match('/\b(distance|trip|journey)\b/i', $message)
-        && preg_match('/\b\d+(?:\.\d+)?\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $message)) {
+    if (preg_match('/\b(distance|trip|journey)\b/i', $normalized)
+        && preg_match('/\b\d+(?:\.\d+)?\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $normalized)) {
         return true;
     }
 
@@ -7093,11 +7098,16 @@ function normalizeAIChatIntentTypos($message) {
         'delear' => 'dealer',
         'deler' => 'dealer',
         'disel' => 'diesel',
+        'diesal' => 'diesel',
         'engin' => 'engine',
         'feul' => 'fuel',
         'garadge' => 'garage',
         'gerage' => 'garage',
         'hure' => 'hire',
+        'jurney' => 'journey',
+        'jurnney' => 'journey',
+        'jorney' => 'journey',
+        'jurny' => 'journey',
         'manuel' => 'manual',
         'narest' => 'nearest',
         'neerest' => 'nearest',
@@ -7108,15 +7118,17 @@ function normalizeAIChatIntentTypos($message) {
         'rantal' => 'rental',
         'serch' => 'search',
         'transmision' => 'transmission',
+        'travelin' => 'travelling',
+        'travling' => 'travelling',
         'vehcle' => 'vehicle',
         'vechile' => 'vehicle'
     ];
 
     $keywords = [
         'automatic', 'battery', 'budget', 'cheap', 'cheapest', 'closest', 'compare', 'compatibility',
-        'dealer', 'dealers', 'diesel', 'engine', 'fuel', 'garage', 'garages', 'hire', 'insurance',
-        'manual', 'mechanic', 'nearest', 'parts', 'petrol', 'price', 'rental', 'repair', 'search',
-        'service', 'specs', 'transmission', 'vehicle', 'vehicles'
+        'dealer', 'dealers', 'diesel', 'distance', 'engine', 'fuel', 'garage', 'garages', 'hire', 'insurance',
+        'journey', 'manual', 'mechanic', 'nearest', 'parts', 'petrol', 'price', 'rental', 'repair', 'search',
+        'service', 'specs', 'transmission', 'travel', 'vehicle', 'vehicles'
     ];
 
     return preg_replace_callback('/\b[a-zA-Z]{3,}\b/', function ($match) use ($exact, $keywords) {
