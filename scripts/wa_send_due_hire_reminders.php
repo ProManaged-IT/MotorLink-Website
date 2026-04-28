@@ -61,7 +61,7 @@ function waReminderSendTemplate(array $settings, string $toNumber, array $params
         'to' => $toNumber,
         'type' => 'template',
         'template' => [
-            'name' => 'motorlink_hire_reminder',
+            'name' => 'motorlink_hire_reminder_v2',
             'language' => ['code' => 'en_US'],
             'components' => $components,
         ],

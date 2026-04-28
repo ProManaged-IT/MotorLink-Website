@@ -62,8 +62,8 @@ function fetchExisting(string $wabaId, string $apiVer, string $token): array {
 // Template definitions (with interactive buttons)
 // ---------------------------------------------------------------------------
 $templates = [
-    'motorlink_booking' => [
-        'name' => 'motorlink_booking', 'category' => 'UTILITY', 'language' => 'en_US',
+    'motorlink_booking_v2' => [
+        'name' => 'motorlink_booking_v2', 'category' => 'UTILITY', 'language' => 'en_US',
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'New Booking - MotorLink'],
             ['type' => 'BODY',
@@ -77,8 +77,8 @@ $templates = [
             ]],
         ],
     ],
-    'motorlink_booking_confirmed' => [
-        'name' => 'motorlink_booking_confirmed', 'category' => 'UTILITY', 'language' => 'en_US',
+    'motorlink_booking_confirmed_v2' => [
+        'name' => 'motorlink_booking_confirmed_v2', 'category' => 'UTILITY', 'language' => 'en_US',
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'Booking Confirmed - MotorLink'],
             ['type' => 'BODY',
@@ -90,8 +90,8 @@ $templates = [
             ]],
         ],
     ],
-    'motorlink_booking_declined' => [
-        'name' => 'motorlink_booking_declined', 'category' => 'UTILITY', 'language' => 'en_US',
+    'motorlink_booking_declined_v2' => [
+        'name' => 'motorlink_booking_declined_v2', 'category' => 'UTILITY', 'language' => 'en_US',
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'Booking Update - MotorLink'],
             ['type' => 'BODY',
@@ -103,8 +103,8 @@ $templates = [
             ]],
         ],
     ],
-    'motorlink_hire_reminder' => [
-        'name' => 'motorlink_hire_reminder', 'category' => 'UTILITY', 'language' => 'en_US',
+    'motorlink_hire_reminder_v2' => [
+        'name' => 'motorlink_hire_reminder_v2', 'category' => 'UTILITY', 'language' => 'en_US',
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'Pickup Reminder - MotorLink'],
             ['type' => 'BODY',
@@ -117,8 +117,8 @@ $templates = [
             ]],
         ],
     ],
-    'motorlink_new_lead' => [
-        'name' => 'motorlink_new_lead', 'category' => 'UTILITY', 'language' => 'en_US',
+    'motorlink_new_lead_v2' => [
+        'name' => 'motorlink_new_lead_v2', 'category' => 'UTILITY', 'language' => 'en_US',
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'New Lead - MotorLink'],
             ['type' => 'BODY',
@@ -130,8 +130,8 @@ $templates = [
             ]],
         ],
     ],
-    'motorlink_listing_live' => [
-        'name' => 'motorlink_listing_live', 'category' => 'UTILITY', 'language' => 'en_US',
+    'motorlink_listing_live_v2' => [
+        'name' => 'motorlink_listing_live_v2', 'category' => 'UTILITY', 'language' => 'en_US',
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'Listing Approved - MotorLink'],
             ['type' => 'BODY',
@@ -143,8 +143,8 @@ $templates = [
             ]],
         ],
     ],
-    'motorlink_listing_rejected' => [
-        'name' => 'motorlink_listing_rejected', 'category' => 'UTILITY', 'language' => 'en_US',
+    'motorlink_listing_rejected_v2' => [
+        'name' => 'motorlink_listing_rejected_v2', 'category' => 'UTILITY', 'language' => 'en_US',
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'Listing Review - MotorLink'],
             ['type' => 'BODY',
@@ -156,8 +156,8 @@ $templates = [
             ]],
         ],
     ],
-    'motorlink_rate_experience' => [
-        'name' => 'motorlink_rate_experience', 'category' => 'UTILITY', 'language' => 'en_US',
+    'motorlink_rate_experience_v2' => [
+        'name' => 'motorlink_rate_experience_v2', 'category' => 'UTILITY', 'language' => 'en_US',
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'Share Your Experience - MotorLink'],
             ['type' => 'BODY',
@@ -169,8 +169,8 @@ $templates = [
             ]],
         ],
     ],
-    'motorlink_new_user' => [
-        'name' => 'motorlink_new_user', 'category' => 'UTILITY', 'language' => 'en_US',
+    'motorlink_new_user_v2' => [
+        'name' => 'motorlink_new_user_v2', 'category' => 'UTILITY', 'language' => 'en_US',
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'Welcome to MotorLink'],
             ['type' => 'BODY',

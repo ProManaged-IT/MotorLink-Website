@@ -3194,7 +3194,7 @@ function handleWaWebhook($db): void {
             // Notify renter
             if ($renterNum && $waSettings['enabled'] && !empty($waSettings['api_token'])) {
                 $ownerContact = $booking['owner_whatsapp'] ?: $booking['owner_phone'] ?? '';
-                sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_confirmed', [
+                sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_confirmed_v2', [
                     $booking['renter_name'],
                     $booking['vehicle_name'] ?? 'your vehicle',
                     $booking['start_date'],
@@ -3209,7 +3209,7 @@ function handleWaWebhook($db): void {
             // Notify renter
             if ($renterNum && $waSettings['enabled'] && !empty($waSettings['api_token'])) {
                 $dates = $booking['start_date'] . ' - ' . $booking['end_date'];
-                sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_declined', [
+                sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_declined_v2', [
                     $booking['renter_name'],
                     $booking['vehicle_name'] ?? 'your vehicle',
                     $dates,
@@ -3431,7 +3431,7 @@ function sendDealerLeadNotification($db, array $conversation, string $buyerName,
         ];
 
         // Use motorlink_new_lead template (params: seller name, listing, buyer name, message preview)
-        $result = sendWhatsAppTemplate($waSettings, $recipientNumber, 'motorlink_new_lead', [
+        $result = sendWhatsAppTemplate($waSettings, $recipientNumber, 'motorlink_new_lead_v2', [
             $seller['full_name'],
             $listingTitle,
             $buyerName,
@@ -3578,7 +3578,7 @@ function carHireBookWhatsapp($db) {
         if ($ownerWhatsApp) {
             // Try approved template first; fall back to free-form text.
             // Button payloads embed the bookingId so the webhook can act on Accept/Decline/Propose.
-            $result = sendWhatsAppTemplate($waSettings, $ownerWhatsApp, 'motorlink_booking', [
+            $result = sendWhatsAppTemplate($waSettings, $ownerWhatsApp, 'motorlink_booking_v2', [
                 $vehicleName,
                 $renterName,
                 $renterPhone,
@@ -4061,7 +4061,7 @@ function handleRegister($db) {
                         'phone_number_id' => $regWaRows['wa_phone_number_id'] ?? '',
                         'api_version'     => !empty($regWaRows['wa_api_version']) ? $regWaRows['wa_api_version'] : 'v25.0',
                     ];
-                    sendWhatsAppTemplate($regWaSettings, $regWaNum, 'motorlink_new_user', [
+                    sendWhatsAppTemplate($regWaSettings, $regWaNum, 'motorlink_new_user_v2', [
                         $input['full_name'],
                     ]);
                 }
@@ -9251,8 +9251,8 @@ function setCarHireBookingStatus($db, $companyId, $bookingId, $newStatus) {
                     $businessName = $comp['business_name'] ?? 'the car hire company';
 
                     if ($newStatus === 'confirmed') {
-                        // motorlink_booking_confirmed: renter, vehicle, pickup, return, owner phone
-                        sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_confirmed', [
+                        // motorlink_booking_confirmed_v2: renter, vehicle, pickup, return, owner phone
+                        sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_confirmed_v2', [
                             $booking['renter_name'],
                             $booking['vehicle_name'] ?? 'your vehicle',
                             $booking['start_date'],
@@ -9260,16 +9260,16 @@ function setCarHireBookingStatus($db, $companyId, $bookingId, $newStatus) {
                             $ownerContact,
                         ]);
                     } elseif ($newStatus === 'declined') {
-                        // motorlink_booking_declined: renter, vehicle, dates
+                        // motorlink_booking_declined_v2: renter, vehicle, dates
                         $dates = $booking['start_date'] . ' - ' . $booking['end_date'];
-                        sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_declined', [
+                        sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_declined_v2', [
                             $booking['renter_name'],
                             $booking['vehicle_name'] ?? 'your vehicle',
                             $dates,
                         ]);
                     } elseif ($newStatus === 'completed') {
-                        // motorlink_rate_experience: renter name, business name
-                        sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_rate_experience', [
+                        // motorlink_rate_experience_v2: renter name, business name
+                        sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_rate_experience_v2', [
                             $booking['renter_name'],
                             $businessName,
                         ]);

@@ -1360,14 +1360,14 @@ function handleApproveCar($db) {
                         !empty($li['whatsapp']) ? $li['whatsapp'] : ($li['phone'] ?? ''));
                     if (strlen($sellerNum) >= 7) {
                         if ($action === 'approve') {
-                            // motorlink_listing_live: seller name, vehicle
-                            adminSendWaTemplate($db, $sellerNum, 'motorlink_listing_live', [
+                            // motorlink_listing_live_v2: seller name, vehicle
+                            adminSendWaTemplate($db, $sellerNum, 'motorlink_listing_live_v2', [
                                 $li['full_name'],
                                 $li['title'],
                             ]);
                         } else {
-                            // motorlink_listing_rejected: seller name, vehicle, reason
-                            adminSendWaTemplate($db, $sellerNum, 'motorlink_listing_rejected', [
+                            // motorlink_listing_rejected_v2: seller name, vehicle, reason
+                            adminSendWaTemplate($db, $sellerNum, 'motorlink_listing_rejected_v2', [
                                 $li['full_name'],
                                 $li['title'],
                                 trim($rejectionReason) ?: 'Please contact support for details.',
