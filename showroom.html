@@ -467,25 +467,6 @@
     <script src="js/mobile-filter-tray.js"></script>
     <script src="script.js"></script>
     <script src="js/reviews.js"></script>
-<!-- Google Maps API loaded dynamically -->
-<script>
-    (async () => {
-        try {
-            const mapConfig = await window.getGoogleMapsConfig();
-            if (!mapConfig || !mapConfig.apiKey) {
-                return;
-            }
-
-            const gmapsScript = document.createElement('script');
-            gmapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${mapConfig.apiKey}&libraries=places&v=weekly&loading=async`;
-            gmapsScript.async = true;
-            document.head.appendChild(gmapsScript);
-        } catch (error) {
-            console.error('Failed to load Google Maps config:', error);
-        }
-    })();
-</script>
-
 <!-- Image Gallery Functionality -->
 <script>
     function closeImageGallery() {

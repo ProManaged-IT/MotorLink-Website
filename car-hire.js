@@ -55,14 +55,6 @@ document.addEventListener('DOMContentLoaded', function() {
     loadLocations();
     loadCompanies();
 
-    // When Google Maps API finishes loading (async), retry geocoding if we already
-    // have user location (handles the race condition where geolocation resolved first)
-    document.addEventListener('googlemapsloaded', function() {
-        if (userLocation && companies.length > 0) {
-            geocodeAndRenderCompanies();
-        }
-    });
-
     // Desktop search — live filter on input
     const carHireSearch = document.getElementById('carHireSearch');
     if (carHireSearch) {
@@ -980,47 +972,34 @@ function showCarHireStatusHint(html, isError) {
     hint.innerHTML = html;
 }
 
-// Geocode a company address to get coordinates
+// Geocode a company address using Nominatim (OpenStreetMap, free, no API key)
 async function geocodeAddress(address, locationName) {
-    // Validate parameters
     if (!address || !address.trim()) return null;
-    
-    // Create a full address string
-    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : '';
-    const fullAddress = [address, locationName, countryName].map((part) => String(part || '').trim()).filter(Boolean).join(', ');
-    
-    // Check cache first
-    if (geocodedCompanies.has(fullAddress)) {
-        return geocodedCompanies.get(fullAddress);
-    }
-    
-    // Check if Google Maps is available
-    if (typeof google === 'undefined' || !google.maps || !google.maps.Geocoder) {
-        return null; // Maps not loaded yet; geocodeAndRenderCompanies will retry via googlemapsloaded event
-    }
-    
+
+    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : 'Malawi';
+    const fullAddress = [address, locationName, countryName].map(p => String(p || '').trim()).filter(Boolean).join(', ');
+
+    if (geocodedCompanies.has(fullAddress)) return geocodedCompanies.get(fullAddress);
+
+    // Throttle to 1 req/s per Nominatim usage policy
+    const now = Date.now();
+    const elapsed = now - (window._nominatimLastCall || 0);
+    if (elapsed < 1100) await new Promise(r => setTimeout(r, 1100 - elapsed));
+    window._nominatimLastCall = Date.now();
+
     try {
-        const geocoder = new google.maps.Geocoder();
-        
-        return new Promise((resolve) => {
-            geocoder.geocode({ address: fullAddress }, (results, status) => {
-                if (status === 'OK' && results[0]) {
-                    const location = {
-                        lat: results[0].geometry.location.lat(),
-                        lng: results[0].geometry.location.lng()
-                    };
-                    geocodedCompanies.set(fullAddress, location);
-                    resolve(location);
-                } else {
-                    console.log('Geocoding failed for:', fullAddress, status);
-                    resolve(null);
-                }
-            });
-        });
-    } catch (error) {
-        console.error('Error geocoding address:', error);
-        return null;
-    }
+        const resp = await fetch(
+            'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q: fullAddress, format: 'json', limit: '1' }),
+            { headers: { 'Accept': 'application/json', 'User-Agent': 'MotorLink/1.0 (motorlink.mw)' } }
+        );
+        const data = await resp.json();
+        if (data && data[0]) {
+            const location = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+            geocodedCompanies.set(fullAddress, location);
+            return location;
+        }
+    } catch (e) { /* ignore */ }
+    return null;
 }
 
 // Geocode all companies and re-render with distance information
@@ -1029,11 +1008,6 @@ async function geocodeAndRenderCompanies() {
         return;
     }
 
-    // Bail out if Maps API not ready yet; the 'googlemapsloaded' event listener will re-call us
-    if (typeof google === 'undefined' || !google.maps || !google.maps.Geocoder) {
-        return;
-    }
-    
     // Geocode addresses for companies that have addresses
     const geocodePromises = companies
         .filter(company => company.address)

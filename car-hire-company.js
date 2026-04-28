@@ -823,184 +823,90 @@ function copyAddress() {
     }
 }
 
-// Function to initialize Google Map with proper async loading
-function initMap(address) {
-    if (mapInitialized) return;
-    
-    
-    if (typeof google === 'undefined' || !google.maps) {
-        
-        // Create a promise-based Google Maps loader
-        loadGoogleMaps().then(() => {
-            initMapWithAddress(address);
-        }).catch((error) => {
-            showMapError(address);
-        });
-    } else {
-        initMapWithAddress(address);
-    }
-}
-
-// Promise-based Google Maps loader
-function loadGoogleMaps() {
-    return new Promise(async (resolve, reject) => {
-        if (typeof google !== 'undefined' && google.maps) {
-            resolve();
+// Load Leaflet CSS + JS from CDN (free, no API key)
+function loadLeaflet() {
+    return new Promise((resolve, reject) => {
+        if (typeof L !== 'undefined') { resolve(); return; }
+        if (window._leafletLoading) {
+            const t = setInterval(() => { if (typeof L !== 'undefined') { clearInterval(t); resolve(); } }, 50);
             return;
         }
-
-        // Check if we're already loading Google Maps
-        if (window.googleMapsLoading) {
-            // Wait for existing load to complete
-            const checkInterval = setInterval(() => {
-                if (typeof google !== 'undefined' && google.maps) {
-                    clearInterval(checkInterval);
-                    resolve();
-                }
-            }, 100);
-            return;
-        }
-
-        window.googleMapsLoading = true;
-        
-        // Load Google Maps API with marker library for AdvancedMarkerElement
-        const mapConfig = await window.getGoogleMapsConfig();
-        if (!mapConfig || !mapConfig.apiKey) {
-            window.googleMapsLoading = false;
-            reject(new Error('Google Maps API key is not configured'));
-            return;
-        }
-
+        window._leafletLoading = true;
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(css);
         const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${mapConfig.apiKey}&loading=async&libraries=places,marker`;
-        script.async = true;
-        
-        script.onload = () => {
-            // Google Maps loads asynchronously, so we need to wait for it to be ready
-            const checkReady = setInterval(() => {
-                if (typeof google !== 'undefined' && google.maps && google.maps.Map) {
-                    clearInterval(checkReady);
-                    window.googleMapsLoading = false;
-                    resolve();
-                }
-            }, 50);
-
-            // Timeout after 10 seconds
-            setTimeout(() => {
-                clearInterval(checkReady);
-                if (typeof google === 'undefined' || !google.maps) {
-                    window.googleMapsLoading = false;
-                    reject(new Error('Google Maps failed to initialize within timeout period'));
-                }
-            }, 10000);
-        };
-        
-        script.onerror = (error) => {
-            window.googleMapsLoading = false;
-            reject(new Error('Failed to load Google Maps API'));
-        };
-        
+        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        script.onload = () => { window._leafletLoading = false; resolve(); };
+        script.onerror = () => { window._leafletLoading = false; reject(new Error('Leaflet failed to load')); };
         document.head.appendChild(script);
     });
 }
 
-// Separate function to handle the actual map initialization
-function initMapWithAddress(address) {
-    if (mapInitialized) {
-        return;
-    }
-    
-    const mapElement = document.getElementById('companyMap');
-    if (!mapElement) {
-        return;
-    }
-    
-    
+// Geocode an address using Nominatim (OpenStreetMap, completely free)
+async function nominatimGeocode(address) {
+    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : 'Malawi';
+    const q = [address, countryName].filter(Boolean).join(', ');
     try {
-        // Check if geocoder is available
-        if (typeof google === 'undefined' || !google.maps || !google.maps.Geocoder) {
-            throw new Error('Google Maps not properly loaded');
-        }
-        
-        const geocoder = new google.maps.Geocoder();
-        
-        
-        geocoder.geocode({ address: address }, (results, status) => {
-            
-            if (status === 'OK' && results[0]) {
-                try {
-                    const mapOptions = {
-                        zoom: 15,
-                        center: results[0].geometry.location,
-                        mapTypeControl: true,
-                        streetViewControl: true,
-                        fullscreenControl: true
-                    };
+        const resp = await fetch(
+            'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q, format: 'json', limit: '1' }),
+            { headers: { 'Accept': 'application/json', 'User-Agent': 'MotorLink/1.0 (motorlink.mw)' } }
+        );
+        const data = await resp.json();
+        if (data && data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    } catch (e) { /* fall through */ }
+    return null;
+}
 
-                    if (CONFIG.GOOGLE_MAPS_MAP_ID) {
-                        mapOptions.mapId = CONFIG.GOOGLE_MAPS_MAP_ID;
-                    }
+// Initialize map with address using Leaflet + OpenStreetMap (free)
+function initMap(address) {
+    if (mapInitialized) return;
+    loadLeaflet()
+        .then(() => initMapWithAddress(address))
+        .catch(() => showMapError(address));
+}
 
-                    const map = new google.maps.Map(mapElement, mapOptions);
+async function initMapWithAddress(address) {
+    if (mapInitialized) return;
+    const mapElement = document.getElementById('companyMap');
+    if (!mapElement) return;
 
-                    // Create custom marker icon element
-                    const markerIcon = document.createElement('div');
-                    markerIcon.innerHTML = '<i class="fas fa-map-marker-alt" style="font-size: 32px; color: #ff6f00;"></i>';
+    const coords = await nominatimGeocode(address);
+    if (!coords) { showMapError(address); return; }
 
-                    // Use AdvancedMarkerElement (replaces deprecated google.maps.Marker)
-                    const marker = new google.maps.marker.AdvancedMarkerElement({
-                        position: results[0].geometry.location,
-                        map: map,
-                        title: companyData?.business_name || 'Car Hire Company',
-                        content: markerIcon
-                    });
+    try {
+        const map = L.map(mapElement).setView([coords.lat, coords.lng], 15);
 
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(map);
 
-                    // Add info window
-                    const infoWindow = new google.maps.InfoWindow({
-                        content: `
-                            <div style="padding: 10px; max-width: 250px;">
-                                <h3 style="margin: 0 0 8px 0; color: #333; font-size: 16px;">${escapeHtml(companyData?.business_name || 'Car Hire Company')}</h3>
-                                <p style="margin: 0; color: #666; font-size: 14px;">${escapeHtml(address)}</p>
-                                <div style="margin-top: 8px;">
-                                    <a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}" 
-                                       target="_blank" 
-                                       style="color: #ff6f00; text-decoration: none; font-size: 12px;">
-                                        <i class="fas fa-directions"></i> Get Directions
-                                    </a>
-                                </div>
-                            </div>
-                        `
-                    });
-
-                    // Add click listener to marker (AdvancedMarkerElement uses addEventListener)
-                    marker.addEventListener('click', () => {
-                        infoWindow.open({ anchor: marker, map });
-                    });
-
-                    // Also add click listener to map for closing info window
-                    map.addListener('click', () => {
-                        infoWindow.close();
-                    });
-
-                    // Auto-open info window after a short delay
-                    setTimeout(() => {
-                        infoWindow.open({ anchor: marker, map });
-                    }, 1000);
-
-                    mapInitialized = true;
-
-                    // Update the loading state in the UI
-                    mapElement.style.opacity = '1';
-
-                } catch (error) {
-                    showMapError(address);
-                }
-            } else {
-                showMapError(address);
-            }
+        const markerIcon = L.divIcon({
+            html: '<i class="fas fa-map-marker-alt" style="font-size:32px;color:#ff6f00;"></i>',
+            className: '',
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+            popupAnchor: [0, -34]
         });
-    } catch (error) {
+
+        const marker = L.marker([coords.lat, coords.lng], { icon: markerIcon }).addTo(map);
+
+        const popupContent = `
+            <div style="padding:6px;max-width:230px;">
+                <strong style="color:#333;font-size:14px;">${escapeHtml(companyData?.business_name || 'Car Hire Company')}</strong>
+                <p style="margin:4px 0;color:#666;font-size:13px;">${escapeHtml(address)}</p>
+                <a href="https://www.openstreetmap.org/directions?to=${coords.lat},${coords.lng}"
+                   target="_blank" style="color:#ff6f00;font-size:12px;text-decoration:none;">
+                    <i class="fas fa-directions"></i> Get Directions
+                </a>
+            </div>`;
+
+        marker.bindPopup(popupContent).openPopup();
+        mapInitialized = true;
+        mapElement.style.opacity = '1';
+    } catch (e) {
         showMapError(address);
     }
 }

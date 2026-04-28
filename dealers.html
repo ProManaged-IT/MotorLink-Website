@@ -393,48 +393,6 @@
     </div>
 
     <script src="config.js"></script>
-    <script>
-        // Suppress Google Maps analytics errors (gen_204) that are blocked by ad blockers
-        // This doesn't affect Maps functionality, just analytics tracking
-        const originalError = window.onerror;
-        window.onerror = function(msg, url, line, col, error) {
-            // Suppress gen_204 errors (Google Maps analytics blocked by ad blockers)
-            if (msg && (msg.includes('gen_204') || msg.includes('ERR_BLOCKED_BY_CLIENT'))) {
-                return true; // Suppress the error
-            }
-            // Call original error handler if it exists
-            if (originalError) {
-                return originalError.apply(this, arguments);
-            }
-            return false;
-        };
-
-        // Also catch fetch/network errors
-        window.addEventListener('unhandledrejection', function(event) {
-            if (event.reason && event.reason.message && event.reason.message.includes('gen_204')) {
-                event.preventDefault();
-            }
-        });
-
-        // Load Google Maps API for geocoding addresses
-        (async () => {
-            try {
-                const mapConfig = await window.getGoogleMapsConfig();
-                if (!mapConfig || !mapConfig.apiKey) {
-                    return;
-                }
-
-                const gmapsScript = document.createElement('script');
-                gmapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${mapConfig.apiKey}&libraries=places&loading=async`;
-                gmapsScript.async = true;
-                gmapsScript.defer = true;
-                gmapsScript.onload = () => document.dispatchEvent(new CustomEvent('googlemapsloaded'));
-                document.head.appendChild(gmapsScript);
-            } catch (error) {
-                console.error('Failed to load Google Maps config:', error);
-            }
-        })();
-    </script>
     <script src="js/nav-loader.js"></script>
     <script src="js/mobile-menu.js"></script>
     <script src="js/footer-loader.js"></script>
