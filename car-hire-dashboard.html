@@ -9,6 +9,7 @@
 
     <link rel="stylesheet" href="css/common.css">
     <link rel="stylesheet" href="css/business-dashboard.css">
+    <link rel="stylesheet" href="css/reviews.css">
     <link rel="stylesheet" href="css/mobile-enhancements.css">
     <link rel="stylesheet" href="css/mobile-redesign.css">
     <link rel="stylesheet" href="css/price-redesign.css">
@@ -80,6 +81,10 @@
                 <a href="#rentals" class="sidebar-link" data-section="rentals">
                     <i class="fas fa-calendar-check"></i>
                     <span>Rental Requests</span>
+                </a>
+                <a href="#reviews" class="sidebar-link" data-section="reviews">
+                    <i class="fas fa-star"></i>
+                    <span>Reviews</span>
                 </a>
                 <a href="#settings" class="sidebar-link" data-section="settings">
                     <i class="fas fa-cog"></i>
@@ -536,6 +541,16 @@
                 </div>
             </section>
 
+            <!-- Reviews Section -->
+            <section id="reviews" class="dashboard-section">
+                <h1>Reviews</h1>
+                <p class="section-description">Review customer feedback for your car hire company and control the public review section.</p>
+
+                <div class="owner-reviews-panel" data-owner-reviews data-business-type="car_hire" data-request-key="company_id" data-storage-key="motorlink_selected_car_hire_company_id" data-select-id="carHireBusinessSelect">
+                    <div class="owner-review-empty"><i class="fas fa-spinner fa-spin"></i><span>Loading reviews...</span></div>
+                </div>
+            </section>
+
             <!-- Settings Section -->
             <section id="settings" class="dashboard-section">
                 <h1>Settings</h1>
@@ -778,6 +793,7 @@
     <script src="js/model-variations.js"></script>
     <script src="js/form-helpers.js"></script>
     <script src="js/car-hire-dashboard.js"></script>
+    <script src="js/business-owner-reviews.js"></script>
 
     <script src="js/page-transitions.js"></script>
 </body>

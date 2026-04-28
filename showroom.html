@@ -477,7 +477,7 @@
             }
 
             const gmapsScript = document.createElement('script');
-            gmapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${mapConfig.apiKey}&libraries=places,marker&v=beta&loading=async`;
+            gmapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${mapConfig.apiKey}&libraries=places&v=weekly&loading=async`;
             gmapsScript.async = true;
             document.head.appendChild(gmapsScript);
         } catch (error) {

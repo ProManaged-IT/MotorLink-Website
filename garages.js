@@ -1408,7 +1408,7 @@ function createGarageCard(garage) {
     html += `</div>`;
     html += `<h3 class="garage-service-name">${escapeHtml(garage.name)}</h3>`;
     // Avg rating badge (populated from DB)
-    if (!isFromGoogle && garage.avg_rating && parseFloat(garage.avg_rating) > 0) {
+    if (!isFromGoogle && garage.reviews_enabled !== false && garage.avg_rating && parseFloat(garage.avg_rating) > 0) {
         const avg = parseFloat(garage.avg_rating).toFixed(1);
         const cnt = parseInt(garage.review_count || 0);
         html += `<span class="rv-badge"><i class="fas fa-star"></i> ${avg}${cnt > 0 ? `<span class="rv-badge-count">(${cnt})</span>` : ''}</span>`;
@@ -1611,7 +1611,7 @@ function createGarageCard(garage) {
     html += `</div>`; // Close body
     
     // Reviews action (DB-only garages)
-    if (!isFromGoogle) {
+    if (!isFromGoogle && garage.reviews_enabled !== false) {
         html += `<div class="garage-card-reviews-row">
             <button class="rv-badge-btn" onclick="event.stopPropagation(); openGarageReviews(${garage.id}, '${escapeHtml(garage.name).replace(/'/g, "\\'")}')">
                 <i class="fas fa-star"></i> ${garage.avg_rating && parseFloat(garage.avg_rating) > 0 ? 'Reviews & Ratings' : 'Write a Review'}

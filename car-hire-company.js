@@ -186,6 +186,11 @@ async function loadCompanyData(id) {
             const rvContainer = document.getElementById('rv-section-car_hire-container');
             const rvInner = document.getElementById('rv-section-car_hire-inner');
             if (rvContainer && rvInner && typeof rvRenderSection === 'function') {
+                if (companyData.reviews_enabled === false) {
+                    rvContainer.style.display = 'none';
+                    rvInner.innerHTML = '';
+                    return;
+                }
                 rvContainer.style.display = '';
                 rvInner.id = `rv-section-car_hire-${companyData.id}`;
                 rvRenderSection(rvInner, 'car_hire', companyData.id, companyData.business_name);

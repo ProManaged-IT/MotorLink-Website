@@ -3375,6 +3375,7 @@ function handleAICarChat($db) {
             detectDealerQuery($message) ||
             detectGarageQuery($message) ||
             detectFuelPriceQuery($message) ||
+            detectJourneyCostQuery($message) ||
             detectSearchQuery($message) ||
             detectCarSpecQuery($message) ||
             detectCarRecommendationQuery($message) ||
@@ -4396,12 +4397,15 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
 
     $currentRoute = extractJourneyRouteLocations($db, $current);
 
-    if (detectJourneyCostQuery($current) && $currentRoute === null) {
+    // Detect pronoun references like "for this journey", "on this trip", "this route"
+    $isPronounRef = preg_match('/\bthis\s+(journey|trip|route|drive)\b/i', $current) === 1;
+
+    if (detectJourneyCostQuery($current) && $currentRoute === null && !$isPronounRef) {
         return false;
     }
 
     $hasDistanceHint = preg_match('/\b\d+(?:\.\d+)?\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $current) === 1;
-    if (!$hasDistanceHint && $currentRoute === null) {
+    if (!$hasDistanceHint && $currentRoute === null && !$isPronounRef) {
         return false;
     }
 
@@ -4437,6 +4441,15 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
 
     if ($currentRoute !== null) {
         return $current;
+    }
+
+    // For pronoun references, inject the prior route explicitly so the parser finds it cleanly.
+    // e.g. prior: "What about Dedza to Blantyre", current: "... for this journey" => "from Dedza to Blantyre, ..."
+    if ($isPronounRef) {
+        $priorRoute = extractJourneyRouteLocations($db, $priorJourneyMessage);
+        if ($priorRoute !== null) {
+            return 'from ' . $priorRoute['origin'] . ' to ' . $priorRoute['destination'] . ', ' . $current;
+        }
     }
 
     return trim($priorJourneyMessage . ' ' . $current);

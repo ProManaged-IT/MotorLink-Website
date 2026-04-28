@@ -32,3 +32,17 @@ $db->exec("
 ");
 
 echo "✓ business_reviews table ready.\n";
+
+$db->exec("
+    CREATE TABLE IF NOT EXISTS business_review_settings (
+        business_type ENUM('dealer','garage','car_hire') NOT NULL,
+        business_id   INT UNSIGNED NOT NULL,
+        show_reviews  TINYINT(1) NOT NULL DEFAULT 1,
+        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (business_type, business_id),
+        INDEX idx_show_reviews (business_type, show_reviews)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+");
+
+echo "✓ business_review_settings table ready.\n";

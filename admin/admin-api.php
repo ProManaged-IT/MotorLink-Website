@@ -8985,6 +8985,45 @@ function handleClearAllCaches($db) {
 // BUSINESS REVIEWS ADMIN
 // ============================================================================
 
+function adminEnsureBusinessReviewsSchema($db) {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS business_reviews (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            business_type ENUM('dealer','garage','car_hire') NOT NULL,
+            business_id INT UNSIGNED NOT NULL,
+            user_id INT UNSIGNED NOT NULL,
+            rating TINYINT UNSIGNED NOT NULL,
+            review_text TEXT NULL,
+            status ENUM('active','hidden') NOT NULL DEFAULT 'active',
+            created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_user_business (business_type, business_id, user_id),
+            KEY idx_business (business_type, business_id, status),
+            KEY idx_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS business_review_settings (
+            business_type ENUM('dealer','garage','car_hire') NOT NULL,
+            business_id INT UNSIGNED NOT NULL,
+            show_reviews TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (business_type, business_id),
+            KEY idx_show_reviews (business_type, show_reviews)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $ensured = true;
+}
+
 /**
  * List reviews with filters, joins to users + business names.
  * GET ?action=get_business_reviews&business_type=&status=&search=&limit=
@@ -8993,6 +9032,7 @@ function handleGetBusinessReviews($db) {
     requireAdmin();
 
     try {
+        adminEnsureBusinessReviewsSchema($db);
         $where = ["1=1"];
         $params = [];
 
@@ -9062,6 +9102,7 @@ function handleUpdateBusinessReviewStatus($db) {
     }
 
     try {
+        adminEnsureBusinessReviewsSchema($db);
         $input = json_decode(file_get_contents('php://input'), true) ?? [];
         $reviewId = (int)($input['review_id'] ?? 0);
         $status   = trim((string)($input['status'] ?? ''));
@@ -9100,6 +9141,7 @@ function handleDeleteBusinessReview($db) {
     }
 
     try {
+        adminEnsureBusinessReviewsSchema($db);
         $input = json_decode(file_get_contents('php://input'), true) ?? [];
         $reviewId = (int)($input['review_id'] ?? 0);
 

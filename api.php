@@ -1677,6 +1677,8 @@ try {
         case 'get_reviews': getBusinessReviews($db); break;
         case 'submit_review': requireAuth(); submitBusinessReview($db); break;
         case 'check_user_review': requireAuth(); checkUserReview($db); break;
+        case 'get_my_business_reviews': requireAuth(); getMyBusinessReviews($db); break;
+        case 'update_business_review_settings': requireAuth(); updateBusinessReviewSettings($db); break;
 
         // ====================================================================
         // MESSAGING ENDPOINTS
@@ -2569,6 +2571,7 @@ function deleteListingImage($db) {
  */
 function getGarages($db) {
     try {
+        ensureBusinessReviewsSchema($db);
         // Build the query with filters
         $whereConditions = ["g.status = 'active'"];
         $params = [];
@@ -2624,7 +2627,9 @@ function getGarages($db) {
                    (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
                     WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as avg_rating,
                    (SELECT COUNT(*) FROM business_reviews r
-                    WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as review_count
+                    WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as review_count,
+                   COALESCE((SELECT s.show_reviews FROM business_review_settings s
+                    WHERE s.business_type = 'garage' AND s.business_id = g.id LIMIT 1), 1) as reviews_enabled
             FROM garages g
             INNER JOIN locations loc ON g.location_id = loc.id
             WHERE {$whereClause}
@@ -2637,6 +2642,7 @@ function getGarages($db) {
         
         // Format the response
         $formattedGarages = array_map(function($garage) {
+            $reviewsEnabled = (bool)($garage['reviews_enabled'] ?? 1);
             return [
                 'id' => $garage['id'],
                 'name' => $garage['name'],
@@ -2672,8 +2678,9 @@ function getGarages($db) {
                 'status' => $garage['status'],
                 'created_at' => $garage['created_at'],
                 'updated_at' => $garage['updated_at'],
-                'avg_rating' => $garage['avg_rating'] ? (float)$garage['avg_rating'] : null,
-                'review_count' => (int)($garage['review_count'] ?? 0),
+                'avg_rating' => $reviewsEnabled && $garage['avg_rating'] ? (float)$garage['avg_rating'] : null,
+                'review_count' => $reviewsEnabled ? (int)($garage['review_count'] ?? 0) : 0,
+                'reviews_enabled' => $reviewsEnabled,
             ];
         }, $garages);
         
@@ -2689,6 +2696,7 @@ function getGarages($db) {
  */
 function getDealers($db) {
     try {
+        ensureBusinessReviewsSchema($db);
         $stmt = $db->query("
             SELECT d.*, loc.name as location_name, loc.region, loc.district,
                    (SELECT COUNT(*) 
@@ -2698,7 +2706,9 @@ function getDealers($db) {
                    (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
                     WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as avg_rating,
                    (SELECT COUNT(*) FROM business_reviews r
-                    WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as review_count
+                    WHERE r.business_type = 'dealer' AND r.business_id = d.id AND r.status = 'active') as review_count,
+                   COALESCE((SELECT s.show_reviews FROM business_review_settings s
+                    WHERE s.business_type = 'dealer' AND s.business_id = d.id LIMIT 1), 1) as reviews_enabled
             FROM car_dealers d
             INNER JOIN locations loc ON d.location_id = loc.id
             WHERE d.status = 'active'
@@ -2709,6 +2719,11 @@ function getDealers($db) {
         foreach ($dealers as &$dealer) {
             if (!empty($dealer['logo_url']) && !file_exists(__DIR__ . '/' . ltrim($dealer['logo_url'], '/'))) {
                 $dealer['logo_url'] = null;
+            }
+            $dealer['reviews_enabled'] = (bool)($dealer['reviews_enabled'] ?? 1);
+            if (!$dealer['reviews_enabled']) {
+                $dealer['avg_rating'] = null;
+                $dealer['review_count'] = 0;
             }
         }
         unset($dealer);
@@ -2729,6 +2744,7 @@ function getDealerShowroom($db) {
     }
     
     try {
+        ensureBusinessReviewsSchema($db);
         // Get dealer info and associated owner user_id
         $stmt = $db->prepare("
             SELECT d.*, loc.name as location_name, loc.region, COALESCE(d.user_id, u.id) as owner_user_id
@@ -2743,6 +2759,7 @@ function getDealerShowroom($db) {
         if (!$dealer) {
             sendError('Dealer not found', 404);
         }
+        attachBusinessReviewMeta($db, 'dealer', $dealer);
         
         // Get dealer's car listings (approved only) using user_id
         $stmt = $db->prepare("
@@ -2781,18 +2798,29 @@ function getDealerShowroom($db) {
  */
 function getCarHire($db) {
     try {
+        ensureBusinessReviewsSchema($db);
         $stmt = $db->query("
             SELECT c.*, loc.name as location_name, loc.region, loc.district,
                    (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
                     WHERE r.business_type = 'car_hire' AND r.business_id = c.id AND r.status = 'active') as avg_rating,
                    (SELECT COUNT(*) FROM business_reviews r
-                    WHERE r.business_type = 'car_hire' AND r.business_id = c.id AND r.status = 'active') as review_count
+                    WHERE r.business_type = 'car_hire' AND r.business_id = c.id AND r.status = 'active') as review_count,
+                   COALESCE((SELECT s.show_reviews FROM business_review_settings s
+                    WHERE s.business_type = 'car_hire' AND s.business_id = c.id LIMIT 1), 1) as reviews_enabled
             FROM car_hire_companies c
             INNER JOIN locations loc ON c.location_id = loc.id
             WHERE c.status = 'active'
             ORDER BY c.featured DESC, c.certified DESC, c.verified DESC, c.business_name ASC
         ");
         $companies = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($companies as &$company) {
+            $company['reviews_enabled'] = (bool)($company['reviews_enabled'] ?? 1);
+            if (!$company['reviews_enabled']) {
+                $company['avg_rating'] = null;
+                $company['review_count'] = 0;
+            }
+        }
+        unset($company);
         sendSuccess(['car_hire' => $companies]);
     } catch (Exception $e) {
         error_log("getCarHire error: " . $e->getMessage());
@@ -2805,6 +2833,7 @@ function getCarHire($db) {
  */
 function getCarHireCompaniesWithFleet($db) {
     try {
+        ensureBusinessReviewsSchema($db);
         $stmt = $db->query("
             SELECT c.*, loc.name as location_name, loc.region, loc.district,
                    COUNT(f.id) as total_vehicles,
@@ -2818,7 +2847,9 @@ function getCarHireCompaniesWithFleet($db) {
                      (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
                       WHERE r.business_type = 'car_hire' AND r.business_id = c.id AND r.status = 'active') as avg_rating,
                      (SELECT COUNT(*) FROM business_reviews r
-                      WHERE r.business_type = 'car_hire' AND r.business_id = c.id AND r.status = 'active') as review_count
+                      WHERE r.business_type = 'car_hire' AND r.business_id = c.id AND r.status = 'active') as review_count,
+                     COALESCE((SELECT s.show_reviews FROM business_review_settings s
+                      WHERE s.business_type = 'car_hire' AND s.business_id = c.id LIMIT 1), 1) as reviews_enabled
             FROM car_hire_companies c
             INNER JOIN locations loc ON c.location_id = loc.id
             LEFT JOIN car_hire_fleet f ON c.id = f.company_id AND f.is_active = 1
@@ -2832,6 +2863,11 @@ function getCarHireCompaniesWithFleet($db) {
         foreach ($companies as &$company) {
             if (!empty($company['logo_url']) && !file_exists(__DIR__ . '/' . ltrim($company['logo_url'], '/'))) {
                 $company['logo_url'] = null;
+            }
+            $company['reviews_enabled'] = (bool)($company['reviews_enabled'] ?? 1);
+            if (!$company['reviews_enabled']) {
+                $company['avg_rating'] = null;
+                $company['review_count'] = 0;
             }
         }
         unset($company);
@@ -2867,6 +2903,7 @@ function getCarHireCompany($db) {
     }
     
     try {
+        ensureBusinessReviewsSchema($db);
         $stmt = $db->prepare("
             SELECT c.*, loc.name as location_name, loc.region,
                    COUNT(f.id) as total_vehicles,
@@ -2885,6 +2922,7 @@ function getCarHireCompany($db) {
         if (!$company) {
             sendError('Company not found', 404);
         }
+        attachBusinessReviewMeta($db, 'car_hire', $company);
         
         sendSuccess(['company' => $company]);
     } catch (Exception $e) {
@@ -5905,6 +5943,19 @@ function getBusinessReviews($db) {
             sendError('Business not found', 404);
         }
 
+        $settings = getBusinessReviewSettings($db, $businessType, $businessId);
+        if (!$settings['show_reviews']) {
+            sendSuccess([
+                'reviews_enabled' => false,
+                'reviews' => [],
+                'aggregate' => [
+                    'total' => 0,
+                    'average' => 0,
+                    'distribution' => [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0]
+                ]
+            ]);
+        }
+
         $stmt = $db->prepare("
             SELECT br.id, br.rating, br.review_text, br.created_at,
                    u.full_name AS reviewer_name
@@ -5928,8 +5979,9 @@ function getBusinessReviews($db) {
         }
 
         sendSuccess([
-            'reviews'   => $reviews,
-            'aggregate' => [
+            'reviews_enabled' => (bool)$settings['show_reviews'],
+            'reviews'         => $reviews,
+            'aggregate'       => [
                 'total'        => $total,
                 'average'      => $avg,
                 'distribution' => $dist,
@@ -5951,7 +6003,11 @@ function submitBusinessReview($db) {
     }
 
     $user  = getCurrentUser(true);
-    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $rawInput = file_get_contents('php://input');
+    $input = json_decode($rawInput, true);
+    if (!is_array($input)) {
+        sendError('Invalid review payload', 400);
+    }
 
     $businessType = strtolower(trim((string)($input['business_type'] ?? '')));
     $businessId   = (int)($input['business_id'] ?? 0);
@@ -6034,6 +6090,97 @@ function checkUserReview($db) {
     }
 }
 
+/**
+ * Owner dashboard: list all reviews for the selected business plus display settings.
+ * GET ?action=get_my_business_reviews&business_type=dealer|garage|car_hire&business_id=X
+ */
+function getMyBusinessReviews($db) {
+    $businessType = strtolower(trim((string)($_GET['business_type'] ?? '')));
+    if (!in_array($businessType, ['dealer', 'garage', 'car_hire'], true)) {
+        sendError('Valid business_type required', 400);
+    }
+
+    $map = getBusinessTypeMap();
+    $requestKey = $map[$businessType]['request_key'] ?? 'business_id';
+    $requestedId = (int)($_GET[$requestKey] ?? $_GET['business_id'] ?? getRequestedBusinessId($businessType));
+    [$user, $business] = resolveUserBusiness($db, $businessType, $map[$businessType]['label'], $requestedId);
+
+    try {
+        ensureBusinessReviewsSchema($db);
+        $businessId = (int)$business['id'];
+        $settings = getBusinessReviewSettings($db, $businessType, $businessId);
+        $summary = getBusinessReviewAggregate($db, $businessType, $businessId, true);
+
+        $stmt = $db->prepare("
+            SELECT br.id, br.rating, br.review_text, br.status, br.created_at, br.updated_at,
+                   u.full_name AS reviewer_name
+            FROM business_reviews br
+            INNER JOIN users u ON br.user_id = u.id
+            WHERE br.business_type = ? AND br.business_id = ?
+            ORDER BY br.created_at DESC
+            LIMIT 200
+        ");
+        $stmt->execute([$businessType, $businessId]);
+
+        sendSuccess([
+            'business' => [
+                'id' => $businessId,
+                'type' => $businessType,
+                'name' => $business[$map[$businessType]['name_field']] ?? $map[$businessType]['label']
+            ],
+            'settings' => $settings,
+            'aggregate' => $summary,
+            'reviews' => $stmt->fetchAll(PDO::FETCH_ASSOC)
+        ]);
+    } catch (Exception $e) {
+        error_log('getMyBusinessReviews error: ' . $e->getMessage());
+        sendError('Failed to load business reviews', 500);
+    }
+}
+
+/**
+ * Owner dashboard: choose whether public dealer/garage/car-hire page shows the review section.
+ * POST ?action=update_business_review_settings body/form: { business_type, business_id, show_reviews }
+ */
+function updateBusinessReviewSettings($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendError('POST method required', 405);
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        $input = $_POST;
+    }
+
+    $businessType = strtolower(trim((string)($input['business_type'] ?? '')));
+    if (!in_array($businessType, ['dealer', 'garage', 'car_hire'], true)) {
+        sendError('Valid business_type required', 400);
+    }
+
+    $showReviewsRaw = $input['show_reviews'] ?? 1;
+    $showReviews = filter_var($showReviewsRaw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    if ($showReviews === null) {
+        $showReviews = ((string)$showReviewsRaw) === '1';
+    }
+
+    $map = getBusinessTypeMap();
+    $requestKey = $map[$businessType]['request_key'] ?? 'business_id';
+    $requestedId = (int)($input[$requestKey] ?? $input['business_id'] ?? getRequestedBusinessId($businessType));
+    [$user, $business] = resolveUserBusiness($db, $businessType, $map[$businessType]['label'], $requestedId);
+
+    try {
+        ensureBusinessReviewsSchema($db);
+        saveBusinessReviewSettings($db, $businessType, (int)$business['id'], $showReviews ? 1 : 0);
+        sendSuccess([
+            'message' => $showReviews ? 'Review section is now visible on your public page.' : 'Review section is now hidden from your public page.',
+            'settings' => getBusinessReviewSettings($db, $businessType, (int)$business['id'])
+        ]);
+    } catch (Exception $e) {
+        error_log('updateBusinessReviewSettings error: ' . $e->getMessage());
+        sendError('Failed to update review settings', 500);
+    }
+}
+
 function ensureBusinessReviewsSchema($db) {
     static $ensured = false;
     if ($ensured) {
@@ -6058,7 +6205,84 @@ function ensureBusinessReviewsSchema($db) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS business_review_settings (
+            business_type ENUM('dealer','garage','car_hire') NOT NULL,
+            business_id INT UNSIGNED NOT NULL,
+            show_reviews TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (business_type, business_id),
+            KEY idx_show_reviews (business_type, show_reviews)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
     $ensured = true;
+}
+
+function getBusinessReviewSettings($db, $businessType, $businessId) {
+    $stmt = $db->prepare("SELECT show_reviews FROM business_review_settings WHERE business_type = ? AND business_id = ? LIMIT 1");
+    $stmt->execute([$businessType, (int)$businessId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return [
+        'show_reviews' => !$row || (int)$row['show_reviews'] === 1
+    ];
+}
+
+function saveBusinessReviewSettings($db, $businessType, $businessId, $showReviews) {
+    $stmt = $db->prepare("
+        INSERT INTO business_review_settings (business_type, business_id, show_reviews, updated_at)
+        VALUES (?, ?, ?, NOW())
+        ON DUPLICATE KEY UPDATE show_reviews = VALUES(show_reviews), updated_at = NOW()
+    ");
+    $stmt->execute([$businessType, (int)$businessId, (int)$showReviews]);
+}
+
+function getBusinessReviewAggregate($db, $businessType, $businessId, $includeHidden = false) {
+    $statusSql = $includeHidden ? '' : " AND status = 'active'";
+    $stmt = $db->prepare("
+        SELECT
+            COUNT(*) AS total,
+            ROUND(AVG(rating), 1) AS average,
+            SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_count,
+            SUM(CASE WHEN status = 'hidden' THEN 1 ELSE 0 END) AS hidden_count,
+            SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END) AS star_5,
+            SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END) AS star_4,
+            SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END) AS star_3,
+            SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END) AS star_2,
+            SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) AS star_1
+        FROM business_reviews
+        WHERE business_type = ? AND business_id = ?{$statusSql}
+    ");
+    $stmt->execute([$businessType, (int)$businessId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    return [
+        'total' => (int)($row['total'] ?? 0),
+        'average' => isset($row['average']) ? (float)$row['average'] : 0,
+        'active' => (int)($row['active_count'] ?? 0),
+        'hidden' => (int)($row['hidden_count'] ?? 0),
+        'distribution' => [
+            1 => (int)($row['star_1'] ?? 0),
+            2 => (int)($row['star_2'] ?? 0),
+            3 => (int)($row['star_3'] ?? 0),
+            4 => (int)($row['star_4'] ?? 0),
+            5 => (int)($row['star_5'] ?? 0),
+        ]
+    ];
+}
+
+function attachBusinessReviewMeta($db, $businessType, &$business) {
+    if (!$business || empty($business['id'])) {
+        return;
+    }
+
+    $settings = getBusinessReviewSettings($db, $businessType, (int)$business['id']);
+    $aggregate = getBusinessReviewAggregate($db, $businessType, (int)$business['id']);
+    $business['reviews_enabled'] = (bool)$settings['show_reviews'];
+    $business['avg_rating'] = $aggregate['total'] > 0 ? $aggregate['average'] : null;
+    $business['review_count'] = $aggregate['total'];
 }
 
 function businessReviewTargetExists($db, $businessType, $businessId) {
@@ -7414,6 +7638,7 @@ function getDealerInfo($db) {
     [$user, $selectedDealer, $dealers] = resolveUserBusiness($db, 'dealer', 'Dealer', getRequestedBusinessId('dealer'));
 
     try {
+        ensureBusinessReviewsSchema($db);
         // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
         applyRuntimeSchemaChange($db, "ALTER TABLE car_dealers ADD COLUMN user_id INT DEFAULT NULL");
 
@@ -7430,6 +7655,7 @@ function getDealerInfo($db) {
         ");
         $stmt->execute([(int)$selectedDealer['id'], (int)$user['id']]);
         $dealer = $stmt->fetch(PDO::FETCH_ASSOC);
+        attachBusinessReviewMeta($db, 'dealer', $dealer);
 
         sendSuccess([
             'dealer' => $dealer,
@@ -7984,6 +8210,7 @@ function getGarageInfo($db) {
     [$user, $selectedGarage, $garages] = resolveUserBusiness($db, 'garage', 'Garage', getRequestedBusinessId('garage'));
 
     try {
+        ensureBusinessReviewsSchema($db);
         // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
         applyRuntimeSchemaChange($db, "ALTER TABLE garages ADD COLUMN user_id INT DEFAULT NULL");
 
@@ -7998,6 +8225,7 @@ function getGarageInfo($db) {
         ");
         $stmt->execute([(int)$selectedGarage['id'], (int)$user['id']]);
         $garage = $stmt->fetch(PDO::FETCH_ASSOC);
+        attachBusinessReviewMeta($db, 'garage', $garage);
 
         sendSuccess([
             'garage' => $garage,
@@ -8276,6 +8504,7 @@ function getCarHireCompanyInfo($db) {
     [$user, $selectedCompany, $companies] = resolveUserBusiness($db, 'car_hire', 'Car hire', getRequestedBusinessId('car_hire'));
 
     try {
+        ensureBusinessReviewsSchema($db);
         // Ensure user_id column exists only when explicitly enabled for runtime schema updates.
         applyRuntimeSchemaChange($db, "ALTER TABLE car_hire_companies ADD COLUMN user_id INT DEFAULT NULL");
 
@@ -8290,6 +8519,7 @@ function getCarHireCompanyInfo($db) {
         ");
         $stmt->execute([(int)$selectedCompany['id'], (int)$user['id']]);
         $company = $stmt->fetch(PDO::FETCH_ASSOC);
+        attachBusinessReviewMeta($db, 'car_hire', $company);
 
         sendSuccess([
             'company' => $company,
