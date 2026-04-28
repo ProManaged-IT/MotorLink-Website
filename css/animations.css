@@ -630,19 +630,96 @@ body {
    PERFORMANCE OPTIMIZATIONS
    ============================================================================ */
 
-/* Use GPU acceleration */
+/* Keep text-heavy surfaces crisp: avoid permanent GPU layer promotion. */
 .hero,
 .hero-stat,
 .card-loading,
-.interactive-card {
-    will-change: transform;
-    backface-visibility: hidden;
-    -webkit-font-smoothing: antialiased;
+.interactive-card,
+.service-card,
+.dashboard-card {
+    will-change: auto;
+    backface-visibility: visible;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+    text-rendering: auto;
 }
 
-/* Service cards: keep text crisp — no GPU layer promotion */
-.service-card {
+body,
+button,
+input,
+select,
+textarea,
+.hero,
+.garage-hero,
+.dealers-hero,
+.car-hire-hero,
+.service-card,
+.car-card,
+.listing-card,
+.garage-card,
+.garage-service-card,
+.dealer-card,
+.dealer-business-card,
+.company-card,
+.fleet-card,
+.business-card,
+.interactive-card,
+.dashboard-card {
     -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+    text-rendering: auto;
+}
+
+.hero h1,
+.hero p,
+.hero-subtitle,
+.garage-hero h1,
+.garage-hero .hero-subtitle,
+.dealers-hero h1,
+.dealers-hero p,
+.car-hire-hero h1,
+.car-hire-hero .hero-subtitle,
+.car-hire-hero p,
+.service-card h3,
+.service-card p,
+.car-card h3,
+.car-card p,
+.listing-card h3,
+.listing-card p,
+.garage-card h3,
+.garage-card p,
+.dealer-card h3,
+.dealer-card p,
+.company-card h3,
+.company-card p,
+.fleet-card h3,
+.fleet-card p,
+.meta-item,
+.company-description p,
+.hero-stat-number,
+.hero-stat-label,
+.dealers-stat-number,
+.dealers-stat-label,
+.car-hire-stat-number,
+.car-hire-stat-label {
+    text-shadow: none !important;
+}
+
+.hero-stat,
+.dealers-stat,
+.car-hire-stat,
+.highlight-item,
+.district-tag,
+.location-status-hero,
+.quick-contact-box,
+.company-description,
+.feature-box,
+.listing-type-badge,
+.image-count,
+.carousel-nav,
+.carousel-dots {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 /* Reduce motion for accessibility */

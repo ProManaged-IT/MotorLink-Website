@@ -911,7 +911,7 @@ footer.footer .container {
 
     body {
         overflow-x: hidden;
-        text-rendering: optimizeLegibility;
+        text-rendering: auto;
     }
 
     /* Keep touch targets accessible across pages. */

@@ -3255,6 +3255,16 @@ function handleAICarChat($db) {
             return;
         }
 
+        // Resolve journey-cost follow-ups before generic location follow-ups.
+        // Example: previous trip-cost answer, current: "What about Dedza to Blantyre".
+        $journeyFollowUpMessage = buildJourneyCostFollowUpMessage($db, $message, $conversationHistory);
+        if ($journeyFollowUpMessage !== false) {
+            updateAIChatPersistenceContext(['resolved_message' => $journeyFollowUpMessage]);
+            $logDeterministicUsage();
+            handleJourneyCostQuery($db, $journeyFollowUpMessage, $conversationHistory, $userContext ?? null);
+            return;
+        }
+
         // Resolve contextual location follow-ups like "What about Salima"
         // by reusing the previous car-search intent.
         $locationFollowUpMessage = buildLocationFollowUpSearchMessage($db, $message, $conversationHistory);
@@ -3347,17 +3357,6 @@ function handleAICarChat($db) {
             updateAIChatPersistenceContext(['resolved_message' => $carHireFollowUpMessage]);
             $logDeterministicUsage();
             handleCarHireQuery($db, $carHireFollowUpMessage, $conversationHistory);
-            return;
-        }
-
-        // Resolve short journey-cost follow-ups like
-        // previous: "How much would it cost me to drive from Lilongwe to Dedza in a Hilux 2020 2.8 litre engine"
-        // current: "The trip is about 50km"
-        $journeyFollowUpMessage = buildJourneyCostFollowUpMessage($db, $message, $conversationHistory);
-        if ($journeyFollowUpMessage !== false) {
-            updateAIChatPersistenceContext(['resolved_message' => $journeyFollowUpMessage]);
-            $logDeterministicUsage();
-            handleJourneyCostQuery($db, $journeyFollowUpMessage, $conversationHistory, $userContext ?? null);
             return;
         }
 
@@ -4395,12 +4394,14 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
         return false;
     }
 
-    if (detectJourneyCostQuery($current)) {
+    $currentRoute = extractJourneyRouteLocations($db, $current);
+
+    if (detectJourneyCostQuery($current) && $currentRoute === null) {
         return false;
     }
 
     $hasDistanceHint = preg_match('/\b\d+(?:\.\d+)?\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $current) === 1;
-    if (!$hasDistanceHint) {
+    if (!$hasDistanceHint && $currentRoute === null) {
         return false;
     }
 
@@ -4434,6 +4435,10 @@ function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
         return false;
     }
 
+    if ($currentRoute !== null) {
+        return $current;
+    }
+
     return trim($priorJourneyMessage . ' ' . $current);
 }
 
@@ -4443,6 +4448,7 @@ function trimJourneyRouteLocationCandidate($value) {
         return '';
     }
 
+    $value = preg_replace('/^\s*(?:what\s+about|how\s+about|about|and|then|try|route|journey)\s+/i', '', $value);
     $value = preg_replace('/\b(?:malawi)\b/i', ' ', $value);
     $value = preg_replace('/\b(?:in\s+a|in\s+an|with\s+a|with\s+an|using|for|cost|price|today|right\s+now|please|thanks)\b.*$/i', '', (string)$value);
     $value = preg_replace('/[^\p{L}\p{N}\s\-]/u', ' ', (string)$value);
@@ -4480,14 +4486,16 @@ function extractJourneyRouteLocations($db, $message) {
 
     $patterns = [
         '/\bfrom\s+(.+?)\s+to\s+(.+?)(?=\s+(?:in\s+a|in\s+an|with\s+a|with\s+an|using|for|cost|price|today|right\s+now|please)\b|[?.!,]|$)/i',
-        '/\bfrom\s+(.+?)\s+to\s+(.+)$/i'
+        '/\bfrom\s+(.+?)\s+to\s+(.+)$/i',
+        '/\b((?:what\s+about|how\s+about|about|and|then|try|route|journey)?\s*[\p{L}][\p{L}\s\-]{1,70}?)\s+to\s+([\p{L}][\p{L}\s\-]{1,70}?)(?=\s+(?:in\s+a|in\s+an|with\s+a|with\s+an|using|for|cost|price|today|right\s+now|please)\b|[?.!,]|$)/iu'
     ];
 
     foreach ($patterns as $pattern) {
-        if (!preg_match($pattern, $normalized, $matches)) {
+        if (!preg_match_all($pattern, $normalized, $allMatches, PREG_SET_ORDER) || empty($allMatches)) {
             continue;
         }
 
+        $matches = end($allMatches);
         $origin = resolveJourneyLocationName($db, $matches[1] ?? '');
         $destination = resolveJourneyLocationName($db, $matches[2] ?? '');
 
@@ -4664,24 +4672,24 @@ function inferJourneyVehicleProfile($message, $conversationHistory) {
 
     $combinedLower = strtolower($combined);
 
-    if (preg_match('/\bdiesel\b/i', $combined)) {
-        return ['fuel_type' => 'diesel', 'consumption' => null, 'assumption' => 'diesel mentioned in the conversation'];
-    }
-    if (preg_match('/\bpetrol\b/i', $combined)) {
-        return ['fuel_type' => 'petrol', 'consumption' => null, 'assumption' => 'petrol mentioned in the conversation'];
-    }
-
     if (preg_match('/\bhilux\b/i', $combined) && preg_match('/\b2\.8(?=\s*(?:l|litre|liter)?\b)/i', $combined)) {
-        return ['fuel_type' => 'diesel', 'consumption' => 8.5, 'assumption' => 'assuming the common Toyota Hilux 2.8 diesel profile'];
+        return ['fuel_type' => 'diesel', 'consumption' => 8.5, 'assumption' => 'fuel/consumption inferred from the Toyota Hilux 2.8 diesel vehicle context'];
     }
 
     if (preg_match('/\b(fortuner|prado|hilux|ranger|bt-50|navara|np300|d-max|land cruiser|landcruiser)\b/i', $combined)
         && preg_match('/\b(2\.4|2\.5|2\.8|3\.0|3\.2|4\.2)(?=\s*(?:l|litre|liter)?\b)/i', $combined)) {
-        return ['fuel_type' => 'diesel', 'consumption' => 8.8, 'assumption' => 'assuming a typical diesel consumption for that engine and vehicle class'];
+        return ['fuel_type' => 'diesel', 'consumption' => 8.8, 'assumption' => 'fuel/consumption inferred from the diesel engine and vehicle-class context'];
+    }
+
+    if (preg_match('/\bdiesel\b/i', $combined)) {
+        return ['fuel_type' => 'diesel', 'consumption' => null, 'assumption' => 'diesel fuel type carried from the conversation context'];
+    }
+    if (preg_match('/\bpetrol\b/i', $combined)) {
+        return ['fuel_type' => 'petrol', 'consumption' => null, 'assumption' => 'petrol fuel type carried from the conversation context'];
     }
 
     if (preg_match('/\bpickup|truck\b/i', $combinedLower)) {
-        return ['fuel_type' => 'diesel', 'consumption' => 9.0, 'assumption' => 'assuming a diesel pickup fuel profile'];
+        return ['fuel_type' => 'diesel', 'consumption' => 9.0, 'assumption' => 'fuel/consumption inferred from pickup vehicle-class context'];
     }
 
     return ['fuel_type' => '', 'consumption' => null, 'assumption' => ''];
@@ -4880,7 +4888,7 @@ function handleJourneyCostQuery($db, $message, $conversationHistory, $userContex
         }
         $response .= "- Consumption used: " . number_format($consumption, 1) . " L/100km ({$fuelType})\n";
         if ($fuelAssumption !== '') {
-            $response .= "- Vehicle assumption: {$fuelAssumption}\n";
+            $response .= "- Vehicle context: {$fuelAssumption}\n";
         }
         $response .= "- Fuel needed: " . number_format($litersNeeded, 2) . " L\n";
         $response .= "- Fuel price: {$displaySymbol} " . number_format($displayPrice, $displayDecimals) . "/L\n";

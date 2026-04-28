@@ -116,9 +116,9 @@ body {
     line-height: 1.6;
     color: var(--text-primary);
     background: var(--bg-light);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+    text-rendering: auto;
     font-kerning: normal;
     padding-top: 70px; /* Add space for fixed header */
     min-height: 100vh;
@@ -1454,7 +1454,7 @@ footer.footer:last-child {
     margin-bottom: 12px;
     line-height: 1.2;
     letter-spacing: -0.02em;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+    text-shadow: none;
     animation: fadeInUp 0.8s ease-out;
 }
 
@@ -1514,7 +1514,7 @@ footer.footer:last-child {
     margin-right: auto;
     line-height: 1.5;
     letter-spacing: 0.01em;
-    text-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+    text-shadow: none;
     animation: fadeInUp 0.8s ease-out 0.2s both;
 }
 
@@ -1590,9 +1590,10 @@ footer.footer:last-child {
 .car-hire-stat {
     text-align: center;
     padding: 20px 16px;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.2);
     border-radius: 14px;
-    backdrop-filter: blur(10px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     border: 1px solid rgba(255, 255, 255, 0.25);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
@@ -1617,7 +1618,7 @@ footer.footer:last-child {
     margin-bottom: 4px;
     display: block;
     letter-spacing: -0.02em;
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    text-shadow: none;
 }
 
 @media (min-width: 768px) {

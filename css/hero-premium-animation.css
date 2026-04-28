@@ -72,24 +72,20 @@
 .hero h1 {
     position: relative;
     animation: heroTitlePremium 1s cubic-bezier(0.16, 1, 0.3, 1) 0.2s backwards;
-    text-shadow: 0 2px 20px rgba(0, 0, 0, 0.2),
-                 0 4px 40px rgba(0, 200, 83, 0.1);
+    text-shadow: none;
 }
 
 @keyframes heroTitlePremium {
     0% {
         opacity: 0;
         transform: translateY(40px) scale(0.95);
-        filter: blur(10px);
     }
     60% {
         transform: translateY(-5px) scale(1.02);
-        filter: blur(2px);
     }
     100% {
         opacity: 1;
         transform: translateY(0) scale(1);
-        filter: blur(0);
     }
 }
 
@@ -104,12 +100,10 @@
     0% {
         opacity: 0;
         transform: translateY(30px);
-        filter: blur(8px);
     }
     100% {
         opacity: 0.95;
         transform: translateY(0);
-        filter: blur(0);
     }
 }
 
@@ -124,9 +118,9 @@
     position: relative;
     transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     opacity: 1 !important;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    background: rgba(255, 255, 255, 0.18) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.24) !important;
     border: 1px solid rgba(255, 255, 255, 0.3) !important;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1),
                 inset 0 1px 0 rgba(255, 255, 255, 0.2),
@@ -153,15 +147,13 @@
     display: inline-block;
     position: relative;
     transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.2),
-                 0 1px 4px rgba(255, 255, 255, 0.1);
+    text-shadow: none;
     font-weight: 700;
 }
 
 .hero-stat:hover .hero-stat-number {
     transform: scale(1.08);
-    text-shadow: 0 3px 16px rgba(0, 0, 0, 0.25),
-                 0 2px 6px rgba(255, 255, 255, 0.2);
+    text-shadow: none;
 }
 
 /* Mobile optimizations */
