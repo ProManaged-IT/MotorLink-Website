@@ -986,7 +986,7 @@ class AICarChat {
         }
     }
 
-    startSendFailsafe(input, sendBtn, timeoutMs = 22000) {
+    startSendFailsafe(input, sendBtn, timeoutMs = 60000) {
         this.clearSendFailsafe();
         this.currentSendFailsafeTimeout = setTimeout(() => {
             if (!this.isSending || this.currentRetryTimeout) {
@@ -1179,7 +1179,7 @@ class AICarChat {
         clearTimeout(this._blockHeaderToggleTimeout);
         this._blockHeaderToggleTimeout = setTimeout(() => { this._blockHeaderToggle = false; }, 600);
         this.setInputSendingState(true, retryAttempt);
-        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 50000 : 39000);
+        this.startSendFailsafe(input, sendBtn, retryAttempt > 0 ? 75000 : 60000);
 
         // Show compact in-chat typing indicator
         this.showTypingIndicator();
@@ -1191,8 +1191,9 @@ class AICarChat {
             const controller = new AbortController();
             const locationContext = await this.resolveLocationContextForMessage(message);
             // Allow realistic server time on live networks without forcing premature aborts.
-            const base = 32000;
-            const timeoutDuration = retryAttempt > 0 ? 43000 : base;
+            // AI fallback (when DB has no result) can take up to ~45s on the first attempt.
+            const base = 55000;
+            const timeoutDuration = retryAttempt > 0 ? 70000 : base;
             timeoutId = setTimeout(() => {
                 abortReason = 'timeout';
                 controller.abort('request_timeout');

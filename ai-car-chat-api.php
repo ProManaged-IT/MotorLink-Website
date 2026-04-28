@@ -4869,6 +4869,129 @@ function motorlinkLiveWebSearch($db, $query, $maxResults = 3) {
 }
 
 /**
+ * Generic AI fallback for any intent where the deterministic DB handler returns nothing.
+ * Instead of a dead-end "I couldn't find..." message, we call the configured AI provider
+ * with a tightly-scoped, intent-aware system prompt + optional web research snippets,
+ * giving the user a real summarised answer (uses provider credits — by design).
+ *
+ * @param mixed  $db
+ * @param string $message            The user's current message
+ * @param array  $conversationHistory Last N turns
+ * @param string $intent             One of: vehicle_search, dealers, garages, car_hire,
+ *                                   car_specs, parts, recommendations, fuel_prices, general
+ * @param array  $contextHints       Optional: ['location_name'=>..., 'make'=>..., 'model'=>...,
+ *                                   'price_range'=>..., 'fuel_type'=>..., 'note'=>...,
+ *                                   'fallback_url'=>..., 'web_query'=>..., 'use_web'=>true|false]
+ * @return array|null ['response'=>..., 'fallback'=>'ai_provider', 'intent'=>...] or null
+ */
+function motorlinkGenericAIFallback($db, $message, $conversationHistory, $intent, $contextHints = []) {
+    $user = getCurrentUser(true);
+    if (!$user || empty($user['id'])) {
+        return null;
+    }
+
+    $intent = is_string($intent) && $intent !== '' ? $intent : 'general';
+    $hints = is_array($contextHints) ? $contextHints : [];
+
+    // Optional live web research — opt-in per intent (avoid wasting external API calls
+    // on intents that are obviously local-only like dealer/garage availability).
+    $webContext = '';
+    $webSource = null;
+    $useWeb = !empty($hints['use_web']);
+    if ($useWeb) {
+        $webQuery = isset($hints['web_query']) && $hints['web_query'] !== ''
+            ? (string)$hints['web_query']
+            : (string)$message;
+        $webResults = motorlinkLiveWebSearch($db, $webQuery, 3);
+        if ($webResults !== null && !empty($webResults['snippets'])) {
+            $webSource = $webResults['source'] ?? null;
+            $webContext .= "LIVE WEB RESEARCH (source: {$webSource}):\n";
+            foreach ($webResults['snippets'] as $s) {
+                $title = trim((string)($s['title'] ?? ''));
+                $desc = trim((string)($s['description'] ?? ''));
+                if ($title === '' && $desc === '') continue;
+                $webContext .= "- " . ($title !== '' ? $title : 'Result') . ": " . $desc . "\n";
+            }
+            $webContext .= "\n";
+        }
+    }
+
+    // Build context block from hints
+    $contextBlock = '';
+    foreach ([
+        'location_name' => 'LOCATION',
+        'make' => 'MAKE',
+        'model' => 'MODEL',
+        'year' => 'YEAR',
+        'fuel_type' => 'FUEL TYPE',
+        'price_range' => 'PRICE RANGE',
+        'note' => 'NOTE'
+    ] as $key => $label) {
+        if (!empty($hints[$key])) {
+            $contextBlock .= $label . ": " . (string)$hints[$key] . "\n";
+        }
+    }
+    $fallbackUrl = isset($hints['fallback_url']) ? (string)$hints['fallback_url'] : '';
+
+    // Intent-specific guidance
+    $intentGuidance = [
+        'vehicle_search' => "The MotorLink listings database returned no exact matches. Use your general automotive knowledge of the Malawi/Southern-African market to suggest realistic alternatives, typical price bands (in MWK), and what to look for. Do NOT invent specific dealer names or claim a car is in stock. End with the link below so the user can browse current inventory.",
+        'dealers' => "The MotorLink dealer directory returned nothing for this query. Help the user with general guidance on finding reputable car dealers in Malawi (questions to ask, paperwork to verify, common red flags). Do NOT invent dealer names or phone numbers. End with the link below.",
+        'garages' => "The MotorLink garage directory returned nothing. Provide practical advice about finding a competent garage/mechanic in Malawi for the implied service. Do NOT invent garage names, phone numbers, or addresses. End with the link below.",
+        'car_hire' => "The MotorLink car-hire directory returned no companies. Give general advice on car hire in Malawi (typical daily rates in MWK if known from training, documents required, common vehicle classes). Do NOT invent specific company names. End with the link below.",
+        'car_specs' => "Answer factual specification questions accurately from your training. If unsure, say so. Be concise and Malawi-relevant where possible.",
+        'parts' => "Help with general advice on sourcing the requested part in Malawi (typical channels: dealers, breakers/scrap yards, online imports). Do NOT invent supplier names or prices. End with the link below.",
+        'recommendations' => "The user wants a recommendation. Use Malawi market knowledge (fuel availability, parts availability, terrain, climate) to recommend 1-3 realistic options with brief justification.",
+        'fuel_prices' => "The user is asking about fuel pricing or consumption. Use authoritative MotorLink fuel prices when provided in context; otherwise be transparent that prices change.",
+        'general' => "Provide a concise, helpful, Malawi-aware automotive answer."
+    ];
+    $guidance = $intentGuidance[$intent] ?? $intentGuidance['general'];
+
+    $systemPrompt = "You are MotorLink AI — an automotive specialist for Malawi.\n\n"
+        . "INTENT: {$intent}\n"
+        . ($contextBlock !== '' ? "PARSED CONTEXT:\n" . $contextBlock . "\n" : '')
+        . ($webContext !== '' ? $webContext : '')
+        . "GUIDANCE:\n" . $guidance . "\n\n"
+        . "RULES:\n"
+        . "- Be concise: 80-150 words max.\n"
+        . "- Use bullet points for lists.\n"
+        . "- All currency in MWK unless the user used another.\n"
+        . "- Never claim live browsing; phrase web data as 'public road/market data'.\n"
+        . "- Never invent business names, phone numbers, addresses, or stock counts.\n"
+        . "- If you genuinely don't know, say so and suggest one concrete next step.\n"
+        . ($fallbackUrl !== ''
+            ? "- End with this exact markdown link: [Browse on MotorLink]({$fallbackUrl})\n"
+            : '');
+
+    $messages = [['role' => 'system', 'content' => $systemPrompt]];
+    if (is_array($conversationHistory)) {
+        $tail = array_slice($conversationHistory, -8);
+        foreach ($tail as $h) {
+            if (!isset($h['role'], $h['content'])) continue;
+            $messages[] = ['role' => $h['role'], 'content' => (string)$h['content']];
+        }
+    }
+    $messages[] = ['role' => 'user', 'content' => (string)$message];
+
+    try {
+        $response = callOpenAIAPIForSpecs($db, $user, $messages);
+    } catch (Throwable $e) {
+        error_log('motorlinkGenericAIFallback failed (' . $intent . '): ' . $e->getMessage());
+        return null;
+    }
+    if (!$response || empty($response['response'])) {
+        return null;
+    }
+
+    return [
+        'response' => $response['response'],
+        'fallback' => 'ai_provider',
+        'intent' => $intent,
+        'web_research_source' => $webSource
+    ];
+}
+
+/**
  * AI fallback for journey-cost questions. Builds a system prompt with authoritative
  * DB fuel prices, parsed route info, and live web research snippets, then calls the
  * configured AI provider so the user gets a real answer instead of a "please give me
@@ -6860,7 +6983,26 @@ function handleSearchQuery($db, $message, $conversationHistory) {
                 $response = $alt['message'] . "\n\n";
                 $listings = $alt['listings'];
             } else {
-                // No alternatives found - be helpful but don't show all listings
+                // No alternatives found - try AI summary before sending dead-end
+                $aiFallback = motorlinkGenericAIFallback($db, $message, $conversationHistory, 'vehicle_search', [
+                    'make' => $searchQuery['make_name'] ?? '',
+                    'model' => $searchQuery['model_name'] ?? '',
+                    'location_name' => $searchQuery['location_display'] ?? ($searchQuery['location'] ?? ''),
+                    'use_web' => true,
+                    'web_query' => trim(($searchQuery['make_name'] ?? '') . ' ' . ($searchQuery['model_name'] ?? '') . ' price Malawi'),
+                    'fallback_url' => $baseUrl . 'index.html'
+                ]);
+                if ($aiFallback !== null) {
+                    sendSuccess([
+                        'response' => $aiFallback['response'],
+                        'search_results' => [],
+                        'total_results' => 0,
+                        'fallback' => 'ai_provider',
+                        'intent' => 'vehicle_search'
+                    ]);
+                    return;
+                }
+
                 $response = "I couldn't find any vehicles matching your exact criteria. ";
                 $suggestions = [];
                 if ($hasLocation) {
@@ -11309,6 +11451,19 @@ function handleDealerQuery($db, $message, $conversationHistory) {
         
         // Format response
         if (empty($dealers)) {
+            // Try AI fallback before sending a dead-end message
+            $aiFallback = motorlinkGenericAIFallback($db, $message, $conversationHistory, 'dealers', [
+                'location_name' => $searchParams['user_location'] ?? ($searchParams['location'] ?? ''),
+                'fallback_url' => $baseUrl . 'dealers.html'
+            ]);
+            if ($aiFallback !== null) {
+                sendSuccess([
+                    'response' => $aiFallback['response'],
+                    'fallback' => 'ai_provider',
+                    'intent' => 'dealers'
+                ]);
+                return;
+            }
             $response = "I couldn't find any dealers in the database matching your search. ";
             $response .= "Try [browsing all dealers]({$baseUrl}dealers.html) on the website, or contact support if you believe this is an error.";
         } else {
@@ -11523,6 +11678,19 @@ function handleGarageQuery($db, $message, $conversationHistory) {
             }
             
             if (empty($garages)) {
+                // Try AI fallback before sending a dead-end message
+                $aiFallback = motorlinkGenericAIFallback($db, $message, $conversationHistory, 'garages', [
+                    'location_name' => $searchParams['user_location'] ?? ($searchParams['location'] ?? ''),
+                    'fallback_url' => $baseUrl . 'garages.html'
+                ]);
+                if ($aiFallback !== null) {
+                    sendSuccess([
+                        'response' => $aiFallback['response'],
+                        'fallback' => 'ai_provider',
+                        'intent' => 'garages'
+                    ]);
+                    return;
+                }
                 $response = "I couldn't find any garages in the database matching your search. ";
                 $response .= "Try [browsing all garages]({$baseUrl}garages.html) on the website, or contact support if you believe this is an error.";
             } else {
@@ -12153,6 +12321,19 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
         
         // Format response
         if (empty($results['companies'])) {
+            // Try AI fallback before sending a dead-end message
+            $aiFallback = motorlinkGenericAIFallback($db, $message, $conversationHistory, 'car_hire', [
+                'location_name' => $searchParams['user_location'] ?? ($searchParams['location'] ?? ''),
+                'fallback_url' => $baseUrl . 'car-hire.html'
+            ]);
+            if ($aiFallback !== null) {
+                sendSuccess([
+                    'response' => $aiFallback['response'],
+                    'fallback' => 'ai_provider',
+                    'intent' => 'car_hire'
+                ]);
+                return;
+            }
             $response = "I couldn't find any car hire companies matching your search. ";
             $response .= "Try [browsing all car hire companies]({$baseUrl}car-hire.html) on the website.";
         } else {
