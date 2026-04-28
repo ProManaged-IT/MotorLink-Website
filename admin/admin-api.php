@@ -8755,7 +8755,7 @@ function handleGetWhatsAppBookings($db) {
 
         // Stats
         $stmtStats = $db->query("SELECT status, COUNT(*) as cnt, SUM(wa_sent) as wa_count FROM car_hire_bookings GROUP BY status");
-        $stats = ['pending' => 0, 'confirmed' => 0, 'declined' => 0, 'cancelled' => 0, 'completed' => 0, 'total' => 0, 'wa_sent' => 0];
+        $stats = ['pending' => 0, 'confirmed' => 0, 'declined' => 0, 'cancelled' => 0, 'total' => 0, 'wa_sent' => 0];
         foreach ($stmtStats->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $stats[$row['status']] = (int)$row['cnt'];
             $stats['total']       += (int)$row['cnt'];
@@ -8771,7 +8771,7 @@ function handleGetWhatsAppBookings($db) {
 }
 
 /**
- * Update a booking status (confirm / decline / cancel / complete).
+ * Update a booking status (confirm / decline / cancel).
  * POST body: { booking_id, status }
  */
 function handleUpdateWhatsAppBookingStatus($db) {
@@ -8784,75 +8784,18 @@ function handleUpdateWhatsAppBookingStatus($db) {
     $input     = json_decode(file_get_contents('php://input'), true) ?? [];
     $bookingId = (int)($input['booking_id'] ?? 0);
     $status    = trim((string)($input['status'] ?? ''));
-    $allowed   = ['pending', 'confirmed', 'declined', 'cancelled', 'completed'];
+    $allowed   = ['pending', 'confirmed', 'declined', 'cancelled'];
 
     if ($bookingId <= 0) sendAdminError('booking_id required', 'BOOKING_ID_REQUIRED', 400);
     if (!in_array($status, $allowed, true)) sendAdminError('Invalid status', 'INVALID_STATUS', 400);
 
     try {
-        $db->beginTransaction();
-
-        $bookingStmt = $db->prepare("SELECT * FROM car_hire_bookings WHERE id = ? LIMIT 1 FOR UPDATE");
-        $bookingStmt->execute([$bookingId]);
-        $booking = $bookingStmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$booking) {
-            $db->rollBack();
-            sendAdminError('Booking not found', 'BOOKING_NOT_FOUND', 404);
-        }
-
-        if ($status === 'completed' && $booking['status'] !== 'confirmed') {
-            $db->rollBack();
-            sendAdminError('Only confirmed rentals can be completed', 'INVALID_STATUS_TRANSITION', 409);
-        }
-
-        if ($status === 'confirmed' && !empty($booking['fleet_id'])) {
-            $fleetStmt = $db->prepare("SELECT id, status FROM car_hire_fleet WHERE id = ? AND company_id = ? AND is_active = 1 LIMIT 1 FOR UPDATE");
-            $fleetStmt->execute([(int)$booking['fleet_id'], (int)$booking['company_id']]);
-            $fleet = $fleetStmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$fleet) {
-                $db->rollBack();
-                sendAdminError('Linked fleet vehicle was not found', 'FLEET_NOT_FOUND', 404);
-            }
-
-            $conflictStmt = $db->prepare("\n                SELECT COUNT(*)\n                FROM car_hire_bookings\n                WHERE company_id = ?\n                  AND fleet_id = ?\n                  AND id <> ?\n                  AND status = 'confirmed'\n                  AND NOT (end_date <= ? OR start_date >= ?)\n            ");
-            $conflictStmt->execute([
-                (int)$booking['company_id'],
-                (int)$booking['fleet_id'],
-                (int)$booking['id'],
-                $booking['start_date'],
-                $booking['end_date']
-            ]);
-
-            if ((int)$conflictStmt->fetchColumn() > 0) {
-                $db->rollBack();
-                sendAdminError('This vehicle already has a confirmed rental for those dates', 'RENTAL_DATE_CONFLICT', 409);
-            }
-
-            if ($booking['status'] !== 'confirmed' && in_array($fleet['status'], ['rented', 'maintenance', 'not_available'], true)) {
-                $db->rollBack();
-                sendAdminError('This vehicle is not currently available to confirm', 'FLEET_NOT_AVAILABLE', 409);
-            }
-
-            $fleetUpdate = $db->prepare("UPDATE car_hire_fleet SET status = 'rented', is_available = 0, updated_at = NOW() WHERE id = ? AND company_id = ?");
-            $fleetUpdate->execute([(int)$booking['fleet_id'], (int)$booking['company_id']]);
-        }
-
         $stmt = $db->prepare("UPDATE car_hire_bookings SET status = ?, updated_at = NOW() WHERE id = ?");
         $stmt->execute([$status, $bookingId]);
 
-        if ($booking['status'] === 'confirmed' && in_array($status, ['pending', 'declined', 'cancelled', 'completed'], true) && !empty($booking['fleet_id'])) {
-            $activeStmt = $db->prepare("SELECT COUNT(*) FROM car_hire_bookings WHERE company_id = ? AND fleet_id = ? AND status = 'confirmed'");
-            $activeStmt->execute([(int)$booking['company_id'], (int)$booking['fleet_id']]);
-
-            if ((int)$activeStmt->fetchColumn() === 0) {
-                $fleetRelease = $db->prepare("UPDATE car_hire_fleet SET status = 'available', is_available = 1, updated_at = NOW() WHERE id = ? AND company_id = ? AND status = 'rented'");
-                $fleetRelease->execute([(int)$booking['fleet_id'], (int)$booking['company_id']]);
-            }
+        if ($stmt->rowCount() === 0) {
+            sendAdminError('Booking not found', 'BOOKING_NOT_FOUND', 404);
         }
-
-        $db->commit();
 
         logActivity($db, 'wa_booking_status_updated',
             'Car hire booking status updated',
@@ -8861,9 +8804,6 @@ function handleUpdateWhatsAppBookingStatus($db) {
         echo json_encode(['success' => true, 'message' => 'Booking updated to ' . $status]);
         exit();
     } catch (Exception $e) {
-        if ($db->inTransaction()) {
-            $db->rollBack();
-        }
         error_log('handleUpdateWhatsAppBookingStatus error: ' . $e->getMessage());
         sendAdminError('Failed to update booking', 'BOOKING_UPDATE_FAILED', 500);
     }

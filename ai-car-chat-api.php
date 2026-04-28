@@ -3350,6 +3350,17 @@ function handleAICarChat($db) {
             return;
         }
 
+        // Resolve short journey-cost follow-ups like
+        // previous: "How much would it cost me to drive from Lilongwe to Dedza in a Hilux 2020 2.8 litre engine"
+        // current: "The trip is about 50km"
+        $journeyFollowUpMessage = buildJourneyCostFollowUpMessage($db, $message, $conversationHistory);
+        if ($journeyFollowUpMessage !== false) {
+            updateAIChatPersistenceContext(['resolved_message' => $journeyFollowUpMessage]);
+            $logDeterministicUsage();
+            handleJourneyCostQuery($db, $journeyFollowUpMessage, $conversationHistory, $userContext ?? null);
+            return;
+        }
+
         // Resolve short contextual automotive follow-ups (general car info)
         // so prompts like "What about Toyota Hilux" stay in automotive scope.
         $generalAutomotiveFollowUpMessage = buildGeneralAutomotiveFollowUpMessage($message, $conversationHistory);
@@ -4370,7 +4381,310 @@ function detectJourneyCostQuery($message) {
         return true;
     }
 
+    if (preg_match('/\b(distance|trip|journey)\b/i', $message)
+        && preg_match('/\b\d+(?:\.\d+)?\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $message)) {
+        return true;
+    }
+
     return false;
+}
+
+function buildJourneyCostFollowUpMessage($db, $message, $conversationHistory) {
+    $current = trim((string)$message);
+    if ($current === '') {
+        return false;
+    }
+
+    if (detectJourneyCostQuery($current)) {
+        return false;
+    }
+
+    $hasDistanceHint = preg_match('/\b\d+(?:\.\d+)?\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $current) === 1;
+    if (!$hasDistanceHint) {
+        return false;
+    }
+
+    if (!is_array($conversationHistory) || empty($conversationHistory)) {
+        return false;
+    }
+
+    $priorJourneyMessage = '';
+    for ($i = count($conversationHistory) - 1; $i >= 0; $i--) {
+        $item = $conversationHistory[$i];
+        if (!is_array($item) || ($item['role'] ?? '') !== 'user') {
+            continue;
+        }
+
+        $content = trim((string)($item['content'] ?? ''));
+        if ($content === '') {
+            continue;
+        }
+
+        if (detectJourneyCostQuery($content) || extractJourneyRouteLocations($db, $content) !== null) {
+            $priorJourneyMessage = $content;
+            break;
+        }
+    }
+
+    if ($priorJourneyMessage === '') {
+        return false;
+    }
+
+    if (stripos($priorJourneyMessage, $current) !== false) {
+        return false;
+    }
+
+    return trim($priorJourneyMessage . ' ' . $current);
+}
+
+function trimJourneyRouteLocationCandidate($value) {
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+
+    $value = preg_replace('/\b(?:malawi)\b/i', ' ', $value);
+    $value = preg_replace('/\b(?:in\s+a|in\s+an|with\s+a|with\s+an|using|for|cost|price|today|right\s+now|please|thanks)\b.*$/i', '', (string)$value);
+    $value = preg_replace('/[^\p{L}\p{N}\s\-]/u', ' ', (string)$value);
+    $value = preg_replace('/\s+/', ' ', (string)$value);
+
+    return trim((string)$value);
+}
+
+function resolveJourneyLocationName($db, $rawLocation) {
+    $rawLocation = trimJourneyRouteLocationCandidate($rawLocation);
+    if ($rawLocation === '') {
+        return '';
+    }
+
+    if (function_exists('resolveLocationSearchConstraint')) {
+        $resolved = resolveLocationSearchConstraint($db, $rawLocation);
+        if (!empty($resolved['matched_value'])) {
+            return trim((string)$resolved['matched_value']);
+        }
+    }
+
+    $exact = extractLocationMentionFromText($db, $rawLocation);
+    if (!empty($exact)) {
+        return trim((string)$exact);
+    }
+
+    return $rawLocation;
+}
+
+function extractJourneyRouteLocations($db, $message) {
+    $normalized = normalizeAIChatIntentTypos((string)$message);
+    if ($normalized === '') {
+        return null;
+    }
+
+    $patterns = [
+        '/\bfrom\s+(.+?)\s+to\s+(.+?)(?=\s+(?:in\s+a|in\s+an|with\s+a|with\s+an|using|for|cost|price|today|right\s+now|please)\b|[?.!,]|$)/i',
+        '/\bfrom\s+(.+?)\s+to\s+(.+)$/i'
+    ];
+
+    foreach ($patterns as $pattern) {
+        if (!preg_match($pattern, $normalized, $matches)) {
+            continue;
+        }
+
+        $origin = resolveJourneyLocationName($db, $matches[1] ?? '');
+        $destination = resolveJourneyLocationName($db, $matches[2] ?? '');
+
+        if ($origin !== '' && $destination !== '' && strcasecmp($origin, $destination) !== 0) {
+            return [
+                'origin' => $origin,
+                'destination' => $destination
+            ];
+        }
+    }
+
+    return null;
+}
+
+function motorlinkJourneyFetchJson($url, array $headers = [], $timeoutSeconds = 8) {
+    $request = function ($verifyPeer) use ($url, $headers, $timeoutSeconds) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, max(2, (int)$timeoutSeconds));
+        curl_setopt($ch, CURLOPT_TIMEOUT, max(3, (int)$timeoutSeconds));
+        curl_setopt($ch, CURLOPT_ENCODING, '');
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, (bool)$verifyPeer);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyPeer ? 2 : 0);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array_merge([
+            'Accept: application/json',
+            'User-Agent: MotorLinkAI/1.0 (+https://motorlink.example)'
+        ], $headers));
+
+        $body = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        return [$body, $status, $error];
+    };
+
+    [$body, $status, $error] = $request(true);
+    if (($body === false || $status < 200 || $status >= 300)
+        && $error !== ''
+        && stripos($error, 'SSL certificate problem') !== false) {
+        [$body, $status, $error] = $request(false);
+    }
+
+    if ($body === false || $status < 200 || $status >= 300) {
+        if ($error !== '') {
+            error_log('motorlinkJourneyFetchJson error: ' . $error . ' [' . $url . ']');
+        }
+        return null;
+    }
+
+    $decoded = json_decode((string)$body, true);
+    return is_array($decoded) ? $decoded : null;
+}
+
+function motorlinkJourneyLookupCoordinates($placeName) {
+    static $cache = [];
+
+    $placeName = trim((string)$placeName);
+    if ($placeName === '') {
+        return null;
+    }
+
+    $cacheKey = strtolower($placeName);
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    $query = $placeName;
+    if (stripos($query, 'malawi') === false) {
+        $query .= ', Malawi';
+    }
+
+    $url = 'https://nominatim.openstreetmap.org/search?' . http_build_query([
+        'format' => 'jsonv2',
+        'limit' => 1,
+        'q' => $query
+    ]);
+
+    $rows = motorlinkJourneyFetchJson($url, [], 8);
+    if (!is_array($rows) || empty($rows[0]['lat']) || empty($rows[0]['lon'])) {
+        $cache[$cacheKey] = null;
+        return null;
+    }
+
+    $cache[$cacheKey] = [
+        'lat' => (float)$rows[0]['lat'],
+        'lon' => (float)$rows[0]['lon'],
+        'display_name' => trim((string)($rows[0]['display_name'] ?? $placeName))
+    ];
+
+    return $cache[$cacheKey];
+}
+
+function motorlinkJourneyResolveRouteDistance($origin, $destination) {
+    static $cache = [];
+
+    $origin = trim((string)$origin);
+    $destination = trim((string)$destination);
+    if ($origin === '' || $destination === '') {
+        return null;
+    }
+
+    $cacheKey = strtolower($origin . '|' . $destination);
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    $originCoords = motorlinkJourneyLookupCoordinates($origin);
+    $destinationCoords = motorlinkJourneyLookupCoordinates($destination);
+    if (!$originCoords || !$destinationCoords) {
+        $cache[$cacheKey] = null;
+        return null;
+    }
+
+    $routeUrl = sprintf(
+        'https://router.project-osrm.org/route/v1/driving/%s,%s;%s,%s?overview=false&alternatives=false&steps=false',
+        rawurlencode((string)$originCoords['lon']),
+        rawurlencode((string)$originCoords['lat']),
+        rawurlencode((string)$destinationCoords['lon']),
+        rawurlencode((string)$destinationCoords['lat'])
+    );
+    $route = motorlinkJourneyFetchJson($routeUrl, [], 10);
+    if (is_array($route) && !empty($route['routes'][0]['distance'])) {
+        $cache[$cacheKey] = [
+            'distance_km' => ((float)$route['routes'][0]['distance']) / 1000,
+            'source_label' => 'OpenStreetMap road route estimate',
+            'approximate' => false
+        ];
+        return $cache[$cacheKey];
+    }
+
+    if (function_exists('calculateDistance')) {
+        $directKm = calculateDistance(
+            (float)$originCoords['lat'],
+            (float)$originCoords['lon'],
+            (float)$destinationCoords['lat'],
+            (float)$destinationCoords['lon']
+        );
+        if ($directKm > 0) {
+            $cache[$cacheKey] = [
+                'distance_km' => $directKm * 1.18,
+                'source_label' => 'OpenStreetMap geocode estimate',
+                'approximate' => true
+            ];
+            return $cache[$cacheKey];
+        }
+    }
+
+    $cache[$cacheKey] = null;
+    return null;
+}
+
+function inferJourneyVehicleProfile($message, $conversationHistory) {
+    $combined = trim((string)$message);
+    $activeVehicle = extractActiveVehicleFromConversation($conversationHistory);
+    if ($activeVehicle !== '') {
+        $combined .= ' ' . $activeVehicle;
+    }
+
+    if (is_array($conversationHistory) && !empty($conversationHistory)) {
+        $recentHistory = array_slice($conversationHistory, -8);
+        foreach ($recentHistory as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $content = trim((string)($item['content'] ?? ''));
+            if ($content !== '') {
+                $combined .= ' ' . $content;
+            }
+        }
+    }
+
+    $combinedLower = strtolower($combined);
+
+    if (preg_match('/\bdiesel\b/i', $combined)) {
+        return ['fuel_type' => 'diesel', 'consumption' => null, 'assumption' => 'diesel mentioned in the conversation'];
+    }
+    if (preg_match('/\bpetrol\b/i', $combined)) {
+        return ['fuel_type' => 'petrol', 'consumption' => null, 'assumption' => 'petrol mentioned in the conversation'];
+    }
+
+    if (preg_match('/\bhilux\b/i', $combined) && preg_match('/\b2\.8(?=\s*(?:l|litre|liter)?\b)/i', $combined)) {
+        return ['fuel_type' => 'diesel', 'consumption' => 8.5, 'assumption' => 'assuming the common Toyota Hilux 2.8 diesel profile'];
+    }
+
+    if (preg_match('/\b(fortuner|prado|hilux|ranger|bt-50|navara|np300|d-max|land cruiser|landcruiser)\b/i', $combined)
+        && preg_match('/\b(2\.4|2\.5|2\.8|3\.0|3\.2|4\.2)(?=\s*(?:l|litre|liter)?\b)/i', $combined)) {
+        return ['fuel_type' => 'diesel', 'consumption' => 8.8, 'assumption' => 'assuming a typical diesel consumption for that engine and vehicle class'];
+    }
+
+    if (preg_match('/\bpickup|truck\b/i', $combinedLower)) {
+        return ['fuel_type' => 'diesel', 'consumption' => 9.0, 'assumption' => 'assuming a diesel pickup fuel profile'];
+    }
+
+    return ['fuel_type' => '', 'consumption' => null, 'assumption' => ''];
 }
 
 /**
@@ -4467,15 +4781,38 @@ function handleJourneyCostQuery($db, $message, $conversationHistory, $userContex
 
         // Parse distance in km
         $distanceKm = null;
+        $distanceSourceLabel = 'user-provided distance';
+        $distanceIsApproximate = false;
+        $routeInfo = extractJourneyRouteLocations($db, $message);
         if (preg_match('/(\d+(?:\.\d+)?)\s*(km|kilometre|kilometer|kilometres|kilometers)\b/i', $message, $dm)) {
             $distanceKm = (float)$dm[1];
         }
 
-        // Parse fuel type
+        if ($distanceKm === null && $routeInfo !== null) {
+            $resolvedDistance = motorlinkJourneyResolveRouteDistance($routeInfo['origin'], $routeInfo['destination']);
+            if (is_array($resolvedDistance) && !empty($resolvedDistance['distance_km'])) {
+                $distanceKm = (float)$resolvedDistance['distance_km'];
+                $distanceSourceLabel = (string)($resolvedDistance['source_label'] ?? 'route estimate');
+                $distanceIsApproximate = !empty($resolvedDistance['approximate']);
+            }
+        }
+
+        // Parse fuel type and infer from the discussed vehicle when absent.
         $fuelType = 'petrol';
-        if (preg_match('/\bdiesel\b/i', $message)) $fuelType = 'diesel';
-        elseif (preg_match('/\blpg|autogas\b/i', $message)) $fuelType = 'lpg';
-        elseif (preg_match('/\bcng\b/i', $message)) $fuelType = 'cng';
+        $fuelAssumption = '';
+        if (preg_match('/\bdiesel\b/i', $message)) {
+            $fuelType = 'diesel';
+        } elseif (preg_match('/\blpg|autogas\b/i', $message)) {
+            $fuelType = 'lpg';
+        } elseif (preg_match('/\bcng\b/i', $message)) {
+            $fuelType = 'cng';
+        } else {
+            $vehicleProfile = inferJourneyVehicleProfile($message, $conversationHistory);
+            if (!empty($vehicleProfile['fuel_type'])) {
+                $fuelType = (string)$vehicleProfile['fuel_type'];
+                $fuelAssumption = (string)($vehicleProfile['assumption'] ?? '');
+            }
+        }
 
         // Parse consumption (L/100km)
         $consumption = null;
@@ -4484,6 +4821,15 @@ function handleJourneyCostQuery($db, $message, $conversationHistory, $userContex
         } elseif (preg_match('/(\d+(?:\.\d+)?)\s*km\s*\/\s*(?:l|liter|litre)/i', $message, $cm2)) {
             $kmPerL = (float)$cm2[1];
             if ($kmPerL > 0) $consumption = 100 / $kmPerL;
+        }
+        if (!$consumption) {
+            $vehicleProfile = isset($vehicleProfile) && is_array($vehicleProfile) ? $vehicleProfile : inferJourneyVehicleProfile($message, $conversationHistory);
+            if (!empty($vehicleProfile['consumption'])) {
+                $consumption = (float)$vehicleProfile['consumption'];
+                if ($fuelAssumption === '') {
+                    $fuelAssumption = (string)($vehicleProfile['assumption'] ?? '');
+                }
+            }
         }
         if (!$consumption) {
             $consumption = ($fuelType === 'diesel') ? 8.5 : 9.5;
@@ -4506,7 +4852,11 @@ function handleJourneyCostQuery($db, $message, $conversationHistory, $userContex
         $displayDecimals = $displayCode === 'USD' ? 4 : 2;
 
         if ($distanceKm === null) {
-            $response = "I can calculate the fuel cost for your trip. How far is the journey in km?\n\n";
+            $response = "I can calculate the fuel cost for your trip";
+            if ($routeInfo !== null) {
+                $response .= " from {$routeInfo['origin']} to {$routeInfo['destination']}";
+            }
+            $response .= ". How far is the journey in km?\n\n";
             $response .= "Current {$fuelType} price: {$displaySymbol} " . number_format($displayPrice, $displayDecimals) . " per liter (source: " . ($meta['source_label'] ?? 'fuel feed') . ").\n";
             $response .= "\nOr use the {$plannerLink} to auto-calculate from start and destination.";
             sendSuccess([
@@ -4521,8 +4871,17 @@ function handleJourneyCostQuery($db, $message, $conversationHistory, $userContex
         $costDisplay = $litersNeeded * $displayPrice;
 
         $response = "🚗 **Journey fuel cost estimate**\n\n";
+        if ($routeInfo !== null) {
+            $response .= "- Route: {$routeInfo['origin']} to {$routeInfo['destination']}\n";
+        }
         $response .= "- Distance: " . number_format($distanceKm, 1) . " km\n";
+        if ($distanceSourceLabel !== '') {
+            $response .= "- Distance source: {$distanceSourceLabel}" . ($distanceIsApproximate ? ' (approximate)' : '') . "\n";
+        }
         $response .= "- Consumption used: " . number_format($consumption, 1) . " L/100km ({$fuelType})\n";
+        if ($fuelAssumption !== '') {
+            $response .= "- Vehicle assumption: {$fuelAssumption}\n";
+        }
         $response .= "- Fuel needed: " . number_format($litersNeeded, 2) . " L\n";
         $response .= "- Fuel price: {$displaySymbol} " . number_format($displayPrice, $displayDecimals) . "/L\n";
         $response .= "- **Estimated cost: {$displaySymbol} " . number_format($costDisplay, 2) . "**\n";
@@ -4544,6 +4903,9 @@ function handleJourneyCostQuery($db, $message, $conversationHistory, $userContex
             'fuel_prices_meta' => $meta,
             'journey' => [
                 'distance_km' => round($distanceKm, 2),
+                'distance_source' => $distanceSourceLabel,
+                'route_origin' => $routeInfo['origin'] ?? null,
+                'route_destination' => $routeInfo['destination'] ?? null,
                 'fuel_type' => $fuelType,
                 'consumption_l_per_100km' => round($consumption, 2),
                 'liters_needed' => round($litersNeeded, 2),
@@ -5466,6 +5828,7 @@ function buildGeneralAutomotiveFollowUpMessage($message, $conversationHistory) {
             detectSearchQuery($content) ||
             detectCarSpecQuery($content) ||
             detectCarRecommendationQuery($content) ||
+            detectJourneyCostQuery($content) ||
             detectFuelPriceQuery($content) ||
             detectPartsQuery($content)
         ) {

@@ -512,13 +512,14 @@ function openGarageReviews(garageId, garageName) {
     const title = document.getElementById('garageReviewsModalName');
     if (!modal || !body) return;
     if (title) title.textContent = garageName;
-    // Give inner a dynamic id so rvRenderSection can refresh itself
-    body.innerHTML = '';
-    body.id = `rv-section-garage-${garageId}`;
+    // Wrap content in a child div with the dynamic id so rvRenderSection
+    // refresh-after-submit works, while body.id stays stable for repeat opens.
+    body.innerHTML = `<div id="rv-section-garage-${garageId}"></div>`;
+    const section = body.firstElementChild;
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
     if (typeof rvRenderSection === 'function') {
-        rvRenderSection(body, 'garage', garageId, garageName);
+        rvRenderSection(section, 'garage', garageId, garageName);
     }
 }
 
@@ -526,6 +527,9 @@ function closeGarageReviews() {
     const modal = document.getElementById('garageReviewsModal');
     if (modal) modal.style.display = 'none';
     document.body.style.overflow = '';
+    // Reset body content so next open gets a fresh container
+    const body = document.getElementById('garageReviewsModalBody');
+    if (body) body.innerHTML = '';
 }
 
 // Close modal on overlay click

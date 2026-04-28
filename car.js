@@ -503,15 +503,6 @@ class CarDetailManager {
             </div>
             ` : ''}
 
-            ${isLoggedIn ? `
-            <div class="dealer-showroom-section similar-listings-section" id="similarCarsSection" style="display:none;">
-                <div class="showroom-header">
-                    <h2><i class="fas fa-layer-group"></i> Similar Listings</h2>
-                </div>
-                <div class="showroom-grid" id="similarCarsGrid"></div>
-            </div>
-            ` : ''}
-
             <div class="dealer-showroom-section" id="recommendedCarsSection" style="display:none;">
                 <div class="showroom-header">
                     <h2><i class="fas fa-magic"></i> Recommended For You</h2>
@@ -526,10 +517,6 @@ class CarDetailManager {
         // Load dealer's other listings if applicable
         if (listing.user_id && (listing.seller_type === 'dealer' || listing.seller_type === 'garage' || listing.seller_type === 'car_hire')) {
             this.loadDealerOtherListings(listing.user_id);
-        }
-
-        if (isLoggedIn) {
-            this.loadSimilarListings(listing.id);
         }
 
         // Learn from this view and show personalized options frequently.
@@ -566,9 +553,6 @@ class CarDetailManager {
             if (!prefs.fuel_types) prefs.fuel_types = {};
             if (!prefs.transmissions) prefs.transmissions = {};
             if (!prefs.body_types) prefs.body_types = {};
-            if (!prefs.drivetrains) prefs.drivetrains = {};
-            if (!prefs.conditions) prefs.conditions = {};
-            if (!prefs.locations) prefs.locations = {};
             if (!prefs.price_range) prefs.price_range = { min: Number.MAX_SAFE_INTEGER, max: 0, total: 0, count: 0, avg: 0 };
             if (!prefs.year_range) prefs.year_range = { min: Number.MAX_SAFE_INTEGER, max: 0, total: 0, count: 0, avg: 0 };
             if (!prefs.mileage_range) prefs.mileage_range = { min: Number.MAX_SAFE_INTEGER, max: 0, total: 0, count: 0, avg: 0 };
@@ -578,9 +562,6 @@ class CarDetailManager {
             if (listing.fuel_type) prefs.fuel_types[listing.fuel_type] = (prefs.fuel_types[listing.fuel_type] || 0) + 2;
             if (listing.transmission) prefs.transmissions[listing.transmission] = (prefs.transmissions[listing.transmission] || 0) + 2;
             if (listing.body_type) prefs.body_types[listing.body_type] = (prefs.body_types[listing.body_type] || 0) + 1;
-            if (listing.drivetrain) prefs.drivetrains[listing.drivetrain] = (prefs.drivetrains[listing.drivetrain] || 0) + 1;
-            if (listing.condition_type) prefs.conditions[listing.condition_type] = (prefs.conditions[listing.condition_type] || 0) + 1;
-            if (listing.location_name) prefs.locations[listing.location_name] = (prefs.locations[listing.location_name] || 0) + 1;
 
             const price = parseInt(listing.price, 10);
             if (Number.isFinite(price) && price > 0) {
@@ -683,80 +664,6 @@ class CarDetailManager {
         }
     }
 
-    async loadSimilarListings(currentListingId) {
-        const section = document.getElementById('similarCarsSection');
-        const grid = document.getElementById('similarCarsGrid');
-        if (!section || !grid || !currentListingId) return;
-
-        const recommendationUrl = this.getRecommendationApiUrl();
-        const sessionId = this.getOrCreateSessionId();
-
-        try {
-            const endpoint = `${recommendationUrl}?action=get_similar_listings&listing_id=${encodeURIComponent(currentListingId)}&limit=6&session_id=${encodeURIComponent(sessionId)}`;
-            const response = await fetch(endpoint, { credentials: 'include' });
-
-            if (response.status === 401) {
-                return;
-            }
-
-            const data = await response.json();
-            const listings = Array.isArray(data?.similar_listings) ? data.similar_listings : [];
-            const filtered = listings
-                .filter(item => parseInt(item.id, 10) !== parseInt(currentListingId, 10))
-                .slice(0, 6);
-
-            if (filtered.length > 0) {
-                this.renderSimilarListings(filtered);
-            }
-        } catch (error) {
-            // Similar listings are best-effort and should never block the page.
-        }
-    }
-
-    renderSimilarListings(listings) {
-        const section = document.getElementById('similarCarsSection');
-        const grid = document.getElementById('similarCarsGrid');
-        if (!section || !grid || !Array.isArray(listings) || listings.length === 0) {
-            return;
-        }
-
-        const inlinePlaceholder = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22 viewBox=%220 0 400 300%22%3E%3Crect width=%22400%22 height=%22300%22 fill=%22%23f3f4f6%22/%3E%3Ctext x=%22200%22 y=%22150%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2216%22 fill=%226b7280%22%3EImage unavailable%3C/text%3E%3C/svg%3E';
-
-        grid.innerHTML = listings.map(listing => {
-            const imageId = listing.featured_image_id || listing.primary_image_id;
-            const imageUrl = imageId
-                ? `${CONFIG.API_URL}?action=image&id=${imageId}`
-                : inlinePlaceholder;
-            const formattedPrice = listing.price ? `${CONFIG.CURRENCY_CODE || 'MWK'} ${parseInt(listing.price, 10).toLocaleString()}` : 'Price on request';
-            const matchText = listing.match_percent ? `${listing.match_percent}% Match` : 'Similar';
-
-            return `
-                <div class="showroom-card" onclick="window.location.href='car.html?id=${listing.id}'">
-                    <div class="showroom-card-image">
-                        <img src="${imageUrl}" alt="${this.escapeHtml(listing.title || '')}" onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
-                    </div>
-                    <div class="showroom-card-content">
-                        <div class="showroom-badges">
-                            <span class="listing-badge premium">${matchText}</span>
-                        </div>
-                        <h3 class="showroom-card-title">${this.escapeHtml(listing.title || '')}</h3>
-                        <div class="showroom-card-price">${formattedPrice}</div>
-                        <div class="showroom-card-details">
-                            <span><i class="fas fa-calendar"></i> ${listing.year || 'N/A'}</span>
-                            <span><i class="fas fa-road"></i> ${listing.mileage ? this.formatNumber(listing.mileage) + ' km' : 'N/A'}</span>
-                        </div>
-                        <div class="showroom-card-footer">
-                            <span><i class="fas fa-gas-pump"></i> ${listing.fuel_type ? this.capitalize(listing.fuel_type) : 'N/A'}</span>
-                            <span><i class="fas fa-map-marker-alt"></i> ${this.escapeHtml(listing.location_name || 'N/A')}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        section.style.display = 'block';
-    }
-
     renderPersonalizedRecommendations(listings) {
         const section = document.getElementById('recommendedCarsSection');
         const grid = document.getElementById('recommendedCarsGrid');
@@ -767,9 +674,8 @@ class CarDetailManager {
         const inlinePlaceholder = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22 viewBox=%220 0 400 300%22%3E%3Crect width=%22400%22 height=%22300%22 fill=%22%23f3f4f6%22/%3E%3Ctext x=%22200%22 y=%22150%22 text-anchor=%22middle%22 font-family=%22Arial,sans-serif%22 font-size=%2216%22 fill=%226b7280%22%3EImage unavailable%3C/text%3E%3C/svg%3E';
 
         grid.innerHTML = listings.map(listing => {
-            const imageId = listing.featured_image_id || listing.primary_image_id;
-            const imageUrl = imageId
-                ? `${CONFIG.API_URL}?action=image&id=${imageId}`
+            const imageUrl = listing.featured_image_id
+                ? `${CONFIG.API_URL}?action=image&id=${listing.featured_image_id}`
                 : inlinePlaceholder;
             const formattedPrice = listing.price ? `${CONFIG.CURRENCY_CODE || 'MWK'} ${parseInt(listing.price, 10).toLocaleString()}` : 'Price on request';
 
@@ -777,11 +683,9 @@ class CarDetailManager {
                 <div class="showroom-card" onclick="window.location.href='car.html?id=${listing.id}'">
                     <div class="showroom-card-image">
                         <img src="${imageUrl}" alt="${this.escapeHtml(listing.title || '')}" onerror="this.onerror=null;this.src='${inlinePlaceholder}';">
+                        <span class="listing-badge premium">Recommended</span>
                     </div>
                     <div class="showroom-card-content">
-                        <div class="showroom-badges">
-                            <span class="listing-badge premium">Recommended</span>
-                        </div>
                         <h3 class="showroom-card-title">${this.escapeHtml(listing.title || '')}</h3>
                         <div class="showroom-card-price">${formattedPrice}</div>
                         <div class="showroom-card-details">
