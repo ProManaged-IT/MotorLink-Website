@@ -6744,6 +6744,12 @@ async function loadWhatsAppSettings() {
         const tokenEl = document.getElementById('wa-api-token');
         if (tokenEl) { tokenEl.value = ''; tokenEl.placeholder = s.token_configured ? 'Leave blank to keep existing token' : 'Paste permanent access token'; }
 
+        const webhookTokenEl = document.getElementById('wa-webhook-verify-token');
+        if (webhookTokenEl) webhookTokenEl.value = s.wa_webhook_verify_token || '';
+
+        const appSecretEl = document.getElementById('wa-app-secret');
+        if (appSecretEl) { appSecretEl.value = ''; appSecretEl.placeholder = s.app_secret_configured ? 'Leave blank to keep existing secret' : 'Paste App Secret'; }
+
         _setWaStatusBadge(s.wa_enabled === '1', s.token_configured, !!s.wa_phone_number_id);
 
         // Load quick stats
@@ -6763,6 +6769,7 @@ async function saveWhatsAppSettings() {
         wa_phone_number_id:      document.getElementById('wa-phone-number-id')?.value?.trim() || '',
         wa_business_account_id:  document.getElementById('wa-business-account-id')?.value?.trim() || '',
         wa_api_version:          document.getElementById('wa-api-version')?.value?.trim() || 'v25.0',
+        wa_app_secret:           document.getElementById('wa-app-secret')?.value || '',
     };
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…'; }

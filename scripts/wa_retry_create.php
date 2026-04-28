@@ -59,7 +59,7 @@ function fetchExisting(string $wabaId, string $apiVer, string $token): array {
 }
 
 // ---------------------------------------------------------------------------
-// Template definitions (no emojis in HEADER TEXT)
+// Template definitions (with interactive buttons)
 // ---------------------------------------------------------------------------
 $templates = [
     'motorlink_booking' => [
@@ -67,9 +67,14 @@ $templates = [
         'components' => [
             ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'New Booking - MotorLink'],
             ['type' => 'BODY',
-             'text' => "You have a new car hire booking request!\n\n*Vehicle:* {{1}}\n*Customer:* {{2}}\n*Phone:* {{3}}\n*From:* {{4}}\n*To:* {{5}}\n\nLog in to MotorLink to confirm or decline.",
+             'text' => "You have a new car hire booking request!\n\n*Vehicle:* {{1}}\n*Customer:* {{2}}\n*Phone:* {{3}}\n*From:* {{4}}\n*To:* {{5}}\n\nTap a button below or log in to MotorLink to manage this booking.",
              'example' => ['body_text' => [['Toyota Hilux 2023','John Banda','+265888000000','01 May 2026','04 May 2026']]]],
             ['type' => 'FOOTER', 'text' => 'MotorLink Car Hire Platform'],
+            ['type' => 'BUTTONS', 'buttons' => [
+                ['type' => 'QUICK_REPLY', 'text' => 'Accept Booking'],
+                ['type' => 'QUICK_REPLY', 'text' => 'Decline Booking'],
+                ['type' => 'QUICK_REPLY', 'text' => 'Propose New Dates'],
+            ]],
         ],
     ],
     'motorlink_booking_confirmed' => [
@@ -80,6 +85,9 @@ $templates = [
              'text' => "Great news, {{1}}! Your car hire booking is confirmed.\n\n*Vehicle:* {{2}}\n*Pick-up:* {{3}}\n*Return:* {{4}}\n\nOwner contact: {{5}}\n\nEnjoy your journey!",
              'example' => ['body_text' => [['Sarah Phiri','Toyota Hilux 2023','01 May 2026','04 May 2026','+265888000001']]]],
             ['type' => 'FOOTER', 'text' => 'MotorLink Car Hire Platform'],
+            ['type' => 'BUTTONS', 'buttons' => [
+                ['type' => 'URL', 'text' => 'View My Booking', 'url' => 'https://motorlink.mw/car-hire.html'],
+            ]],
         ],
     ],
     'motorlink_booking_declined' => [
@@ -90,6 +98,9 @@ $templates = [
              'text' => "Hi {{1}}, unfortunately your booking request for *{{2}}* on {{3}} could not be accommodated.\n\nVisit MotorLink to browse other available vehicles.",
              'example' => ['body_text' => [['Sarah Phiri','Toyota Hilux 2023','01-04 May 2026']]]],
             ['type' => 'FOOTER', 'text' => 'MotorLink Car Hire Platform'],
+            ['type' => 'BUTTONS', 'buttons' => [
+                ['type' => 'URL', 'text' => 'Browse Cars', 'url' => 'https://motorlink.mw/car-hire.html'],
+            ]],
         ],
     ],
     'motorlink_hire_reminder' => [
@@ -100,6 +111,10 @@ $templates = [
              'text' => "Hi {{1}}, reminder that your *{{2}}* hire starts tomorrow ({{3}}).\n\nOwner contact: {{4}}\n\nHave a safe trip!",
              'example' => ['body_text' => [['Sarah Phiri','Toyota Hilux 2023','01 May 2026','+265888000001']]]],
             ['type' => 'FOOTER', 'text' => 'MotorLink Car Hire Platform'],
+            ['type' => 'BUTTONS', 'buttons' => [
+                ['type' => 'QUICK_REPLY', 'text' => "Got it, I'm ready!"],
+                ['type' => 'QUICK_REPLY', 'text' => 'I Need to Cancel'],
+            ]],
         ],
     ],
     'motorlink_new_lead' => [
@@ -110,6 +125,9 @@ $templates = [
              'text' => "Hi {{1}}, you have a new enquiry on MotorLink!\n\n*Listing:* {{2}}\n*From:* {{3}}\n\n*Message:* {{4}}\n\nReply via MotorLink or contact the buyer directly.",
              'example' => ['body_text' => [['James Dealer','2021 Nissan Navara','Peter Buyer','Is this still available for viewing?']]]],
             ['type' => 'FOOTER', 'text' => 'MotorLink Malawi'],
+            ['type' => 'BUTTONS', 'buttons' => [
+                ['type' => 'URL', 'text' => 'Open MotorLink', 'url' => 'https://motorlink.mw/chat_system.html'],
+            ]],
         ],
     ],
     'motorlink_listing_live' => [
@@ -120,6 +138,9 @@ $templates = [
              'text' => "Congratulations, {{1}}! Your listing for *{{2}}* is now live on MotorLink.\n\nBuyers can now see and enquire about your vehicle.",
              'example' => ['body_text' => [['James Seller','2021 Nissan Navara Double Cab']]]],
             ['type' => 'FOOTER', 'text' => 'MotorLink Malawi'],
+            ['type' => 'BUTTONS', 'buttons' => [
+                ['type' => 'URL', 'text' => 'View My Listings', 'url' => 'https://motorlink.mw/my-listings.html'],
+            ]],
         ],
     ],
     'motorlink_listing_rejected' => [
@@ -130,6 +151,9 @@ $templates = [
              'text' => "Hi {{1}}, your listing for *{{2}}* requires attention.\n\n*Reason:* {{3}}\n\nPlease log in to MotorLink, update your listing, and resubmit for review.",
              'example' => ['body_text' => [['James Seller','2021 Nissan Navara','Photos are too blurry. Please upload clear images.']]]],
             ['type' => 'FOOTER', 'text' => 'MotorLink Malawi'],
+            ['type' => 'BUTTONS', 'buttons' => [
+                ['type' => 'URL', 'text' => 'Update Listing', 'url' => 'https://motorlink.mw/sell.html'],
+            ]],
         ],
     ],
     'motorlink_rate_experience' => [
@@ -140,6 +164,9 @@ $templates = [
              'text' => "Hi {{1}}, we hope you enjoyed your hire with *{{2}}*!\n\nWould you mind leaving a quick review? It helps other customers and supports local businesses.\n\nVisit MotorLink - it only takes a minute.",
              'example' => ['body_text' => [['Sarah Phiri','Lilongwe Car Rentals']]]],
             ['type' => 'FOOTER', 'text' => 'MotorLink Malawi'],
+            ['type' => 'BUTTONS', 'buttons' => [
+                ['type' => 'URL', 'text' => 'Leave a Review', 'url' => 'https://motorlink.mw/car-hire.html'],
+            ]],
         ],
     ],
     'motorlink_new_user' => [
@@ -150,6 +177,9 @@ $templates = [
              'text' => "Welcome to MotorLink, {{1}}!\n\nYou can now:\n- Browse and buy cars\n- List your vehicle for sale\n- Book car hire\n- Find trusted garages\n\nVisit motorlink.mw to get started.",
              'example' => ['body_text' => [['Grace Mwale']]]],
             ['type' => 'FOOTER', 'text' => 'MotorLink Malawi'],
+            ['type' => 'BUTTONS', 'buttons' => [
+                ['type' => 'URL', 'text' => 'Get Started', 'url' => 'https://motorlink.mw'],
+            ]],
         ],
     ],
 ];

@@ -1,20 +1,29 @@
 <?php
 /**
- * MotorLink — Create all WhatsApp message templates and submit for Meta approval.
+ * MotorLink — Add interactive buttons to existing WhatsApp templates.
  *
- * Templates:
- *  1. motorlink_booking          — New booking request → car hire owner
- *  2. motorlink_booking_confirmed — Booking confirmed  → renter
- *  3. motorlink_booking_declined  — Booking declined   → renter
- *  4. motorlink_hire_reminder     — Pickup reminder    → renter
- *  5. motorlink_new_lead          — New buyer enquiry  → dealer/seller
- *  6. motorlink_listing_live      — Listing went live  → seller
- *  7. motorlink_listing_rejected  — Listing rejected   → seller
- *  8. motorlink_rate_experience   — Post-hire review ask → renter
- *  9. motorlink_new_user          — Welcome new user   → new registrant
- * 10. motorlink_otp               — OTP/verification   → user (AUTHENTICATION)
+ * This script deletes the 9 UTILITY templates and recreates them with buttons.
+ * motorlink_otp (AUTHENTICATION) is skipped — it already has a Copy Code button.
  *
- * Usage: php scripts/wa_create_all_templates.php
+ * Button strategy:
+ *  QUICK_REPLY (webhook processes taps):
+ *    - motorlink_booking        → Accept Booking | Decline Booking | Propose New Dates
+ *    - motorlink_hire_reminder  → Got it, I'm ready! | I Need to Cancel
+ *
+ *  URL call-to-action (no webhook needed):
+ *    - motorlink_booking_confirmed  → View My Booking
+ *    - motorlink_booking_declined   → Browse Cars
+ *    - motorlink_new_lead           → Open MotorLink
+ *    - motorlink_listing_live       → View My Listings
+ *    - motorlink_listing_rejected   → Update Listing
+ *    - motorlink_rate_experience    → Leave a Review
+ *    - motorlink_new_user           → Get Started
+ *
+ * ⚠️  IMPORTANT: Deleted APPROVED templates go PENDING for Meta review.
+ *     Approval typically takes a few minutes to a few hours.
+ *     During that window, template sends fall back to free-form messages.
+ *
+ * Usage: php scripts/wa_update_templates_buttons.php
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -24,27 +33,25 @@ $rows = $pdo->query(
     "SELECT setting_key, setting_value FROM site_settings WHERE setting_group='whatsapp'"
 )->fetchAll(PDO::FETCH_KEY_PAIR);
 
-$token      = $rows['wa_api_token']           ?? '';
-$phoneNumId = $rows['wa_phone_number_id']     ?? '';
-$wabaId     = $rows['wa_business_account_id'] ?? '';
-$apiVer     = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v25.0';
+$token  = $rows['wa_api_token']           ?? '';
+$wabaId = $rows['wa_business_account_id'] ?? '';
+$apiVer = !empty($rows['wa_api_version']) ? $rows['wa_api_version'] : 'v25.0';
 
-if (!$token || !$phoneNumId || !$wabaId) {
-    echo "ERROR: Missing wa_api_token, wa_phone_number_id, or wa_business_account_id in DB.\n";
+if (!$token || !$wabaId) {
+    echo "ERROR: Missing wa_api_token or wa_business_account_id in DB.\n";
     exit(1);
 }
 
-echo "=== MotorLink — WhatsApp Template Creator ===\n";
-echo "WABA ID   : $wabaId\n";
-echo "Phone ID  : $phoneNumId\n";
-echo "API ver   : $apiVer\n";
-echo "Token     : ..." . substr($token, -6) . "\n\n";
+echo "=== MotorLink — WhatsApp Template Button Updater ===\n";
+echo "WABA ID : $wabaId\n";
+echo "API ver : $apiVer\n";
+echo "Token   : ..." . substr($token, -6) . "\n\n";
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
 function waReq(string $method, string $url, string $token, ?array $body = null): array {
-    $ch = curl_init($url);
+    $ch   = curl_init($url);
     $opts = [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_CUSTOMREQUEST  => $method,
@@ -64,10 +71,6 @@ function waReq(string $method, string $url, string $token, ?array $body = null):
     return ['code' => $code, 'body' => json_decode($resp ?: '{}', true) ?? [], 'curl_err' => $err];
 }
 
-// ---------------------------------------------------------------------------
-// Fetch existing templates from Meta so we can skip already-approved ones
-// and delete rejected/pending ones before recreating
-// ---------------------------------------------------------------------------
 function fetchExistingTemplates(string $wabaId, string $apiVer, string $token): array {
     $map = [];
     $url = "https://graph.facebook.com/{$apiVer}/{$wabaId}/message_templates?limit=100";
@@ -77,14 +80,11 @@ function fetchExistingTemplates(string $wabaId, string $apiVer, string $token): 
         foreach ($data as $t) {
             $map[$t['name']] = ['id' => $t['id'], 'status' => strtoupper($t['status'] ?? '')];
         }
-        $url  = $r['body']['paging']['next'] ?? null;
+        $url = $r['body']['paging']['next'] ?? null;
     } while ($url);
     return $map;
 }
 
-// ---------------------------------------------------------------------------
-// Delete a template by name (needed to recreate REJECTED or change body)
-// ---------------------------------------------------------------------------
 function deleteTemplate(string $wabaId, string $apiVer, string $token, string $name): void {
     $url = "https://graph.facebook.com/{$apiVer}/{$wabaId}/message_templates?name={$name}";
     $r   = waReq('DELETE', $url, $token);
@@ -92,21 +92,18 @@ function deleteTemplate(string $wabaId, string $apiVer, string $token, string $n
     echo "   DELETE $name → HTTP:{$r['code']} " . ($ok ? 'OK' : json_encode($r['body'])) . "\n";
 }
 
-// ---------------------------------------------------------------------------
-// Create one template and return result array
-// ---------------------------------------------------------------------------
 function createTemplate(string $wabaId, string $apiVer, string $token, array $tpl): array {
     $url = "https://graph.facebook.com/{$apiVer}/{$wabaId}/message_templates";
     return waReq('POST', $url, $token, $tpl);
 }
 
 // ---------------------------------------------------------------------------
-// Template definitions (with interactive buttons)
+// Updated template definitions WITH buttons
 // ---------------------------------------------------------------------------
 $templates = [
 
     // 1 ── New booking request → car hire OWNER ────────────────────────────
-    // QUICK_REPLY: payloads processed by api.php?action=wa_webhook
+    // QUICK_REPLY: tap replies trigger wa_webhook → auto-updates booking status
     [
         'name'     => 'motorlink_booking',
         'category' => 'UTILITY',
@@ -175,7 +172,7 @@ $templates = [
     ],
 
     // 4 ── Booking pickup reminder → RENTER ───────────────────────────────
-    // QUICK_REPLY: "I Need to Cancel" triggers booking cancellation via webhook
+    // QUICK_REPLY: "Got it!" is informational; "I Need to Cancel" triggers cancellation
     [
         'name'     => 'motorlink_hire_reminder',
         'category' => 'UTILITY',
@@ -307,34 +304,6 @@ $templates = [
             ],
         ],
     ],
-
-    // 10 ── OTP / one-time code (AUTHENTICATION category) ─────────────────
-    // AUTHENTICATION templates: Meta auto-generates the body text.
-    // Format: "[CODE] is your [AppName] verification code."
-    // You cannot supply custom body text for this category.
-    [
-        'name'     => 'motorlink_otp',
-        'category' => 'AUTHENTICATION',
-        'language' => 'en_US',
-        'components' => [
-            [
-                'type'                        => 'BODY',
-                'add_security_recommendation' => true,
-            ],
-            [
-                'type'                    => 'FOOTER',
-                'code_expiration_minutes' => 10,
-            ],
-            [
-                'type'    => 'BUTTONS',
-                'buttons' => [[
-                    'type'     => 'OTP',
-                    'otp_type' => 'COPY_CODE',
-                    'text'     => 'Copy Code',
-                ]],
-            ],
-        ],
-    ],
 ];
 
 // ---------------------------------------------------------------------------
@@ -342,83 +311,74 @@ $templates = [
 // ---------------------------------------------------------------------------
 echo "=== Fetching existing templates from Meta ===\n";
 $existing = fetchExistingTemplates($wabaId, $apiVer, $token);
-if ($existing) {
-    foreach ($existing as $name => $info) {
-        echo "  Found: $name [status:{$info['status']}]\n";
-    }
-} else {
-    echo "  None found (or fetch failed).\n";
+foreach ($existing as $name => $info) {
+    echo "  Found: $name [status:{$info['status']}]\n";
 }
 echo "\n";
 
 // ---------------------------------------------------------------------------
-// Submit each template
+// Confirm before proceeding
 // ---------------------------------------------------------------------------
-$results = [];
+echo "This will DELETE and RECREATE the following 9 templates:\n";
+foreach ($templates as $tpl) {
+    echo "  - {$tpl['name']}\n";
+}
+echo "\nmotorlink_otp will NOT be touched.\n\n";
+echo "Approved templates will become PENDING during Meta's re-review.\n";
+echo "Continue? [y/N]: ";
+$input = trim(fgets(STDIN));
+if (strtolower($input) !== 'y') {
+    echo "Aborted.\n";
+    exit(0);
+}
+echo "\n";
+
+// ---------------------------------------------------------------------------
+// Delete → Recreate each template
+// ---------------------------------------------------------------------------
+$created = [];
+$failed  = [];
 
 foreach ($templates as $tpl) {
-    $name = $tpl['name'];
-    echo "── $name ─────────────────────────────────\n";
+    $name   = $tpl['name'];
+    $exists = isset($existing[$name]);
 
-    $current = $existing[$name] ?? null;
+    echo "── $name ──────────────────────────────────────\n";
 
-    // Skip already-approved templates (no-op)
-    if ($current && $current['status'] === 'APPROVED') {
-        echo "  ✅ Already APPROVED — skipping.\n\n";
-        $results[$name] = 'APPROVED (skipped)';
-        continue;
-    }
-
-    // Skip PENDING templates — they are already submitted and under review
-    if ($current && $current['status'] === 'PENDING') {
-        echo "  ⏳ Already PENDING (under review) — skipping.\n\n";
-        $results[$name] = 'PENDING (skipped)';
-        continue;
-    }
-
-    // Delete REJECTED/PAUSED/DISABLED before recreating (not PENDING)
-    if ($current && in_array($current['status'], ['REJECTED', 'PAUSED', 'DISABLED'], true)) {
-        echo "  Status is {$current['status']} — deleting to recreate...\n";
+    if ($exists) {
         deleteTemplate($wabaId, $apiVer, $token, $name);
-        sleep(2);
-    }
-
-    // Submit
-    $r = createTemplate($wabaId, $apiVer, $token, $tpl);
-    $status = strtoupper($r['body']['status'] ?? '');
-    $id     = $r['body']['id'] ?? null;
-    $err    = $r['body']['error']['message'] ?? null;
-
-    if ($r['code'] === 200 && $id) {
-        echo "  ✅ Submitted — ID:$id  Status:$status\n\n";
-        $results[$name] = "SUBMITTED (status:$status)";
-    } elseif ($r['body']['error']['code'] ?? null) {
-        $errMsg = $r['body']['error']['message'] ?? '';
-        $errUsr = $r['body']['error']['error_user_msg'] ?? '';
-        $detail = $errUsr ?: $errMsg;
-        echo "  ❌ Error ({$r['body']['error']['code']}): $detail\n\n";
-        $results[$name] = "FAILED: $detail";
+        sleep(2); // brief pause to let Meta process the deletion
     } else {
-        echo "  ⚠ HTTP:{$r['code']} — " . json_encode($r['body']) . "\n\n";
-        $results[$name] = "HTTP:{$r['code']}";
+        echo "   (not found at Meta — will create fresh)\n";
     }
 
-    // Brief pause between submissions to avoid rate limits
+    $r   = createTemplate($wabaId, $apiVer, $token, $tpl);
+    $id  = $r['body']['id'] ?? null;
+    $st  = strtoupper($r['body']['status'] ?? '');
+    $err = $r['body']['error']['error_user_msg'] ?? $r['body']['error']['message'] ?? '';
+
+    if ($id) {
+        echo "   CREATE OK  ID:$id  Status:$st\n";
+        $created[] = $name;
+    } else {
+        echo "   CREATE FAILED  $err\n";
+        $failed[] = $name;
+    }
     sleep(1);
+    echo "\n";
 }
 
 // ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
-echo "═══════════════════════════════════════════\n";
-echo "           SUBMISSION SUMMARY\n";
-echo "═══════════════════════════════════════════\n";
-$passed = 0;
-foreach ($results as $name => $status) {
-    $icon = str_contains($status, 'FAILED') ? '❌' : (str_contains($status, 'skipped') ? '✅' : '✅');
-    echo "  $icon $name\n       $status\n";
-    if (!str_contains($status, 'FAILED')) $passed++;
+echo "=== Summary ===\n";
+echo "Created (" . count($created) . "): " . implode(', ', $created) . "\n";
+if ($failed) {
+    echo "Failed  (" . count($failed)  . "): " . implode(', ', $failed) . "\n";
+    echo "\nRetry failed templates with: php scripts/wa_retry_create.php\n";
 }
-echo "\n  Total: $passed/" . count($results) . " submitted or already approved\n";
-echo "\nMeta review is typically instant to a few hours.\n";
-echo "Run: php scripts/wa_check_templates.php  to poll approval status.\n";
+echo "\nTemplates are now PENDING Meta review.\n";
+echo "Run php scripts/wa_check_templates.php to monitor approval status.\n";
+echo "\nNOTE: The motorlink_booking webhook handler is at:\n";
+echo "  https://motorlink.mw/api.php?action=wa_webhook\n";
+echo "Configure this URL in your Meta app's webhook settings.\n";

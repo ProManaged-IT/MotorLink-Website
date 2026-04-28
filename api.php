@@ -1520,6 +1520,7 @@ try {
         case 'car_hire_company': getCarHireCompany($db); break;
         case 'car_hire_fleet': getCarHireFleet($db); break;
         case 'car_hire_book_whatsapp': carHireBookWhatsapp($db); break;
+        case 'wa_webhook': handleWaWebhook($db); break;
         case 'image': serveImage($db); break;
         case 'get_listing_images': getListingImages($db); break;
         case 'set_featured_image': setFeaturedImage($db); break;
@@ -3082,17 +3083,203 @@ function sendWhatsAppMessage($settings, string $toNumber, string $messageBody): 
 }
 
 /**
+ * WhatsApp Cloud API webhook — handles both verification (GET) and incoming messages (POST).
+ *
+ * GET  api.php?action=wa_webhook  → Meta challenge verification
+ * POST api.php?action=wa_webhook  → Incoming quick-reply button presses
+ *
+ * Quick-reply payloads handled:
+ *   ACCEPT_BOOKING_{id}   → confirm booking
+ *   DECLINE_BOOKING_{id}  → decline booking
+ *   PROPOSE_DATES_{id}    → reply asking owner to contact renter for new dates
+ *   REMINDER_ACK_{id}     → acknowledge (no status change, just logged)
+ *   CANCEL_BOOKING_{id}   → cancel booking by renter
+ */
+function handleWaWebhook($db): void {
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+    // ── GET: Meta webhook verification ──────────────────────────────────────
+    if ($method === 'GET') {
+        $mode      = $_GET['hub_mode']         ?? $_GET['hub.mode']         ?? '';
+        $challenge = $_GET['hub_challenge']    ?? $_GET['hub.challenge']    ?? '';
+        $token     = $_GET['hub_verify_token'] ?? $_GET['hub.verify_token'] ?? '';
+
+        $stmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key='wa_webhook_verify_token' LIMIT 1");
+        $stmt->execute();
+        $expectedToken = $stmt->fetchColumn() ?: '';
+
+        if ($mode === 'subscribe' && $expectedToken !== '' && hash_equals($expectedToken, $token)) {
+            header('Content-Type: text/plain');
+            echo $challenge;
+        } else {
+            http_response_code(403);
+            echo 'Forbidden';
+        }
+        exit;
+    }
+
+    // ── POST: incoming message payload ──────────────────────────────────────
+    if ($method !== 'POST') {
+        http_response_code(405);
+        exit;
+    }
+
+    // Validate X-Hub-Signature-256
+    $rawBody = file_get_contents('php://input');
+    $sigHeader = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
+
+    $secretStmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key='wa_app_secret' LIMIT 1");
+    $secretStmt->execute();
+    $appSecret = $secretStmt->fetchColumn() ?: '';
+
+    if ($appSecret !== '') {
+        $expected = 'sha256=' . hash_hmac('sha256', $rawBody, $appSecret);
+        if (!hash_equals($expected, $sigHeader)) {
+            http_response_code(403);
+            error_log('wa_webhook: invalid X-Hub-Signature-256');
+            exit;
+        }
+    }
+
+    $data = json_decode($rawBody ?: '{}', true) ?? [];
+    // Always return 200 quickly so Meta doesn't retry
+    http_response_code(200);
+    header('Content-Type: application/json');
+    echo '{"status":"ok"}';
+
+    // Parse quick-reply payload from the message entry
+    $entry   = $data['entry'][0]          ?? [];
+    $changes = $entry['changes'][0]       ?? [];
+    $value   = $changes['value']          ?? [];
+    $msg     = $value['messages'][0]      ?? [];
+    $msgType = $msg['type']               ?? '';
+
+    if ($msgType !== 'button') {
+        exit; // Not a quick-reply; ignore free-text messages
+    }
+
+    $buttonPayload = $msg['button']['payload'] ?? '';
+    $senderPhone   = $msg['from']              ?? '';
+
+    if (empty($buttonPayload)) {
+        exit;
+    }
+
+    error_log("wa_webhook: received button payload '$buttonPayload' from $senderPhone");
+
+    // ── Extract action + booking ID ──────────────────────────────────────────
+    if (preg_match('/^(ACCEPT_BOOKING|DECLINE_BOOKING|PROPOSE_DATES|CANCEL_BOOKING|REMINDER_ACK)_(\d+)$/', $buttonPayload, $m)) {
+        $action    = $m[1];
+        $bookingId = (int)$m[2];
+    } else {
+        exit; // Unknown payload pattern
+    }
+
+    try {
+        // Fetch the booking to validate it exists and is in a sensible state
+        $bStmt = $db->prepare("SELECT b.*, c.phone AS owner_phone, c.whatsapp AS owner_whatsapp FROM car_hire_bookings b LEFT JOIN car_hire_companies c ON c.id = b.company_id WHERE b.id = ? LIMIT 1");
+        $bStmt->execute([$bookingId]);
+        $booking = $bStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$booking) {
+            error_log("wa_webhook: booking $bookingId not found");
+            exit;
+        }
+
+        $waSettings = getWhatsAppSettings($db);
+        $renterNum  = preg_replace('/[^0-9]/', '', $booking['renter_whatsapp'] ?: $booking['renter_phone'] ?? '');
+
+        if ($action === 'ACCEPT_BOOKING' && $booking['status'] === 'pending') {
+            $db->prepare("UPDATE car_hire_bookings SET status='confirmed', updated_at=NOW() WHERE id=?")->execute([$bookingId]);
+            // Notify renter
+            if ($renterNum && $waSettings['enabled'] && !empty($waSettings['api_token'])) {
+                $ownerContact = $booking['owner_whatsapp'] ?: $booking['owner_phone'] ?? '';
+                sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_confirmed', [
+                    $booking['renter_name'],
+                    $booking['vehicle_name'] ?? 'your vehicle',
+                    $booking['start_date'],
+                    $booking['end_date'],
+                    $ownerContact,
+                ]);
+            }
+            error_log("wa_webhook: booking $bookingId ACCEPTED via WhatsApp by $senderPhone");
+
+        } elseif ($action === 'DECLINE_BOOKING' && $booking['status'] === 'pending') {
+            $db->prepare("UPDATE car_hire_bookings SET status='declined', updated_at=NOW() WHERE id=?")->execute([$bookingId]);
+            // Notify renter
+            if ($renterNum && $waSettings['enabled'] && !empty($waSettings['api_token'])) {
+                $dates = $booking['start_date'] . ' - ' . $booking['end_date'];
+                sendWhatsAppTemplate($waSettings, $renterNum, 'motorlink_booking_declined', [
+                    $booking['renter_name'],
+                    $booking['vehicle_name'] ?? 'your vehicle',
+                    $dates,
+                ]);
+            }
+            error_log("wa_webhook: booking $bookingId DECLINED via WhatsApp by $senderPhone");
+
+        } elseif ($action === 'PROPOSE_DATES' && $booking['status'] === 'pending') {
+            // No status change — send a free-form message back to the owner with renter contact
+            if ($waSettings['enabled'] && !empty($waSettings['api_token']) && !empty($waSettings['phone_number_id'])) {
+                $renterContact = $booking['renter_whatsapp'] ?: $booking['renter_phone'] ?? 'N/A';
+                $refId = str_pad($bookingId, 6, '0', STR_PAD_LEFT);
+                $msg   = "To propose new dates for booking #{$refId}, please contact the customer directly:\n\n"
+                       . "*Name:* {$booking['renter_name']}\n"
+                       . "*Phone:* {$renterContact}\n\n"
+                       . "Once agreed, update the booking in your MotorLink dashboard.";
+                sendWhatsAppMessage($waSettings, $senderPhone, $msg);
+            }
+            error_log("wa_webhook: booking $bookingId PROPOSE_DATES requested by $senderPhone");
+
+        } elseif ($action === 'CANCEL_BOOKING' && in_array($booking['status'], ['pending', 'confirmed'], true)) {
+            $db->prepare("UPDATE car_hire_bookings SET status='cancelled', updated_at=NOW() WHERE id=?")->execute([$bookingId]);
+            // Notify owner
+            $ownerNum = preg_replace('/[^0-9]/', '', $booking['owner_whatsapp'] ?: $booking['owner_phone'] ?? '');
+            if ($ownerNum && $waSettings['enabled'] && !empty($waSettings['api_token'])) {
+                $refId = str_pad($bookingId, 6, '0', STR_PAD_LEFT);
+                $msg   = "MotorLink — Booking #{$refId} has been *cancelled* by the customer ({$booking['renter_name']}) via WhatsApp.\n\n"
+                       . "*Vehicle:* {$booking['vehicle_name']}\n"
+                       . "*Dates:* {$booking['start_date']} - {$booking['end_date']}";
+                sendWhatsAppMessage($waSettings, $ownerNum, $msg);
+            }
+            error_log("wa_webhook: booking $bookingId CANCELLED by renter $senderPhone");
+
+        } elseif ($action === 'REMINDER_ACK') {
+            // Informational acknowledgement — just log it
+            error_log("wa_webhook: booking $bookingId reminder acknowledged by $senderPhone");
+        }
+
+    } catch (Exception $e) {
+        error_log("wa_webhook processing error: " . $e->getMessage());
+    }
+
+    exit;
+}
+
+/**
  * Send a WhatsApp template message via Meta Cloud API.
  * $params: ordered array of body parameter values.
+ * $buttonPayloads: optional array of QUICK_REPLY payloads (index-matched to template buttons).
  * Returns same shape as sendWhatsAppMessage().
  */
-function sendWhatsAppTemplate($settings, string $toNumber, string $templateName, array $params): array {
+function sendWhatsAppTemplate($settings, string $toNumber, string $templateName, array $params, array $buttonPayloads = []): array {
     $toNumber = preg_replace('/[^0-9]/', '', $toNumber);
     if (empty($toNumber)) {
         return ['success' => false, 'wamid' => null, 'error' => 'Invalid recipient number'];
     }
 
     $bodyParams = array_map(fn($v) => ['type' => 'text', 'text' => (string)$v], $params);
+    $components = [['type' => 'body', 'parameters' => $bodyParams]];
+
+    // Inject QUICK_REPLY button payloads (personalised per booking/action)
+    foreach ($buttonPayloads as $idx => $btnPayload) {
+        $components[] = [
+            'type'       => 'button',
+            'sub_type'   => 'quick_reply',
+            'index'      => (string)$idx,
+            'parameters' => [['type' => 'payload', 'payload' => (string)$btnPayload]],
+        ];
+    }
+
     $url = "https://graph.facebook.com/{$settings['api_version']}/{$settings['phone_number_id']}/messages";
     $payload = json_encode([
         'messaging_product' => 'whatsapp',
@@ -3101,9 +3288,7 @@ function sendWhatsAppTemplate($settings, string $toNumber, string $templateName,
         'template'          => [
             'name'       => $templateName,
             'language'   => ['code' => 'en_US'],
-            'components' => [
-                ['type' => 'body', 'parameters' => $bodyParams],
-            ],
+            'components' => $components,
         ],
     ]);
 
@@ -3391,13 +3576,18 @@ function carHireBookWhatsapp($db) {
 
     if ($waSettings['enabled'] && !empty($waSettings['api_token']) && !empty($waSettings['phone_number_id'])) {
         if ($ownerWhatsApp) {
-            // Try approved template first; fall back to free-form text
+            // Try approved template first; fall back to free-form text.
+            // Button payloads embed the bookingId so the webhook can act on Accept/Decline/Propose.
             $result = sendWhatsAppTemplate($waSettings, $ownerWhatsApp, 'motorlink_booking', [
                 $vehicleName,
                 $renterName,
                 $renterPhone,
                 $startDate,
                 $endDate,
+            ], [
+                "ACCEPT_BOOKING_{$bookingId}",
+                "DECLINE_BOOKING_{$bookingId}",
+                "PROPOSE_DATES_{$bookingId}",
             ]);
             if (!$result['success']) {
                 // Template not approved yet — fall back to free-form

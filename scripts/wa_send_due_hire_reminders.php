@@ -37,13 +37,25 @@ function waReminderEnsureColumns(PDO $pdo): void {
     }
 }
 
-function waReminderSendTemplate(array $settings, string $toNumber, array $params): array {
+function waReminderSendTemplate(array $settings, string $toNumber, array $params, array $buttonPayloads = []): array {
     $toNumber = preg_replace('/[^0-9]/', '', $toNumber);
     if (strlen($toNumber) < 7) {
         return ['success' => false, 'error' => 'Invalid recipient number'];
     }
 
     $bodyParams = array_map(fn($value) => ['type' => 'text', 'text' => (string)$value], $params);
+    $components = [['type' => 'body', 'parameters' => $bodyParams]];
+
+    // Inject QUICK_REPLY payloads so the webhook can identify and cancel the booking
+    foreach ($buttonPayloads as $idx => $btnPayload) {
+        $components[] = [
+            'type'       => 'button',
+            'sub_type'   => 'quick_reply',
+            'index'      => (string)$idx,
+            'parameters' => [['type' => 'payload', 'payload' => (string)$btnPayload]],
+        ];
+    }
+
     $payload = json_encode([
         'messaging_product' => 'whatsapp',
         'to' => $toNumber,
@@ -51,9 +63,7 @@ function waReminderSendTemplate(array $settings, string $toNumber, array $params
         'template' => [
             'name' => 'motorlink_hire_reminder',
             'language' => ['code' => 'en_US'],
-            'components' => [
-                ['type' => 'body', 'parameters' => $bodyParams],
-            ],
+            'components' => $components,
         ],
     ]);
 
@@ -140,6 +150,9 @@ foreach ($bookings as $booking) {
         $booking['vehicle_name'] ?? 'your rental vehicle',
         $booking['start_date'] ?? '',
         $ownerContact,
+    ], [
+        'REMINDER_ACK_' . $booking['id'],   // index 0 → "Got it, I'm ready!"
+        'CANCEL_BOOKING_' . $booking['id'], // index 1 → "I Need to Cancel"
     ]);
 
     if (!empty($result['success'])) {

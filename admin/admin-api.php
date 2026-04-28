@@ -8418,24 +8418,27 @@ function handleSaveFooterSupportSettings($db) {
 function handleGetWhatsAppSettings($db) {
     requireSuperAdmin($db);
     try {
-        $keys = ['wa_enabled', 'wa_public_buttons_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_business_account_id', 'wa_api_version', 'wa_lead_notifications'];
+        $keys = ['wa_enabled', 'wa_public_buttons_enabled', 'wa_api_token', 'wa_phone_number_id', 'wa_business_account_id', 'wa_api_version', 'wa_lead_notifications', 'wa_webhook_verify_token', 'wa_app_secret'];
         $placeholders = implode(',', array_fill(0, count($keys), '?'));
         $stmt = $db->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
         $stmt->execute($keys);
         $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
-        $token = $rows['wa_api_token'] ?? '';
+        $token     = $rows['wa_api_token']  ?? '';
+        $appSecret = $rows['wa_app_secret'] ?? '';
         echo json_encode([
             'success' => true,
             'settings' => [
-                'wa_enabled'              => $rows['wa_enabled']              ?? '0',
+                'wa_enabled'               => $rows['wa_enabled']               ?? '0',
                 'wa_public_buttons_enabled' => $rows['wa_public_buttons_enabled'] ?? '1',
-                'wa_api_token'            => $token !== '' ? '••••••••' . substr($token, -4) : '',
-                'wa_phone_number_id'      => $rows['wa_phone_number_id']      ?? '',
-                'wa_business_account_id'  => $rows['wa_business_account_id']  ?? '',
-                'wa_api_version'          => $rows['wa_api_version']          ?? 'v25.0',
-                'wa_lead_notifications'   => $rows['wa_lead_notifications']   ?? '0',
-                'token_configured'        => $token !== '',
+                'wa_api_token'             => $token !== '' ? '••••••••' . substr($token, -4) : '',
+                'wa_phone_number_id'       => $rows['wa_phone_number_id']       ?? '',
+                'wa_business_account_id'   => $rows['wa_business_account_id']   ?? '',
+                'wa_api_version'           => $rows['wa_api_version']           ?? 'v25.0',
+                'wa_lead_notifications'    => $rows['wa_lead_notifications']    ?? '0',
+                'wa_webhook_verify_token'  => $rows['wa_webhook_verify_token']  ?? '',
+                'token_configured'         => $token !== '',
+                'app_secret_configured'    => $appSecret !== '',
             ],
         ]);
         exit();
@@ -8468,6 +8471,7 @@ function handleSaveWhatsAppSettings($db) {
     $phoneNumId   = trim(preg_replace('/[^0-9]/', '', (string)($input['wa_phone_number_id'] ?? '')));
     $wabaId       = trim(preg_replace('/[^0-9]/', '', (string)($input['wa_business_account_id'] ?? '')));
     $apiVersion   = trim((string)($input['wa_api_version'] ?? 'v25.0'));
+    $appSecret    = trim((string)($input['wa_app_secret'] ?? ''));
 
     // Reject placeholder value — don't overwrite existing token with mask
     $tokenIsPlaceholder = ($token === '' || preg_match('/^[•\*]+/', $token));
@@ -8500,6 +8504,11 @@ function handleSaveWhatsAppSettings($db) {
         $upsert->execute(['wa_phone_number_id', $phoneNumId, 'string', 'Meta WhatsApp Phone Number ID', 0]);
         $upsert->execute(['wa_business_account_id', $wabaId, 'string', 'Meta WhatsApp Business Account ID (WABA ID)', 0]);
         $upsert->execute(['wa_api_version', $apiVersion, 'string', 'Meta Graph API version', 0]);
+        // App secret: only update if a non-empty, non-masked value is submitted
+        $secretIsPlaceholder = ($appSecret === '' || preg_match('/^[•\*]+/', $appSecret));
+        if (!$secretIsPlaceholder) {
+            $upsert->execute(['wa_app_secret', $appSecret, 'string', 'Meta App Secret for webhook signature validation', 0]);
+        }
 
         $db->commit();
 

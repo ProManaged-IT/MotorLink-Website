@@ -1722,6 +1722,25 @@
                                     <small class="form-text" id="waTokenStatus">Loading status…</small>
                                 </div>
 
+                                <!-- ── Webhook Settings ───────────────────── -->
+                                <div class="form-row" style="margin-top:18px;">
+                                    <div class="form-group">
+                                        <label for="wa-webhook-verify-token">Webhook Verify Token</label>
+                                        <input type="text" id="wa-webhook-verify-token" class="form-control" readonly
+                                               placeholder="Auto-generated — run wa_seed_webhook_settings.php">
+                                        <small class="form-text">Paste this into Meta App &rarr; WhatsApp &rarr; Configuration &rarr; Webhook &rarr; Verify Token.
+                                            Webhook URL: <code>https://motorlink.mw/api.php?action=wa_webhook</code> — subscribe to <strong>messages</strong>.</small>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="wa-app-secret">App Secret (webhook signature validation)</label>
+                                        <input type="password" id="wa-app-secret" class="form-control"
+                                               placeholder="Meta App Dashboard → App Settings → Basic → App Secret" autocomplete="new-password">
+                                        <small class="form-text">Leave blank to skip signature validation (not recommended for production).</small>
+                                    </div>
+                                </div>
+
                                 <button class="btn btn-primary" onclick="saveWhatsAppSettings()" id="waSaveBtn">
                                     <i class="fas fa-save"></i> Save API Settings
                                 </button>
