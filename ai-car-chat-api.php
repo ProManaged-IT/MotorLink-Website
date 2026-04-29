@@ -5035,6 +5035,30 @@ function motorlinkGenericAIFallback($db, $message, $conversationHistory, $intent
             $contextBlock .= $label . ": " . (string)$hints[$key] . "\n";
         }
     }
+
+    // Proximity / location-source awareness so the AI never confuses
+    // a phrase like "near me" with a city name like "Neno".
+    $isProximityQuery = !empty($hints['proximity_query']);
+    $locationSource = isset($hints['location_source']) ? (string)$hints['location_source'] : '';
+    $resolvedLocation = trim((string)($hints['location_name'] ?? ''));
+    $userPhrasedLocation = trim((string)($hints['user_phrased_location'] ?? ''));
+    $proximityContext = '';
+    if ($isProximityQuery) {
+        $proximityContext .= "PROXIMITY REQUEST: yes (the user said 'near me' / 'closest' / 'nearest' — this is a request for proximity, NOT a city name).\n";
+        if ($locationSource === 'gps') {
+            $proximityContext .= "USER POSITION: live GPS available" . ($resolvedLocation !== '' ? " (closest known place: {$resolvedLocation})" : '') . ".\n";
+        } elseif ($locationSource === 'profile' && $resolvedLocation !== '') {
+            $proximityContext .= "USER POSITION: live GPS NOT available. The system fell back to the user's saved profile location: {$resolvedLocation}. The user did NOT type this location in their message.\n";
+        } elseif ($locationSource === 'none' || $resolvedLocation === '') {
+            $proximityContext .= "USER POSITION: unknown — no GPS, no profile city.\n";
+        }
+    } elseif ($userPhrasedLocation !== '') {
+        $proximityContext .= "USER-STATED LOCATION: {$userPhrasedLocation} (the user typed this location).\n";
+    }
+    if ($proximityContext !== '') {
+        $contextBlock .= $proximityContext;
+    }
+
     $fallbackUrl = isset($hints['fallback_url']) ? (string)$hints['fallback_url'] : '';
 
     // Intent-specific guidance
@@ -5051,6 +5075,21 @@ function motorlinkGenericAIFallback($db, $message, $conversationHistory, $intent
     ];
     $guidance = $intentGuidance[$intent] ?? $intentGuidance['general'];
 
+    // Proximity-specific rules — keep the AI honest about which location it is using.
+    $proximityRules = '';
+    if ($isProximityQuery) {
+        if ($locationSource === 'profile' && $resolvedLocation !== '') {
+            $proximityRules .=
+                "- The user asked for results 'near them' but did NOT type a city. Begin your reply by clearly stating you're using their saved profile location ({$resolvedLocation}) because live GPS isn't available, and invite them to share their live location for more precise results.\n"
+                . "- Do NOT pretend the user typed '{$resolvedLocation}' or treat that name as their query — it's a fallback.\n"
+                . "- If the profile location is rural/small and likely has no providers, suggest 1-2 nearby larger towns to widen the search (use general Malawi geographic knowledge — e.g. Blantyre, Lilongwe, Mzuzu, Zomba, Mzimba, Kasungu, Mangochi, Mwanza, Zalewa).\n";
+        } elseif ($locationSource === 'gps') {
+            $proximityRules .= "- The user's live GPS is available. Phrase your answer in proximity terms ('closest', 'within Xkm') rather than treating the resolved place name as their query.\n";
+        } else {
+            $proximityRules .= "- Neither live GPS nor a profile city is available. Acknowledge this honestly and ask the user to share a city or enable location access for accurate proximity results.\n";
+        }
+    }
+
     $systemPrompt = "You are MotorLink AI — an automotive specialist for Malawi.\n\n"
         . "INTENT: {$intent}\n"
         . ($contextBlock !== '' ? "PARSED CONTEXT:\n" . $contextBlock . "\n" : '')
@@ -5063,6 +5102,8 @@ function motorlinkGenericAIFallback($db, $message, $conversationHistory, $intent
         . "- Never claim live browsing; phrase web data as 'public road/market data'.\n"
         . "- Never invent business names, phone numbers, addresses, or stock counts.\n"
         . "- If you genuinely don't know, say so and suggest one concrete next step.\n"
+        . "- 'Near me' / 'closest' / 'nearest' is a PROXIMITY request, not a city name. Never echo it back as if it were a place.\n"
+        . $proximityRules
         . ($fallbackUrl !== ''
             ? "- End with this exact markdown link: [Browse on MotorLink]({$fallbackUrl})\n"
             : '');
@@ -6639,6 +6680,28 @@ function getAIChatResolvedUserLocationFromContext() {
     $context = getAIChatPersistenceContext();
     $location = $context['resolved_user_location'] ?? null;
     return is_array($location) ? $location : null;
+}
+
+/**
+ * Classify how a $userLocation row was obtained so the AI fallback
+ * can be transparent ("near me" must never be confused with a city name).
+ *   - 'gps'     : live client coordinates resolved
+ *   - 'profile' : only the user's saved profile city is known
+ *   - 'none'    : no usable location at all
+ */
+function aiChatClassifyUserLocationSource($userLocation) {
+    if (!is_array($userLocation) || empty($userLocation)) {
+        return 'none';
+    }
+    $lat = $userLocation['latitude'] ?? null;
+    $lng = $userLocation['longitude'] ?? null;
+    if ($lat !== null && $lng !== null && is_numeric($lat) && is_numeric($lng)) {
+        return 'gps';
+    }
+    if (!empty($userLocation['location_name'])) {
+        return 'profile';
+    }
+    return 'none';
 }
 
 function parseAIChatBusinessDistanceLimitKm($message) {
@@ -11557,8 +11620,15 @@ function handleDealerQuery($db, $message, $conversationHistory) {
         // Format response
         if (empty($dealers)) {
             // Try AI fallback before sending a dead-end message
+            $locationSource = aiChatClassifyUserLocationSource($userLocation);
+            $resolvedLocationName = !empty($searchParams['user_location'])
+                ? (string)$searchParams['user_location']
+                : (string)($searchParams['location'] ?? '');
             $aiFallback = motorlinkGenericAIFallback($db, $message, $conversationHistory, 'dealers', [
-                'location_name' => $searchParams['user_location'] ?? ($searchParams['location'] ?? ''),
+                'location_name' => $resolvedLocationName,
+                'proximity_query' => !empty($searchParams['proximity']),
+                'location_source' => !empty($searchParams['proximity']) ? $locationSource : (!empty($searchParams['location']) ? 'explicit' : 'none'),
+                'user_phrased_location' => (string)($searchParams['location'] ?? ''),
                 'fallback_url' => $baseUrl . 'dealers.html'
             ]);
             if ($aiFallback !== null) {
@@ -11784,8 +11854,15 @@ function handleGarageQuery($db, $message, $conversationHistory) {
             
             if (empty($garages)) {
                 // Try AI fallback before sending a dead-end message
+                $locationSource = aiChatClassifyUserLocationSource($userLocation);
+                $resolvedLocationName = !empty($searchParams['user_location'])
+                    ? (string)$searchParams['user_location']
+                    : (string)($searchParams['location'] ?? '');
                 $aiFallback = motorlinkGenericAIFallback($db, $message, $conversationHistory, 'garages', [
-                    'location_name' => $searchParams['user_location'] ?? ($searchParams['location'] ?? ''),
+                    'location_name' => $resolvedLocationName,
+                    'proximity_query' => !empty($searchParams['proximity']),
+                    'location_source' => !empty($searchParams['proximity']) ? $locationSource : (!empty($searchParams['location']) ? 'explicit' : 'none'),
+                    'user_phrased_location' => (string)($searchParams['location'] ?? ''),
                     'fallback_url' => $baseUrl . 'garages.html'
                 ]);
                 if ($aiFallback !== null) {
@@ -12427,8 +12504,15 @@ function handleCarHireQuery($db, $message, $conversationHistory) {
         // Format response
         if (empty($results['companies'])) {
             // Try AI fallback before sending a dead-end message
+            $locationSource = aiChatClassifyUserLocationSource($userLocation);
+            $resolvedLocationName = !empty($searchParams['user_location'])
+                ? (string)$searchParams['user_location']
+                : (string)($searchParams['location'] ?? '');
             $aiFallback = motorlinkGenericAIFallback($db, $message, $conversationHistory, 'car_hire', [
-                'location_name' => $searchParams['user_location'] ?? ($searchParams['location'] ?? ''),
+                'location_name' => $resolvedLocationName,
+                'proximity_query' => !empty($searchParams['proximity']),
+                'location_source' => !empty($searchParams['proximity']) ? $locationSource : (!empty($searchParams['location']) ? 'explicit' : 'none'),
+                'user_phrased_location' => (string)($searchParams['location'] ?? ''),
                 'fallback_url' => $baseUrl . 'car-hire.html'
             ]);
             if ($aiFallback !== null) {
