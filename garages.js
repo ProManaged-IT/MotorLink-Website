@@ -676,19 +676,29 @@ async function geocodeAndUpdateGarageDistances() {
         return;
     }
     
-    // Geocode addresses for garages that have addresses
+    // Geocode addresses for garages — skip if lat/lng already provided by the API
     const geocodePromises = currentGarages
-        .filter(garage => garage.source === 'database' && garage.address)
+        .filter(garage => garage.source === 'database' && (garage.address || (garage.latitude && garage.longitude)))
         .map(async (garage) => {
-            const coords = await geocodeGarageAddress(garage.address, garage.location?.name || garage.district || '');
-            if (coords) {
-                garage.latitude = coords.lat;
-                garage.longitude = coords.lng;
+            let lat = garage.latitude ? parseFloat(garage.latitude) : null;
+            let lng = garage.longitude ? parseFloat(garage.longitude) : null;
+
+            if (!lat || !lng) {
+                const coords = await geocodeGarageAddress(garage.address, garage.location?.name || garage.district || '');
+                if (coords) {
+                    lat = coords.lat;
+                    lng = coords.lng;
+                    garage.latitude = lat;
+                    garage.longitude = lng;
+                }
+            }
+
+            if (lat && lng) {
                 garage.distance = calculateDistance(
                     userLocation.lat,
                     userLocation.lng,
-                    coords.lat,
-                    coords.lng
+                    lat,
+                    lng
                 );
             }
         });

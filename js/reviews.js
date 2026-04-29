@@ -274,10 +274,20 @@ function rvBindEvents(container, businessType, businessId, businessName) {
         status.className = 'rv-form-status';
 
         try {
+            const recaptchaToken = typeof window.getRecaptchaToken === 'function'
+                ? await window.getRecaptchaToken('submit_review')
+                : '';
             const data = await _rvFetch(`${CONFIG.API_URL}?action=submit_review`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ business_type: businessType, business_id: Number(businessId), rating, review_text: reviewText })
+                body: JSON.stringify({
+                    business_type: businessType,
+                    business_id: Number(businessId),
+                    rating,
+                    review_text: reviewText,
+                    recaptcha_token: recaptchaToken,
+                    recaptcha_action: 'submit_review'
+                })
             });
 
             if (!data.success) {

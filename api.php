@@ -1472,6 +1472,7 @@ try {
 
     // Try to get action from GET, POST, or JSON body
     $action = $_GET['action'] ?? $_POST['action'] ?? '';
+    $jsonInput = null;
 
     // If no action in GET/POST, check JSON body
     if (empty($action) && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -1493,6 +1494,7 @@ try {
 
     // Enforce one-click maintenance mode globally at API layer.
     enforceMaintenanceMode($db, $action);
+    verifyRecaptchaForApiAction($db, $action, $jsonInput);
 
     // Route to appropriate handler
     switch ($action) {
@@ -1532,6 +1534,8 @@ try {
         case 'check_guest_identity': checkGuestIdentity($db); break;
         case 'get_public_client_config': getPublicClientConfig($db); break;
         case 'google_places_autocomplete_new': googlePlacesAutocompleteNew($db); break;
+        case 'google_static_map': serveGoogleStaticMap($db); break;
+        case 'google_routes_compute': requireAuth(); googleRoutesCompute($db); break;
         case 'get_feedback_config': getFeedbackConfig($db); break;
         case 'submit_feedback': submitUserFeedback($db); break;
         case 'get_walkthrough_state': getWalkthroughState($db); break;
@@ -2574,6 +2578,7 @@ function deleteListingImage($db) {
 function getGarages($db) {
     try {
         ensureBusinessReviewsSchema($db);
+        $coordinateSelect = getLocationCoordinateSelect($db);
         // Build the query with filters
         $whereConditions = ["g.status = 'active'"];
         $params = [];
@@ -2626,6 +2631,7 @@ function getGarages($db) {
         $sql = "
             SELECT g.*,
                    loc.name as location_name, loc.region, loc.district,
+                   {$coordinateSelect},
                    (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
                     WHERE r.business_type = 'garage' AND r.business_id = g.id AND r.status = 'active') as avg_rating,
                    (SELECT COUNT(*) FROM business_reviews r
@@ -2683,6 +2689,8 @@ function getGarages($db) {
                 'avg_rating' => $reviewsEnabled && $garage['avg_rating'] ? (float)$garage['avg_rating'] : null,
                 'review_count' => $reviewsEnabled ? (int)($garage['review_count'] ?? 0) : 0,
                 'reviews_enabled' => $reviewsEnabled,
+                'latitude' => isset($garage['latitude']) && $garage['latitude'] !== null ? (float)$garage['latitude'] : null,
+                'longitude' => isset($garage['longitude']) && $garage['longitude'] !== null ? (float)$garage['longitude'] : null,
             ];
         }, $garages);
         
@@ -2699,8 +2707,10 @@ function getGarages($db) {
 function getDealers($db) {
     try {
         ensureBusinessReviewsSchema($db);
+        $coordinateSelect = getLocationCoordinateSelect($db);
         $stmt = $db->query("
             SELECT d.*, loc.name as location_name, loc.region, loc.district,
+                   {$coordinateSelect},
                    (SELECT COUNT(*) 
                     FROM car_listings cl 
                     WHERE (cl.dealer_id = d.id OR (cl.dealer_id IS NULL AND cl.user_id = d.user_id))
@@ -2801,8 +2811,10 @@ function getDealerShowroom($db) {
 function getCarHire($db) {
     try {
         ensureBusinessReviewsSchema($db);
+        $coordinateSelect = getLocationCoordinateSelect($db);
         $stmt = $db->query("
             SELECT c.*, loc.name as location_name, loc.region, loc.district,
+                   {$coordinateSelect},
                    (SELECT ROUND(AVG(r.rating), 1) FROM business_reviews r
                     WHERE r.business_type = 'car_hire' AND r.business_id = c.id AND r.status = 'active') as avg_rating,
                    (SELECT COUNT(*) FROM business_reviews r
@@ -2836,8 +2848,10 @@ function getCarHire($db) {
 function getCarHireCompaniesWithFleet($db) {
     try {
         ensureBusinessReviewsSchema($db);
+        $coordinateSelect = getLocationCoordinateSelect($db);
         $stmt = $db->query("
             SELECT c.*, loc.name as location_name, loc.region, loc.district,
+                   {$coordinateSelect},
                    COUNT(f.id) as total_vehicles,
                    MIN(f.daily_rate) as daily_rate_from,
                    MAX(f.daily_rate) as daily_rate_to,
@@ -10083,7 +10097,11 @@ function getPublicClientConfig($db) {
             'cookie_consent_enabled',
             'cookie_consent_version',
             'cookie_consent_log_enabled',
-            'wa_public_buttons_enabled'
+            'wa_public_buttons_enabled',
+            'recaptcha_enabled',
+            'recaptcha_site_key',
+            'recaptcha_min_score',
+            'recaptcha_mode'
         ];
 
         $placeholders = implode(',', array_fill(0, count($allowedKeys), '?'));
@@ -10098,7 +10116,11 @@ function getPublicClientConfig($db) {
             'cookie_consent_enabled' => '1',
             'cookie_consent_version' => '1.0',
             'cookie_consent_log_enabled' => '1',
-            'wa_public_buttons_enabled' => '1'
+            'wa_public_buttons_enabled' => '1',
+            'recaptcha_enabled' => '0',
+            'recaptcha_site_key' => '',
+            'recaptcha_min_score' => '0.5',
+            'recaptcha_mode' => 'v3'
         ];
 
         foreach ($rows as $row) {
@@ -10129,6 +10151,264 @@ function getGoogleMapsRuntimeApiKey($db) {
     $stmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'google_maps_api_key' LIMIT 1");
     $stmt->execute();
     return trim((string)($stmt->fetchColumn() ?: ''));
+}
+
+function getRuntimeSettingValue($db, $key, $default = '') {
+    try {
+        $stmt = $db->prepare('SELECT setting_value FROM site_settings WHERE setting_key = ? LIMIT 1');
+        $stmt->execute([$key]);
+        $value = $stmt->fetchColumn();
+        return $value === false || $value === null ? $default : (string)$value;
+    } catch (Exception $e) {
+        error_log('getRuntimeSettingValue error for ' . $key . ': ' . $e->getMessage());
+        return $default;
+    }
+}
+
+function getLocationCoordinateSelect($db) {
+    static $coordinateSelect = null;
+    if ($coordinateSelect !== null) {
+        return $coordinateSelect;
+    }
+
+    $fallbacks = [
+        'balaka' => [-14.9793, 34.9558],
+        'blantyre' => [-15.7861, 35.0058],
+        'chikwawa' => [-16.0333, 34.8000],
+        'chiradzulu' => [-15.7000, 35.1833],
+        'chitipa' => [-9.7024, 33.2697],
+        'dedza' => [-14.3779, 34.3332],
+        'dowa' => [-13.6540, 33.9375],
+        'karonga' => [-9.9333, 33.9333],
+        'kasungu' => [-13.0333, 33.4833],
+        'likoma' => [-12.0584, 34.7354],
+        'lilongwe' => [-13.9626, 33.7741],
+        'machinga' => [-14.9667, 35.5167],
+        'mangochi' => [-14.4782, 35.2645],
+        'mchinji' => [-13.7984, 32.8802],
+        'mulanje' => [-16.0316, 35.5000],
+        'mwanza' => [-15.6026, 34.5224],
+        'mzimba' => [-11.9000, 33.6000],
+        'mzuzu' => [-11.4656, 34.0207],
+        'neno' => [-15.3981, 34.6534],
+        'nkhata bay' => [-11.6066, 34.2907],
+        'nkhotakota' => [-12.9274, 34.2961],
+        'nsanje' => [-16.9167, 35.2667],
+        'ntcheu' => [-14.8203, 34.6359],
+        'ntchisi' => [-13.3753, 34.0036],
+        'phalombe' => [-15.8064, 35.6507],
+        'rumphi' => [-11.0186, 33.8575],
+        'salima' => [-13.7804, 34.4587],
+        'thyolo' => [-16.0667, 35.1333],
+        'zomba' => [-15.3850, 35.3188],
+    ];
+
+    $locationKey = "COALESCE(NULLIF(LOWER(TRIM(loc.district)), ''), LOWER(TRIM(loc.name)))";
+    $latitudeCase = "CASE {$locationKey}";
+    $longitudeCase = "CASE {$locationKey}";
+    foreach ($fallbacks as $name => [$lat, $lng]) {
+        $safeName = str_replace("'", "''", $name);
+        $latitudeCase .= " WHEN '{$safeName}' THEN {$lat}";
+        $longitudeCase .= " WHEN '{$safeName}' THEN {$lng}";
+    }
+    $latitudeCase .= ' ELSE NULL END';
+    $longitudeCase .= ' ELSE NULL END';
+
+    try {
+        $latStmt = $db->query("SHOW COLUMNS FROM locations LIKE 'latitude'");
+        $lngStmt = $db->query("SHOW COLUMNS FROM locations LIKE 'longitude'");
+        $hasCoordinates = $latStmt && $latStmt->fetch(PDO::FETCH_ASSOC) && $lngStmt && $lngStmt->fetch(PDO::FETCH_ASSOC);
+        $coordinateSelect = $hasCoordinates
+            ? "COALESCE(loc.latitude, {$latitudeCase}) as latitude, COALESCE(loc.longitude, {$longitudeCase}) as longitude"
+            : "{$latitudeCase} as latitude, {$longitudeCase} as longitude";
+    } catch (Exception $e) {
+        error_log('getLocationCoordinateSelect error: ' . $e->getMessage());
+        $coordinateSelect = "{$latitudeCase} as latitude, {$longitudeCase} as longitude";
+    }
+
+    return $coordinateSelect;
+}
+
+function enforceBillableGoogleRequestQuota($db, $actionKey, $maxRequests, $windowSeconds, $blockSeconds, $jsonResponse = true) {
+    $identifierHash = hash('sha256', getClientIpAddress() . '|' . (string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
+    if (isRateLimited($db, $actionKey, $identifierHash)) {
+        if ($jsonResponse) {
+            sendErrorWithCode('Too many map requests. Please try again later.', 'RATE_LIMITED', 429);
+        }
+        http_response_code(429);
+        exit;
+    }
+
+    if (recordRateLimitFailure($db, $actionKey, $identifierHash, $maxRequests, $windowSeconds, $blockSeconds)) {
+        if ($jsonResponse) {
+            sendErrorWithCode('Too many map requests. Please try again later.', 'RATE_LIMITED', 429);
+        }
+        http_response_code(429);
+        exit;
+    }
+}
+
+function readJsonRequestBody($fallback = null) {
+    if (is_array($fallback)) {
+        return $fallback;
+    }
+
+    $raw = file_get_contents('php://input');
+    $decoded = json_decode((string)$raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function normalizeRecaptchaAction($action) {
+    $normalized = strtolower(preg_replace('/[^a-zA-Z0-9_\/]/', '_', (string)$action));
+    return substr(trim($normalized, '_'), 0, 100) ?: 'api_action';
+}
+
+function getRecaptchaTokenFromRequest($jsonInput = null) {
+    if (!empty($_SERVER['HTTP_X_MOTORLINK_RECAPTCHA_TOKEN'])) {
+        return trim((string)$_SERVER['HTTP_X_MOTORLINK_RECAPTCHA_TOKEN']);
+    }
+    if (!empty($_SERVER['HTTP_X_RECAPTCHA_TOKEN'])) {
+        return trim((string)$_SERVER['HTTP_X_RECAPTCHA_TOKEN']);
+    }
+    if (!empty($_POST['recaptcha_token'])) {
+        return trim((string)$_POST['recaptcha_token']);
+    }
+
+    $input = readJsonRequestBody($jsonInput);
+    return trim((string)($input['recaptcha_token'] ?? $input['g-recaptcha-response'] ?? ''));
+}
+
+function getRecaptchaProtectedActions($db) {
+    $default = [
+        'login',
+        'register',
+        'submit_listing',
+        'submit_feedback',
+        'submit_review',
+        'car_hire_book_whatsapp'
+    ];
+
+    $configured = trim(getRuntimeSettingValue($db, 'recaptcha_protected_actions', ''));
+    if ($configured === '') {
+        return $default;
+    }
+
+    $actions = array_values(array_filter(array_map('trim', explode(',', strtolower($configured)))));
+    return $actions ?: $default;
+}
+
+function verifyRecaptchaForApiAction($db, $action, $jsonInput = null) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return;
+    }
+
+    $normalizedAction = normalizeRecaptchaAction($action);
+    if (!in_array($normalizedAction, getRecaptchaProtectedActions($db), true)) {
+        return;
+    }
+
+    $enabled = getRuntimeSettingValue($db, 'recaptcha_enabled', '0');
+    if (!in_array(strtolower(trim($enabled)), ['1', 'true', 'yes', 'on'], true)) {
+        return;
+    }
+
+    $siteKey = trim(getRuntimeSettingValue($db, 'recaptcha_site_key', ''));
+    $token = getRecaptchaTokenFromRequest($jsonInput);
+    if ($siteKey === '' || $token === '') {
+        sendError('Security check failed. Refresh the page and try again.', 403);
+    }
+
+    $mode = strtolower(trim(getRuntimeSettingValue($db, 'recaptcha_mode', 'v3')));
+    $minScore = (float)getRuntimeSettingValue($db, 'recaptcha_min_score', '0.5');
+    $minScore = max(0.1, min(1.0, $minScore));
+
+    $result = $mode === 'enterprise'
+        ? verifyRecaptchaEnterpriseToken($db, $token, $siteKey, $normalizedAction)
+        : verifyRecaptchaV3Token($db, $token, $normalizedAction);
+
+    if (!$result['success'] || $result['score'] < $minScore) {
+        error_log('reCAPTCHA blocked action=' . $normalizedAction . ' score=' . ($result['score'] ?? 0) . ' reason=' . ($result['reason'] ?? 'unknown'));
+        sendError('Security check failed. Please try again.', 403);
+    }
+}
+
+function verifyRecaptchaV3Token($db, $token, $expectedAction) {
+    $secret = trim(getRuntimeSettingValue($db, 'recaptcha_secret_key', ''));
+    if ($secret === '') {
+        return ['success' => false, 'score' => 0, 'reason' => 'missing_secret'];
+    }
+
+    $ch = curl_init('https://www.google.com/recaptcha/api/siteverify');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query([
+            'secret' => $secret,
+            'response' => $token,
+            'remoteip' => getClientIpAddress()
+        ]),
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT => 8
+    ]);
+    $raw = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        return ['success' => false, 'score' => 0, 'reason' => 'verify_http_' . $status . ':' . $error];
+    }
+
+    $decoded = json_decode((string)$raw, true);
+    $action = normalizeRecaptchaAction($decoded['action'] ?? '');
+    $score = (float)($decoded['score'] ?? 0);
+    $success = !empty($decoded['success']) && ($action === '' || $action === $expectedAction);
+
+    return ['success' => $success, 'score' => $score, 'reason' => $success ? 'ok' : 'action_or_token_invalid'];
+}
+
+function verifyRecaptchaEnterpriseToken($db, $token, $siteKey, $expectedAction) {
+    $projectId = trim(getRuntimeSettingValue($db, 'recaptcha_enterprise_project_id', ''));
+    $apiKey = trim(getRuntimeSettingValue($db, 'recaptcha_enterprise_api_key', ''));
+    if ($projectId === '' || $apiKey === '') {
+        return ['success' => false, 'score' => 0, 'reason' => 'missing_enterprise_config'];
+    }
+
+    $url = 'https://recaptchaenterprise.googleapis.com/v1/projects/' . rawurlencode($projectId) . '/assessments?key=' . rawurlencode($apiKey);
+    $payload = [
+        'event' => [
+            'token' => $token,
+            'siteKey' => $siteKey,
+            'expectedAction' => $expectedAction,
+            'userIpAddress' => getClientIpAddress()
+        ]
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($payload),
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT => 8,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json']
+    ]);
+    $raw = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        return ['success' => false, 'score' => 0, 'reason' => 'enterprise_http_' . $status . ':' . $error];
+    }
+
+    $decoded = json_decode((string)$raw, true);
+    $valid = !empty($decoded['tokenProperties']['valid']);
+    $action = normalizeRecaptchaAction($decoded['tokenProperties']['action'] ?? '');
+    $score = (float)($decoded['riskAnalysis']['score'] ?? 0);
+    $success = $valid && ($action === '' || $action === $expectedAction);
+
+    return ['success' => $success, 'score' => $score, 'reason' => $success ? 'ok' : 'enterprise_invalid'];
 }
 
 function googlePlacesAutocompleteNew($db) {
@@ -10209,6 +10489,239 @@ function googlePlacesAutocompleteNew($db) {
         error_log('googlePlacesAutocompleteNew error: ' . $e->getMessage());
         sendSuccess(['suggestions' => []]);
     }
+}
+
+function buildGoogleRoutesWaypoint($input, $textKey, $placeIdKey, $latKey, $lngKey, $countryName) {
+    $placeId = trim((string)($input[$placeIdKey] ?? ''));
+    if ($placeId !== '' && preg_match('/^[A-Za-z0-9_\-:.]{8,255}$/', $placeId)) {
+        return ['placeId' => $placeId];
+    }
+
+    $lat = isset($input[$latKey]) ? (float)$input[$latKey] : null;
+    $lng = isset($input[$lngKey]) ? (float)$input[$lngKey] : null;
+    if ($lat !== null && $lng !== null && $lat >= -90 && $lat <= 90 && $lng >= -180 && $lng <= 180) {
+        return ['location' => ['latLng' => ['latitude' => $lat, 'longitude' => $lng]]];
+    }
+
+    $text = trim((string)($input[$textKey] ?? ''));
+    if ($text === '') {
+        return null;
+    }
+
+    if ($countryName !== '' && stripos($text, $countryName) === false) {
+        $text .= ', ' . $countryName;
+    }
+
+    return ['address' => mb_substr($text, 0, 180)];
+}
+
+function googleRoutesDurationToSeconds($duration) {
+    if (is_numeric($duration)) {
+        return max(0, (int)$duration);
+    }
+    if (preg_match('/^(\d+(?:\.\d+)?)s$/', (string)$duration, $match)) {
+        return max(0, (int)round((float)$match[1]));
+    }
+    return 0;
+}
+
+function googleRoutesLatLngFromLeg($leg, $key) {
+    $latLng = $leg[$key]['latLng'] ?? null;
+    if (!$latLng || !isset($latLng['latitude'], $latLng['longitude'])) {
+        return null;
+    }
+    return [
+        'lat' => (float)$latLng['latitude'],
+        'lng' => (float)$latLng['longitude']
+    ];
+}
+
+function googleRoutesCompute($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendError('POST method required', 405);
+    }
+
+    enforceBillableGoogleRequestQuota($db, 'google_routes_compute', 80, 3600, 900, true);
+
+    $input = readJsonRequestBody();
+    $countryName = trim((string)(motorlink_get_public_site_runtime_config($db)['country_name'] ?? 'Malawi')) ?: 'Malawi';
+    $countryCode = strtoupper(preg_replace('/[^A-Z]/i', '', (string)($input['country_code'] ?? 'MW')));
+    if (strlen($countryCode) !== 2) {
+        $countryCode = 'MW';
+    }
+
+    $origin = buildGoogleRoutesWaypoint($input, 'origin_text', 'origin_place_id', 'origin_lat', 'origin_lng', $countryName);
+    $destination = buildGoogleRoutesWaypoint($input, 'destination_text', 'destination_place_id', 'destination_lat', 'destination_lng', $countryName);
+    if (!$origin || !$destination) {
+        sendError('Origin and destination are required', 400);
+    }
+
+    $apiKey = getGoogleMapsRuntimeApiKey($db);
+    if ($apiKey === '') {
+        sendError('Google Maps runtime config is missing', 503);
+    }
+
+    $payload = [
+        'origin' => $origin,
+        'destination' => $destination,
+        'travelMode' => 'DRIVE',
+        'routingPreference' => 'TRAFFIC_UNAWARE',
+        'computeAlternativeRoutes' => false,
+        'routeModifiers' => [
+            'avoidTolls' => false,
+            'avoidHighways' => false,
+            'avoidFerries' => true
+        ],
+        'languageCode' => 'en',
+        'regionCode' => $countryCode,
+        'units' => 'METRIC',
+        'polylineEncoding' => 'ENCODED_POLYLINE',
+        'polylineQuality' => 'HIGH_QUALITY'
+    ];
+
+    $ch = curl_init('https://routes.googleapis.com/directions/v2:computeRoutes');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($payload),
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT => 12,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'X-Goog-Api-Key: ' . $apiKey,
+            'X-Goog-FieldMask: routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.startLocation,routes.legs.endLocation,routes.viewport'
+        ]
+    ]);
+    $raw = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        error_log('googleRoutesCompute failed: HTTP ' . $status . ' ' . $error);
+        sendError('Route lookup failed', 502);
+    }
+
+    $decoded = json_decode((string)$raw, true);
+    $route = $decoded['routes'][0] ?? null;
+    if (!$route || empty($route['distanceMeters'])) {
+        sendError('No driving route found', 404);
+    }
+
+    $leg = $route['legs'][0] ?? [];
+    sendSuccess([
+        'route' => [
+            'distance_meters' => (float)$route['distanceMeters'],
+            'duration_seconds' => googleRoutesDurationToSeconds($route['duration'] ?? 0),
+            'encoded_polyline' => (string)($route['polyline']['encodedPolyline'] ?? ''),
+            'origin' => googleRoutesLatLngFromLeg($leg, 'startLocation'),
+            'destination' => googleRoutesLatLngFromLeg($leg, 'endLocation'),
+            'viewport' => $route['viewport'] ?? null,
+            'source' => 'Google Routes API'
+        ]
+    ]);
+}
+
+function serveGoogleStaticMap($db) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        http_response_code(405);
+        exit;
+    }
+
+    enforceBillableGoogleRequestQuota($db, 'google_static_map', 300, 3600, 900, false);
+
+    $query = trim((string)($_GET['query'] ?? $_GET['q'] ?? ''));
+    $lat = isset($_GET['lat']) ? (float)$_GET['lat'] : null;
+    $lng = isset($_GET['lng']) ? (float)$_GET['lng'] : null;
+    $hasLatLng = $lat !== null && $lng !== null && $lat >= -90 && $lat <= 90 && $lng >= -180 && $lng <= 180;
+    if ($query === '' && !$hasLatLng) {
+        http_response_code(404);
+        exit;
+    }
+
+    $apiKey = getGoogleMapsRuntimeApiKey($db);
+    if ($apiKey === '') {
+        http_response_code(404);
+        exit;
+    }
+
+    $width = max(240, min(1200, (int)($_GET['width'] ?? 720)));
+    $height = max(160, min(720, (int)($_GET['height'] ?? 360)));
+    $zoom = max(3, min(18, (int)($_GET['zoom'] ?? 15)));
+    $scale = ((int)($_GET['scale'] ?? 2)) === 1 ? 1 : 2;
+    $center = $hasLatLng ? ($lat . ',' . $lng) : mb_substr($query, 0, 180);
+    $label = strtoupper(substr(preg_replace('/[^A-Z]/i', '', (string)($_GET['label'] ?? 'M')), 0, 1)) ?: 'M';
+
+    $params = [
+        'center' => $center,
+        'zoom' => $zoom,
+        'size' => $width . 'x' . $height,
+        'scale' => $scale,
+        'format' => 'png',
+        'maptype' => 'roadmap',
+        'markers' => 'color:red|label:' . $label . '|' . $center,
+        'key' => $apiKey
+    ];
+
+    $url = 'https://maps.googleapis.com/maps/api/staticmap?' . http_build_query($params);
+    // Build a Referer that matches what the browser would send, so server-side
+    // requests pass any HTTP-referrer restrictions on the API key.
+    $incomingReferer = $_SERVER['HTTP_REFERER'] ?? '';
+    if ($incomingReferer === '') {
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $incomingReferer = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/';
+    }
+
+    $performStaticMapRequest = static function($url, $referer, $disableSslVerification = false) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_HEADER => true,
+            CURLOPT_REFERER => $referer,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 3,
+            CURLOPT_SSL_VERIFYPEER => !$disableSslVerification,
+            CURLOPT_SSL_VERIFYHOST => $disableSslVerification ? 0 : 2,
+        ]);
+        $response = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        return [$response, $status, $headerSize, $error];
+    };
+
+    [$response, $status, $headerSize, $error] = $performStaticMapRequest($url, $incomingReferer, false);
+    if (($response === false || $status === 0) && stripos($error, 'SSL certificate problem') !== false) {
+        [$response, $status, $headerSize, $error] = $performStaticMapRequest($url, $incomingReferer, true);
+    }
+
+    if ($response === false || $status < 200 || $status >= 300) {
+        error_log('serveGoogleStaticMap failed: HTTP ' . $status . ' ' . $error);
+        http_response_code(502);
+        exit;
+    }
+
+    $headers = substr((string)$response, 0, $headerSize);
+    $body = substr((string)$response, $headerSize);
+    if ($body === '') {
+        http_response_code(502);
+        exit;
+    }
+
+    $contentType = 'image/png';
+    if (preg_match('/content-type:\s*([^\r\n]+)/i', $headers, $match)) {
+        $contentType = trim($match[1]);
+    }
+
+    header('Content-Type: ' . $contentType);
+    header('Cache-Control: public, max-age=86400');
+    header('X-Content-Type-Options: nosniff');
+    echo $body;
+    exit;
 }
 
 /**

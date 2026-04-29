@@ -54,6 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadStats();
     loadLocations();
     loadCompanies();
+    getUserLocation({ silent: true });
 
     // Desktop search — live filter on input
     const carHireSearch = document.getElementById('carHireSearch');
@@ -902,13 +903,16 @@ function findNearbyCarHire() {
 
 // Get user's current location
 function getUserLocation(options = {}) {
+    const isSilent = !!options.silent;
     if (!navigator.geolocation) {
-        showCarHireStatusHint('Location services are not supported by your browser.', true);
+        if (!isSilent) showCarHireStatusHint('Location services are not supported by your browser.', true);
         return;
     }
 
-    setCarHireNearbyButtonLoading(!!options.activateNearby);
-    showCarHireStatusHint('<i class="fas fa-spinner fa-spin"></i> Getting your location…');
+    if (!isSilent || options.activateNearby) {
+        setCarHireNearbyButtonLoading(!!options.activateNearby);
+        showCarHireStatusHint('<i class="fas fa-spinner fa-spin"></i> Getting your location…');
+    }
 
     navigator.geolocation.getCurrentPosition(
         function(position) {
@@ -917,7 +921,7 @@ function getUserLocation(options = {}) {
                 lng: position.coords.longitude
             };
 
-            showCarHireStatusHint('');
+            if (!isSilent || options.activateNearby) showCarHireStatusHint('');
 
             // Enable distance filter now that we have a location
             const distFilter = document.getElementById('distanceFilter');
@@ -926,7 +930,7 @@ function getUserLocation(options = {}) {
                 distFilter.title = 'Filter by distance from your location';
             }
 
-            setCarHireNearbyButtonLoading(false);
+            if (!isSilent || options.activateNearby) setCarHireNearbyButtonLoading(false);
 
             if (options.activateNearby) {
                 activateCarHireNearbyFilter();
@@ -1005,9 +1009,9 @@ async function geocodeAndRenderCompanies() {
         return;
     }
 
-    // Geocode addresses for companies that have addresses
+    // Geocode addresses for companies that don't already have lat/lng from the API
     const geocodePromises = companies
-        .filter(company => company.address)
+        .filter(company => company.address && !(company.latitude && company.longitude))
         .map(async (company) => {
             const coords = await geocodeAddress(company.address, company.location_name);
             if (coords) {

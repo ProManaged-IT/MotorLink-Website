@@ -2585,6 +2585,10 @@ removePhoto(index) {
                     }
                 }
 
+                listingData.recaptcha_token = typeof window.getRecaptchaToken === 'function'
+                    ? await window.getRecaptchaToken('submit_listing')
+                    : '';
+                listingData.recaptcha_action = 'submit_listing';
 
                 const response = await fetch(`${CONFIG.API_URL}?action=submit_listing`, {
                     method: 'POST',

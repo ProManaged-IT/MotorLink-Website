@@ -9,8 +9,7 @@ let currentFuelPrices = {};
 let currentFuelPriceMeta = {};
 const journeyGeocodeCache = new Map();
 let journeyMap = null;
-let journeyDirectionsService = null;
-let journeyDirectionsRenderer = null;
+let journeyRoutePolyline = null;
 let journeyAutocompleteBound = false;
 const journeyPlacesTimers = {};
 
@@ -237,12 +236,6 @@ async function initializeJourneyGoogleMap() {
         }
 
         journeyMap = new google.maps.Map(mapElement, mapOptions);
-        journeyDirectionsService = new google.maps.DirectionsService();
-        journeyDirectionsRenderer = new google.maps.DirectionsRenderer({
-            map: journeyMap,
-            preserveViewport: false,
-            suppressMarkers: false
-        });
     }
 
     bindJourneyPlacesAutocomplete();
@@ -348,20 +341,22 @@ function renderJourneyPlaceSuggestions(input, container, suggestions) {
     container.style.display = 'block';
 }
 
-function getJourneyRouteInput(inputId, fallbackText) {
+function getJourneyRoutePayload(inputId, fallbackText) {
     const input = document.getElementById(inputId);
+    const payload = {};
     if (input?.dataset.placeId) {
-        return { placeId: input.dataset.placeId };
+        payload.place_id = input.dataset.placeId;
     }
 
     const lat = input?.dataset.placeLat ? parseFloat(input.dataset.placeLat) : null;
     const lng = input?.dataset.placeLng ? parseFloat(input.dataset.placeLng) : null;
     if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        return new google.maps.LatLng(lat, lng);
+        payload.lat = lat;
+        payload.lng = lng;
     }
 
-    const countryName = (window.CONFIG && CONFIG.COUNTRY_NAME) ? CONFIG.COUNTRY_NAME : 'Malawi';
-    return [fallbackText, countryName].map(part => String(part || '').trim()).filter(Boolean).join(', ');
+    payload.text = String(input?.value || fallbackText || '').trim();
+    return payload;
 }
 
 function renderJourneyMapEmbed({ query = '', origin = '', destination = '', zoom = 7, title = 'Journey map' } = {}) {
@@ -377,6 +372,63 @@ function renderJourneyMapEmbed({ query = '', origin = '', destination = '', zoom
         ' style="border:0;display:block;min-height:320px;"' +
         ' allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"' +
         ' title="' + escapeHtml(title) + '"></iframe>';
+    journeyMap = null;
+    journeyRoutePolyline = null;
+}
+
+function decodeGooglePolyline(encoded) {
+    const path = [];
+    let index = 0;
+    let lat = 0;
+    let lng = 0;
+
+    while (index < encoded.length) {
+        let result = 0;
+        let shift = 0;
+        let byte = null;
+        do {
+            byte = encoded.charCodeAt(index++) - 63;
+            result |= (byte & 0x1f) << shift;
+            shift += 5;
+        } while (byte >= 0x20 && index < encoded.length);
+        lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+
+        result = 0;
+        shift = 0;
+        do {
+            byte = encoded.charCodeAt(index++) - 63;
+            result |= (byte & 0x1f) << shift;
+            shift += 5;
+        } while (byte >= 0x20 && index < encoded.length);
+        lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+
+        path.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+
+    return path;
+}
+
+function renderJourneyRoutePath(points) {
+    if (!journeyMap || !Array.isArray(points) || points.length < 2) {
+        return;
+    }
+
+    if (journeyRoutePolyline) {
+        journeyRoutePolyline.setMap(null);
+    }
+
+    journeyRoutePolyline = new google.maps.Polyline({
+        path: points,
+        geodesic: false,
+        strokeColor: '#ff6f00',
+        strokeOpacity: 0.95,
+        strokeWeight: 5,
+        map: journeyMap
+    });
+
+    const bounds = new google.maps.LatLngBounds();
+    points.forEach(point => bounds.extend(point));
+    journeyMap.fitBounds(bounds, 48);
 }
 
 async function loadFuelPrices() {
@@ -618,39 +670,47 @@ async function getRoute(origin, destination) {
     await initializeJourneyGoogleMap();
 
     try {
-        const routeResult = await new Promise((resolve, reject) => {
-            journeyDirectionsService.route({
-                origin: getJourneyRouteInput('journeyOrigin', origin),
-                destination: getJourneyRouteInput('journeyDestination', destination),
-                travelMode: google.maps.TravelMode.DRIVING,
-                region: getJourneyCountryCode(),
-                provideRouteAlternatives: false
-            }, (result, status) => {
-                if (status === google.maps.DirectionsStatus.OK && result) {
-                    resolve(result);
-                    return;
-                }
-                reject(new Error(`Google Directions failed (${status})`));
-            });
+        const originPayload = getJourneyRoutePayload('journeyOrigin', origin);
+        const destinationPayload = getJourneyRoutePayload('journeyDestination', destination);
+        const response = await fetch(`${CONFIG.API_URL}?action=google_routes_compute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: CONFIG.USE_CREDENTIALS ? 'include' : 'same-origin',
+            body: JSON.stringify({
+                origin_text: originPayload.text || origin,
+                origin_place_id: originPayload.place_id || '',
+                origin_lat: originPayload.lat,
+                origin_lng: originPayload.lng,
+                destination_text: destinationPayload.text || destination,
+                destination_place_id: destinationPayload.place_id || '',
+                destination_lat: destinationPayload.lat,
+                destination_lng: destinationPayload.lng,
+                country_code: getJourneyCountryCode().toUpperCase()
+            })
         });
 
-        const primaryRoute = routeResult.routes?.[0];
-        const primaryLeg = primaryRoute?.legs?.[0];
-        if (!primaryRoute || !primaryLeg?.distance?.value) {
-            throw new Error('No route found');
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.success || !data.route?.distance_meters) {
+            throw new Error(data?.message || `Google Routes failed (HTTP ${response.status})`);
         }
 
-        journeyDirectionsRenderer.setDirections(routeResult);
-        journeyRoutePoints = (primaryRoute.overview_path || []).map(point => ({ lat: point.lat(), lng: point.lng() }));
+        const decodedPoints = data.route.encoded_polyline
+            ? decodeGooglePolyline(data.route.encoded_polyline)
+            : [];
+        journeyRoutePoints = decodedPoints;
+        renderJourneyRoutePath(decodedPoints);
 
-        return {
-            distance: primaryLeg.distance,
-            duration: primaryLeg.duration || { value: 0 },
-            start_location: primaryLeg.start_location,
-            end_location: primaryLeg.end_location
-        };
+        const originCoords = data.route.origin || decodedPoints[0] || await geocodeJourneyLocation(origin);
+        const destinationCoords = data.route.destination || decodedPoints[decodedPoints.length - 1] || await geocodeJourneyLocation(destination);
+
+        return buildJourneyRouteResult(
+            Number(data.route.distance_meters),
+            Number(data.route.duration_seconds || 0),
+            originCoords,
+            destinationCoords
+        );
     } catch (error) {
-        console.warn('Google Directions route lookup failed, using Google geocode fallback:', error);
+        console.warn('Google Routes lookup failed, using Google geocode fallback:', error);
         const originCoords = await geocodeJourneyLocation(origin);
         const destinationCoords = await geocodeJourneyLocation(destination);
         const distanceKm = calculateGreatCircleDistanceKm(originCoords, destinationCoords) * 1.35;

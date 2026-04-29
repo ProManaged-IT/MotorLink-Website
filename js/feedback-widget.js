@@ -283,7 +283,7 @@
         setTimeout(() => overlay.remove(), 280);
     }
 
-    function doSubmit(overlay, rating) {
+    async function doSubmit(overlay, rating) {
         const btn  = overlay.querySelector('#mlFbSubmit');
         const res  = overlay.querySelector('#mlFbResult');
         const msg  = overlay.querySelector('#mlFbMsg').value.trim();
@@ -295,11 +295,31 @@
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
 
+        let recaptchaToken = '';
+        try {
+            recaptchaToken = typeof window.getRecaptchaToken === 'function'
+                ? await window.getRecaptchaToken('submit_feedback')
+                : '';
+        } catch (error) {
+            showResult(res, 'error', 'Security check could not load. Please refresh and try again.');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Feedback';
+            return;
+        }
+
         fetch(`${API_BASE}?action=submit_feedback`, {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rating, category, message: msg, email, page_url: window.location.href })
+            body: JSON.stringify({
+                rating,
+                category,
+                message: msg,
+                email,
+                page_url: window.location.href,
+                recaptcha_token: recaptchaToken,
+                recaptcha_action: 'submit_feedback'
+            })
         })
         .then(r => r.json())
         .then(data => {

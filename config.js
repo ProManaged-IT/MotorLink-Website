@@ -147,7 +147,11 @@ const DEFAULT_PUBLIC_SITE_CONFIG = {
     icbm: '',
     cookie_consent_enabled: '1',
     cookie_consent_version: '1.0',
-    cookie_consent_log_enabled: '1'
+    cookie_consent_log_enabled: '1',
+    recaptcha_enabled: '1',
+    recaptcha_site_key: '',
+    recaptcha_min_score: '0.5',
+    recaptcha_mode: 'v3'
 };
 
 function getDefaultPublicSiteUrl() {
@@ -370,6 +374,10 @@ function applyRuntimeSiteConfig(runtimeConfig = {}) {
     CONFIG.COOKIE_CONSENT_ENABLED = merged.cookie_consent_enabled !== '0';
     CONFIG.COOKIE_CONSENT_VERSION = merged.cookie_consent_version || DEFAULT_PUBLIC_SITE_CONFIG.cookie_consent_version;
     CONFIG.COOKIE_CONSENT_LOG_ENABLED = merged.cookie_consent_log_enabled !== '0';
+    CONFIG.RECAPTCHA_ENABLED = merged.recaptcha_enabled === '1' || merged.recaptcha_enabled === true;
+    CONFIG.RECAPTCHA_SITE_KEY = merged.recaptcha_site_key || '';
+    CONFIG.RECAPTCHA_MIN_SCORE = Number.parseFloat(merged.recaptcha_min_score || '0.5') || 0.5;
+    CONFIG.RECAPTCHA_MODE = merged.recaptcha_mode || 'v3';
 
     if (merged.google_maps_api_key) {
         CONFIG.GOOGLE_MAPS_API_KEY = merged.google_maps_api_key;
@@ -417,7 +425,11 @@ function getPublicSiteConfigSnapshot() {
         ga_measurement_id: CONFIG.GA_MEASUREMENT_ID,
         cookie_consent_enabled: CONFIG.COOKIE_CONSENT_ENABLED ? '1' : '0',
         cookie_consent_version: CONFIG.COOKIE_CONSENT_VERSION,
-        cookie_consent_log_enabled: CONFIG.COOKIE_CONSENT_LOG_ENABLED ? '1' : '0'
+        cookie_consent_log_enabled: CONFIG.COOKIE_CONSENT_LOG_ENABLED ? '1' : '0',
+        recaptcha_enabled: CONFIG.RECAPTCHA_ENABLED ? '1' : '0',
+        recaptcha_site_key: CONFIG.RECAPTCHA_SITE_KEY,
+        recaptcha_min_score: String(CONFIG.RECAPTCHA_MIN_SCORE || 0.5),
+        recaptcha_mode: CONFIG.RECAPTCHA_MODE
     };
 }
 
@@ -668,7 +680,11 @@ const CONFIG = {
     GA_MEASUREMENT_ID: null,
     COOKIE_CONSENT_ENABLED: DEFAULT_PUBLIC_SITE_CONFIG.cookie_consent_enabled !== '0',
     COOKIE_CONSENT_VERSION: DEFAULT_PUBLIC_SITE_CONFIG.cookie_consent_version,
-    COOKIE_CONSENT_LOG_ENABLED: DEFAULT_PUBLIC_SITE_CONFIG.cookie_consent_log_enabled !== '0'
+    COOKIE_CONSENT_LOG_ENABLED: DEFAULT_PUBLIC_SITE_CONFIG.cookie_consent_log_enabled !== '0',
+    RECAPTCHA_ENABLED: false,
+    RECAPTCHA_SITE_KEY: '',
+    RECAPTCHA_MIN_SCORE: 0.5,
+    RECAPTCHA_MODE: 'v3'
 };
 
 let __runtimePublicConfigPromise = null;
@@ -807,12 +823,80 @@ async function ensureGoogleMapsApi(options = {}) {
     return __googleMapsApiPromise;
 }
 
+let __recaptchaApiPromise = null;
+
+async function ensureRecaptchaApi() {
+    await getPublicClientConfig();
+    if (!CONFIG.RECAPTCHA_ENABLED || !CONFIG.RECAPTCHA_SITE_KEY) {
+        return null;
+    }
+    const isEnterprise = String(CONFIG.RECAPTCHA_MODE || '').toLowerCase() === 'enterprise';
+    const currentApi = isEnterprise ? window.grecaptcha?.enterprise : window.grecaptcha;
+    if (currentApi && typeof currentApi.execute === 'function') {
+        return currentApi;
+    }
+    if (__recaptchaApiPromise) {
+        return __recaptchaApiPromise;
+    }
+
+    __recaptchaApiPromise = new Promise((resolve, reject) => {
+        const existing = document.getElementById('motorlink-recaptcha-script');
+        if (existing) {
+            existing.addEventListener('load', () => resolve(isEnterprise ? window.grecaptcha?.enterprise : window.grecaptcha), { once: true });
+            existing.addEventListener('error', () => reject(new Error('reCAPTCHA failed to load')), { once: true });
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.id = 'motorlink-recaptcha-script';
+        const baseUrl = isEnterprise
+            ? 'https://www.google.com/recaptcha/enterprise.js'
+            : 'https://www.google.com/recaptcha/api.js';
+        script.src = `${baseUrl}?render=${encodeURIComponent(CONFIG.RECAPTCHA_SITE_KEY)}`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => resolve(isEnterprise ? window.grecaptcha?.enterprise : window.grecaptcha || null);
+        script.onerror = () => reject(new Error('reCAPTCHA failed to load'));
+        document.head.appendChild(script);
+    });
+
+    return __recaptchaApiPromise;
+}
+
+async function getRecaptchaToken(action = 'api_action') {
+    const grecaptcha = await ensureRecaptchaApi();
+    if (!grecaptcha || !CONFIG.RECAPTCHA_SITE_KEY) {
+        return '';
+    }
+
+    const normalizedAction = String(action || 'api_action').toLowerCase().replace(/[^a-z0-9_\/]/g, '_').slice(0, 100) || 'api_action';
+    await new Promise(resolve => grecaptcha.ready(resolve));
+    return grecaptcha.execute(CONFIG.RECAPTCHA_SITE_KEY, { action: normalizedAction });
+}
+
+function getGoogleStaticMapUrl(options = {}) {
+    const params = new URLSearchParams({ action: 'google_static_map' });
+    if (options.query) params.set('query', options.query);
+    if (Number.isFinite(options.lat) && Number.isFinite(options.lng)) {
+        params.set('lat', String(options.lat));
+        params.set('lng', String(options.lng));
+    }
+    if (options.width) params.set('width', String(options.width));
+    if (options.height) params.set('height', String(options.height));
+    if (options.zoom) params.set('zoom', String(options.zoom));
+    if (options.label) params.set('label', String(options.label).slice(0, 1));
+    return `${CONFIG.API_URL}?${params.toString()}`;
+}
+
 applyBrandingToDocument();
 applyWhatsAppButtonVisibility(document);
 window.getPublicClientConfig = getPublicClientConfig;
 window.getPublicSiteConfig = getPublicSiteConfig;
 window.getGoogleMapsConfig = getGoogleMapsConfig;
 window.ensureGoogleMapsApi = ensureGoogleMapsApi;
+window.ensureRecaptchaApi = ensureRecaptchaApi;
+window.getRecaptchaToken = getRecaptchaToken;
+window.getGoogleStaticMapUrl = getGoogleStaticMapUrl;
 window.addEventListener('DOMContentLoaded', () => {
     applyBrandingToDocument();
     applyWhatsAppButtonVisibility(document);

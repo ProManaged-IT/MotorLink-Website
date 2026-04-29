@@ -2756,19 +2756,29 @@ class DealersManager {
             return;
         }
         
-        // Geocode addresses for dealers that have addresses
+        // Geocode addresses for dealers — skip if lat/lng already provided by the API
         const geocodePromises = this.dealers
-            .filter(dealer => dealer.address)
+            .filter(dealer => dealer.address || (dealer.latitude && dealer.longitude))
             .map(async (dealer) => {
-                const coords = await this.geocodeDealerAddress(dealer.address, dealer.location_name);
-                if (coords) {
-                    dealer.latitude = coords.lat;
-                    dealer.longitude = coords.lng;
+                let lat = dealer.latitude ? parseFloat(dealer.latitude) : null;
+                let lng = dealer.longitude ? parseFloat(dealer.longitude) : null;
+
+                if (!lat || !lng) {
+                    const coords = await this.geocodeDealerAddress(dealer.address, dealer.location_name);
+                    if (coords) {
+                        lat = coords.lat;
+                        lng = coords.lng;
+                        dealer.latitude = lat;
+                        dealer.longitude = lng;
+                    }
+                }
+
+                if (lat && lng) {
                     dealer.distance = this.calculateDistance(
                         this.userLocation.lat,
                         this.userLocation.lng,
-                        coords.lat,
-                        coords.lng
+                        lat,
+                        lng
                     );
                 }
             });
@@ -3840,8 +3850,7 @@ class ShowroomManager {
         }
     }
 
-    // Initialize a keyless Google Maps embed for simple dealer location display.
-    // Paid Google APIs are reserved for routing, autocomplete, and geocoding.
+    // Initialize a lightweight Static Maps preview with keyless embed fallback.
     initializeDealerMap(dealer) {
         const mapContainer = document.getElementById('dealerMapContainer');
         const mapDiv = document.getElementById('map');
@@ -3861,13 +3870,45 @@ class ShowroomManager {
 
         mapContainer.style.display = 'block';
         const embedSrc = 'https://maps.google.com/maps?q=' + encodeURIComponent(address) + '&output=embed&z=15';
+        const mapsLink = 'https://maps.google.com/maps?q=' + encodeURIComponent(address);
+        const title = 'Map for ' + (dealer.business_name || 'dealer');
+        const safeTitle = (() => {
+            const div = document.createElement('div');
+            div.textContent = title;
+            return div.innerHTML;
+        })();
         mapDiv.style.padding = '0';
         mapDiv.style.overflow = 'hidden';
-        mapDiv.innerHTML =
-            '<iframe src="' + embedSrc + '" width="100%" height="100%"' +
-            ' style="border:0;display:block;min-height:320px;"' +
-            ' allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"' +
-            ' title="Map for ' + (dealer.business_name || 'dealer').replace(/"/g, '') + '"></iframe>';
+
+        const renderFallbackEmbed = () => {
+            mapDiv.innerHTML =
+                '<iframe src="' + embedSrc + '" width="100%" height="100%"' +
+                ' style="border:0;display:block;min-height:320px;"' +
+                ' allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"' +
+                ' title="' + safeTitle + '"></iframe>';
+        };
+
+        if (typeof window.getGoogleStaticMapUrl !== 'function') {
+            renderFallbackEmbed();
+            return;
+        }
+
+        const image = document.createElement('img');
+        image.src = window.getGoogleStaticMapUrl({ query: address, width: 720, height: 360, zoom: 15, label: 'D' });
+        image.alt = title;
+        image.loading = 'lazy';
+        image.style.cssText = 'display:block;width:100%;height:100%;min-height:320px;object-fit:cover;';
+        image.onerror = renderFallbackEmbed;
+
+        const link = document.createElement('a');
+        link.href = mapsLink;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.title = 'Open in Google Maps';
+        link.appendChild(image);
+
+        mapDiv.innerHTML = '';
+        mapDiv.appendChild(link);
     }
 
     // Update contact information display

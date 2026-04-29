@@ -255,7 +255,7 @@
     }
 
     // ── Submit booking ─────────────────────────────────────────────────────────
-    function _submitBooking() {
+    async function _submitBooking() {
         if (_submitting) return;
 
         const errEl  = document.getElementById('wabkError');
@@ -298,6 +298,19 @@
             end_date:         end,
             special_requests: notes || null,
         };
+
+        try {
+            payload.recaptcha_token = typeof window.getRecaptchaToken === 'function'
+                ? await window.getRecaptchaToken('car_hire_book_whatsapp')
+                : '';
+            payload.recaptcha_action = 'car_hire_book_whatsapp';
+        } catch (error) {
+            _submitting = false;
+            btn.disabled = false;
+            label.textContent = 'Send Booking Request';
+            _showError('Security check could not load. Please refresh and try again.');
+            return;
+        }
 
         fetch(_apiBase() + '?action=car_hire_book_whatsapp', {
             method:  'POST',

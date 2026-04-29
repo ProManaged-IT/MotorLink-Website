@@ -4600,6 +4600,37 @@ function motorlinkJourneyFetchJson($url, array $headers = [], $timeoutSeconds = 
     return is_array($decoded) ? $decoded : null;
 }
 
+function motorlinkJourneyPostJson($url, array $payload, array $headers = [], $timeoutSeconds = 10) {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($payload),
+        CURLOPT_CONNECTTIMEOUT => max(2, (int)$timeoutSeconds),
+        CURLOPT_TIMEOUT => max(3, (int)$timeoutSeconds),
+        CURLOPT_HTTPHEADER => array_merge([
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'User-Agent: MotorLinkAI/1.0 (+https://motorlink.example)'
+        ], $headers)
+    ]);
+
+    $body = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($body === false || $status < 200 || $status >= 300) {
+        if ($error !== '') {
+            error_log('motorlinkJourneyPostJson error: ' . $error . ' [' . $url . ']');
+        }
+        return null;
+    }
+
+    $decoded = json_decode((string)$body, true);
+    return is_array($decoded) ? $decoded : null;
+}
+
 function motorlinkJourneyGetGoogleMapsApiKey($db = null) {
     static $apiKey = null;
 
@@ -4696,18 +4727,24 @@ function motorlinkJourneyResolveRouteDistance($origin, $destination) {
 
     $apiKey = motorlinkJourneyGetGoogleMapsApiKey();
     if ($apiKey !== '') {
-        $routeUrl = 'https://maps.googleapis.com/maps/api/directions/json?' . http_build_query([
-            'origin' => motorlinkJourneyNormalizePlaceQuery($origin),
-            'destination' => motorlinkJourneyNormalizePlaceQuery($destination),
-            'mode' => 'driving',
-            'region' => 'mw',
-            'key' => $apiKey
-        ]);
-        $route = motorlinkJourneyFetchJson($routeUrl, [], 10);
-        if (is_array($route) && ($route['status'] ?? '') === 'OK' && !empty($route['routes'][0]['legs'][0]['distance']['value'])) {
+        $route = motorlinkJourneyPostJson('https://routes.googleapis.com/directions/v2:computeRoutes', [
+            'origin' => ['address' => motorlinkJourneyNormalizePlaceQuery($origin)],
+            'destination' => ['address' => motorlinkJourneyNormalizePlaceQuery($destination)],
+            'travelMode' => 'DRIVE',
+            'routingPreference' => 'TRAFFIC_UNAWARE',
+            'computeAlternativeRoutes' => false,
+            'languageCode' => 'en',
+            'regionCode' => 'MW',
+            'units' => 'METRIC'
+        ], [
+            'X-Goog-Api-Key: ' . $apiKey,
+            'X-Goog-FieldMask: routes.distanceMeters,routes.duration'
+        ], 10);
+
+        if (is_array($route) && !empty($route['routes'][0]['distanceMeters'])) {
             $cache[$cacheKey] = [
-                'distance_km' => ((float)$route['routes'][0]['legs'][0]['distance']['value']) / 1000,
-                'source_label' => 'Google Maps Directions estimate',
+                'distance_km' => ((float)$route['routes'][0]['distanceMeters']) / 1000,
+                'source_label' => 'Google Routes estimate',
                 'approximate' => false
             ];
             return $cache[$cacheKey];

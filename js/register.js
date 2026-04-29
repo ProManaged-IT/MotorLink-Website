@@ -186,6 +186,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!data.address) delete data.address;
         
         try {
+            data.recaptcha_token = typeof window.getRecaptchaToken === 'function'
+                ? await window.getRecaptchaToken('register')
+                : '';
+            data.recaptcha_action = 'register';
+
             const response = await fetch(`${apiUrl}?action=register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

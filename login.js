@@ -133,6 +133,9 @@ async function performLogin() {
     loginSpinner.style.display = 'inline-block';
     
     try {
+        const recaptchaToken = typeof window.getRecaptchaToken === 'function'
+            ? await window.getRecaptchaToken('login')
+            : '';
         
         const response = await fetch(`${CONFIG.API_URL}?action=login`, {
             method: 'POST',
@@ -143,7 +146,9 @@ async function performLogin() {
             body: JSON.stringify({
                 email: email,
                 password: password,
-                remember: rememberMe
+                remember: rememberMe,
+                recaptcha_token: recaptchaToken,
+                recaptcha_action: 'login'
             })
         });
         
