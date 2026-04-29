@@ -755,11 +755,64 @@ async function getGoogleMapsConfig() {
     };
 }
 
+let __googleMapsApiPromise = null;
+
+async function ensureGoogleMapsApi(options = {}) {
+    if (window.google && window.google.maps) {
+        return window.google.maps;
+    }
+
+    if (__googleMapsApiPromise) {
+        return __googleMapsApiPromise;
+    }
+
+    __googleMapsApiPromise = (async () => {
+        const mapsConfig = await getGoogleMapsConfig();
+        const libraries = Array.isArray(options.libraries) ? options.libraries : [];
+        const params = new URLSearchParams({
+            key: mapsConfig.apiKey,
+            v: options.version || 'weekly',
+            loading: 'async'
+        });
+        const uniqueLibraries = [...new Set(libraries)].filter(Boolean);
+        if (uniqueLibraries.length) {
+            params.set('libraries', uniqueLibraries.join(','));
+        }
+
+        await new Promise((resolve, reject) => {
+            const existing = document.getElementById('google-maps-api-script');
+            if (existing) {
+                existing.addEventListener('load', resolve, { once: true });
+                existing.addEventListener('error', () => reject(new Error('Google Maps API failed to load')), { once: true });
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.id = 'google-maps-api-script';
+            script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+            script.async = true;
+            script.defer = true;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error('Google Maps API failed to load'));
+            document.head.appendChild(script);
+        });
+
+        if (!window.google || !window.google.maps) {
+            throw new Error('Google Maps API loaded without maps namespace');
+        }
+
+        return window.google.maps;
+    })();
+
+    return __googleMapsApiPromise;
+}
+
 applyBrandingToDocument();
 applyWhatsAppButtonVisibility(document);
 window.getPublicClientConfig = getPublicClientConfig;
 window.getPublicSiteConfig = getPublicSiteConfig;
 window.getGoogleMapsConfig = getGoogleMapsConfig;
+window.ensureGoogleMapsApi = ensureGoogleMapsApi;
 window.addEventListener('DOMContentLoaded', () => {
     applyBrandingToDocument();
     applyWhatsAppButtonVisibility(document);

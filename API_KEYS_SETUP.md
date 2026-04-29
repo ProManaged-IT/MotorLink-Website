@@ -18,6 +18,7 @@ Add/update the following keys in the `site_settings` table:
 - `deepseek_api_key`
 - `google_maps_api_key`
 - `google_maps_map_id`
+- `google_places_scraper_api_key` (optional; keep empty unless you intentionally run scraper jobs)
 
 Example SQL:
 
@@ -26,6 +27,7 @@ UPDATE site_settings SET setting_value = 'YOUR_OPENAI_KEY' WHERE setting_key = '
 UPDATE site_settings SET setting_value = 'YOUR_DEEPSEEK_KEY' WHERE setting_key = 'deepseek_api_key';
 UPDATE site_settings SET setting_value = 'YOUR_GOOGLE_MAPS_KEY' WHERE setting_key = 'google_maps_api_key';
 UPDATE site_settings SET setting_value = 'YOUR_GOOGLE_MAPS_MAP_ID' WHERE setting_key = 'google_maps_map_id';
+UPDATE site_settings SET setting_value = 'YOUR_SCRAPER_ONLY_GOOGLE_PLACES_KEY' WHERE setting_key = 'google_places_scraper_api_key';
 ```
 
 ## Files
@@ -42,6 +44,11 @@ UPDATE site_settings SET setting_value = 'YOUR_GOOGLE_MAPS_MAP_ID' WHERE setting
   - Location: `site_settings.setting_key = 'deepseek_api_key'`
 - **Google Maps API Key**
   - Location: `site_settings.setting_key = 'google_maps_api_key'`
+  - Used for public Google Maps JavaScript, Places autocomplete, geocoding, and directions.
+  - Enable only the APIs the app uses: Maps JavaScript API, Geocoding API, Directions API, and Places API (New).
+- **Google Places Scraper API Key**
+  - Location: `site_settings.setting_key = 'google_places_scraper_api_key'`
+  - Keep this blank unless scraper jobs are intentionally re-enabled. The public maps key is not used by the scraper.
 - **Google Maps Map ID**
   - Location: `site_settings.setting_key = 'google_maps_map_id'`
 

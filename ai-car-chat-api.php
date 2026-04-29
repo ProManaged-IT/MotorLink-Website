@@ -4600,6 +4600,42 @@ function motorlinkJourneyFetchJson($url, array $headers = [], $timeoutSeconds = 
     return is_array($decoded) ? $decoded : null;
 }
 
+function motorlinkJourneyGetGoogleMapsApiKey($db = null) {
+    static $apiKey = null;
+
+    if ($apiKey !== null) {
+        return $apiKey;
+    }
+
+    if ($db === null && function_exists('getDB')) {
+        try { $db = getDB(); } catch (Throwable $e) { $db = null; }
+    }
+
+    if (!$db) {
+        $apiKey = '';
+        return $apiKey;
+    }
+
+    try {
+        $stmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'google_maps_api_key' LIMIT 1");
+        $stmt->execute();
+        $apiKey = trim((string)($stmt->fetchColumn() ?: ''));
+    } catch (Throwable $e) {
+        error_log('Failed to load google_maps_api_key for journey lookup: ' . $e->getMessage());
+        $apiKey = '';
+    }
+
+    return $apiKey;
+}
+
+function motorlinkJourneyNormalizePlaceQuery($placeName) {
+    $query = trim((string)$placeName);
+    if ($query !== '' && stripos($query, 'malawi') === false) {
+        $query .= ', Malawi';
+    }
+    return $query;
+}
+
 function motorlinkJourneyLookupCoordinates($placeName) {
     static $cache = [];
 
@@ -4613,27 +4649,32 @@ function motorlinkJourneyLookupCoordinates($placeName) {
         return $cache[$cacheKey];
     }
 
-    $query = $placeName;
-    if (stripos($query, 'malawi') === false) {
-        $query .= ', Malawi';
-    }
-
-    $url = 'https://nominatim.openstreetmap.org/search?' . http_build_query([
-        'format' => 'jsonv2',
-        'limit' => 1,
-        'q' => $query
-    ]);
-
-    $rows = motorlinkJourneyFetchJson($url, [], 8);
-    if (!is_array($rows) || empty($rows[0]['lat']) || empty($rows[0]['lon'])) {
+    $apiKey = motorlinkJourneyGetGoogleMapsApiKey();
+    if ($apiKey === '') {
         $cache[$cacheKey] = null;
         return null;
     }
 
+    $query = motorlinkJourneyNormalizePlaceQuery($placeName);
+    $url = 'https://maps.googleapis.com/maps/api/geocode/json?' . http_build_query([
+        'address' => $query,
+        'components' => 'country:MW',
+        'region' => 'mw',
+        'key' => $apiKey
+    ]);
+
+    $result = motorlinkJourneyFetchJson($url, [], 8);
+    if (!is_array($result) || ($result['status'] ?? '') !== 'OK' || empty($result['results'][0]['geometry']['location'])) {
+        $cache[$cacheKey] = null;
+        return null;
+    }
+
+    $location = $result['results'][0]['geometry']['location'];
+
     $cache[$cacheKey] = [
-        'lat' => (float)$rows[0]['lat'],
-        'lon' => (float)$rows[0]['lon'],
-        'display_name' => trim((string)($rows[0]['display_name'] ?? $placeName))
+        'lat' => (float)$location['lat'],
+        'lon' => (float)$location['lng'],
+        'display_name' => trim((string)($result['results'][0]['formatted_address'] ?? $placeName))
     ];
 
     return $cache[$cacheKey];
@@ -4653,28 +4694,31 @@ function motorlinkJourneyResolveRouteDistance($origin, $destination) {
         return $cache[$cacheKey];
     }
 
+    $apiKey = motorlinkJourneyGetGoogleMapsApiKey();
+    if ($apiKey !== '') {
+        $routeUrl = 'https://maps.googleapis.com/maps/api/directions/json?' . http_build_query([
+            'origin' => motorlinkJourneyNormalizePlaceQuery($origin),
+            'destination' => motorlinkJourneyNormalizePlaceQuery($destination),
+            'mode' => 'driving',
+            'region' => 'mw',
+            'key' => $apiKey
+        ]);
+        $route = motorlinkJourneyFetchJson($routeUrl, [], 10);
+        if (is_array($route) && ($route['status'] ?? '') === 'OK' && !empty($route['routes'][0]['legs'][0]['distance']['value'])) {
+            $cache[$cacheKey] = [
+                'distance_km' => ((float)$route['routes'][0]['legs'][0]['distance']['value']) / 1000,
+                'source_label' => 'Google Maps Directions estimate',
+                'approximate' => false
+            ];
+            return $cache[$cacheKey];
+        }
+    }
+
     $originCoords = motorlinkJourneyLookupCoordinates($origin);
     $destinationCoords = motorlinkJourneyLookupCoordinates($destination);
     if (!$originCoords || !$destinationCoords) {
         $cache[$cacheKey] = null;
         return null;
-    }
-
-    $routeUrl = sprintf(
-        'https://router.project-osrm.org/route/v1/driving/%s,%s;%s,%s?overview=false&alternatives=false&steps=false',
-        rawurlencode((string)$originCoords['lon']),
-        rawurlencode((string)$originCoords['lat']),
-        rawurlencode((string)$destinationCoords['lon']),
-        rawurlencode((string)$destinationCoords['lat'])
-    );
-    $route = motorlinkJourneyFetchJson($routeUrl, [], 10);
-    if (is_array($route) && !empty($route['routes'][0]['distance'])) {
-        $cache[$cacheKey] = [
-            'distance_km' => ((float)$route['routes'][0]['distance']) / 1000,
-            'source_label' => 'OpenStreetMap road route estimate',
-            'approximate' => false
-        ];
-        return $cache[$cacheKey];
     }
 
     if (function_exists('calculateDistance')) {
@@ -4687,7 +4731,7 @@ function motorlinkJourneyResolveRouteDistance($origin, $destination) {
         if ($directKm > 0) {
             $cache[$cacheKey] = [
                 'distance_km' => $directKm * 1.18,
-                'source_label' => 'OpenStreetMap geocode estimate',
+                'source_label' => 'Google Maps geocode estimate',
                 'approximate' => true
             ];
             return $cache[$cacheKey];

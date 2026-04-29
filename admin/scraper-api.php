@@ -29,8 +29,8 @@ if (empty($_SESSION['admin_id'])) {
 $action = trim($_GET['action'] ?? $_POST['action'] ?? '');
 $jobId  = preg_replace('/[^a-zA-Z0-9_\-]/', '', $_GET['job_id'] ?? $_POST['job_id'] ?? '');
 
-$jobsDir  = __DIR__ . '/../scripts/scrape_jobs';
-$scriptPath = __DIR__ . '/../scripts/scrape_v2.php';
+$jobsDir  = __DIR__ . '/../scripts/scrapers/scrape_jobs';
+$scriptPath = __DIR__ . '/../scripts/scrapers/scrape_v2.php';
 
 if (!is_dir($jobsDir)) @mkdir($jobsDir, 0775, true);
 
@@ -81,6 +81,25 @@ switch ($action) {
 case 'start':
     if (!file_exists($scriptPath)) {
         echo json_encode(['success' => false, 'error' => 'scrape_v2.php not found']);
+        exit;
+    }
+
+    try {
+        $db = new PDO(
+            "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
+            DB_USER,
+            DB_PASS,
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+        $keyStmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'google_places_scraper_api_key' LIMIT 1");
+        $keyStmt->execute();
+        $scraperKey = trim((string)($keyStmt->fetchColumn() ?: ''));
+        if ($scraperKey === '') {
+            echo json_encode(['success' => false, 'error' => 'Scraping is disabled. Configure google_places_scraper_api_key separately before running any billable scraper job.']);
+            exit;
+        }
+    } catch (Throwable $e) {
+        echo json_encode(['success' => false, 'error' => 'Unable to verify scraper API key before launch']);
         exit;
     }
 

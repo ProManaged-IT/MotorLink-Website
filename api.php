@@ -1531,6 +1531,7 @@ try {
         case 'listing_restrictions': getListingRestrictions($db); break;
         case 'check_guest_identity': checkGuestIdentity($db); break;
         case 'get_public_client_config': getPublicClientConfig($db); break;
+        case 'google_places_autocomplete_new': googlePlacesAutocompleteNew($db); break;
         case 'get_feedback_config': getFeedbackConfig($db); break;
         case 'submit_feedback': submitUserFeedback($db); break;
         case 'get_walkthrough_state': getWalkthroughState($db); break;
@@ -10121,6 +10122,92 @@ function getPublicClientConfig($db) {
     } catch (Exception $e) {
         error_log("getPublicClientConfig error: " . $e->getMessage());
         sendError('Failed to load runtime client config', 500);
+    }
+}
+
+function getGoogleMapsRuntimeApiKey($db) {
+    $stmt = $db->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'google_maps_api_key' LIMIT 1");
+    $stmt->execute();
+    return trim((string)($stmt->fetchColumn() ?: ''));
+}
+
+function googlePlacesAutocompleteNew($db) {
+    try {
+        $input = trim((string)($_GET['input'] ?? $_POST['input'] ?? ''));
+        if (mb_strlen($input) < 3) {
+            sendSuccess(['suggestions' => []]);
+        }
+
+        $countryCode = strtoupper(preg_replace('/[^A-Z]/i', '', (string)($_GET['country_code'] ?? $_POST['country_code'] ?? 'MW')));
+        if (strlen($countryCode) !== 2) {
+            $countryCode = 'MW';
+        }
+
+        $apiKey = getGoogleMapsRuntimeApiKey($db);
+        if ($apiKey === '') {
+            sendSuccess(['suggestions' => []]);
+        }
+
+        $payload = [
+            'input' => mb_substr($input, 0, 120),
+            'includedRegionCodes' => [strtolower($countryCode)],
+            'languageCode' => 'en'
+        ];
+
+        $sessionToken = trim((string)($_GET['session_token'] ?? $_POST['session_token'] ?? ''));
+        if ($sessionToken !== '' && preg_match('/^[a-zA-Z0-9_\-.]{8,80}$/', $sessionToken)) {
+            $payload['sessionToken'] = $sessionToken;
+        }
+
+        $ch = curl_init('https://places.googleapis.com/v1/places:autocomplete');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'X-Goog-Api-Key: ' . $apiKey,
+                'X-Goog-FieldMask: suggestions.placePrediction.placeId,suggestions.placePrediction.text.text,suggestions.placePrediction.structuredFormat.mainText.text,suggestions.placePrediction.structuredFormat.secondaryText.text'
+            ]
+        ]);
+        $raw = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($raw === false || $status < 200 || $status >= 300) {
+            error_log('googlePlacesAutocompleteNew failed: HTTP ' . $status . ' ' . $error);
+            sendSuccess(['suggestions' => []]);
+        }
+
+        $decoded = json_decode((string)$raw, true);
+        $suggestions = [];
+        foreach (($decoded['suggestions'] ?? []) as $suggestion) {
+            $prediction = $suggestion['placePrediction'] ?? null;
+            if (!$prediction) {
+                continue;
+            }
+
+            $text = (string)($prediction['text']['text'] ?? '');
+            $placeId = (string)($prediction['placeId'] ?? '');
+            if ($text === '' || $placeId === '') {
+                continue;
+            }
+
+            $suggestions[] = [
+                'place_id' => $placeId,
+                'text' => $text,
+                'main_text' => (string)($prediction['structuredFormat']['mainText']['text'] ?? $text),
+                'secondary_text' => (string)($prediction['structuredFormat']['secondaryText']['text'] ?? '')
+            ];
+        }
+
+        sendSuccess(['suggestions' => array_slice($suggestions, 0, 5)]);
+    } catch (Exception $e) {
+        error_log('googlePlacesAutocompleteNew error: ' . $e->getMessage());
+        sendSuccess(['suggestions' => []]);
     }
 }
 

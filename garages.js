@@ -588,7 +588,7 @@ async function loadDatabaseGarages() {
     }
 }
 
-// Google Places search removed — was billable. Nearby search now uses database garages only.
+// Google Places business discovery stays disabled here; nearby search uses database garages only.
 async function loadGoogleMapsGarages() {
     googleGarages = [];
 }
@@ -643,7 +643,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     return Math.round(distance * 10) / 10; // Round to 1 decimal place
 }
 
-// Geocode a garage address using Nominatim (OpenStreetMap, free, no API key)
+// Geocode a garage address using Google Maps only when distance sorting needs it
 async function geocodeGarageAddress(address, locationName) {
     if (!address || !address.trim()) return null;
 
@@ -652,20 +652,17 @@ async function geocodeGarageAddress(address, locationName) {
 
     if (geocodedGarages.has(fullAddress)) return geocodedGarages.get(fullAddress);
 
-    // Respect Nominatim 1 req/s usage policy
-    const now = Date.now();
-    const elapsed = now - (window._nominatimGarageLastCall || 0);
-    if (elapsed < 1100) await new Promise(r => setTimeout(r, 1100 - elapsed));
-    window._nominatimGarageLastCall = Date.now();
-
     try {
-        const resp = await fetch(
-            'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q: fullAddress, format: 'json', limit: '1' }),
-            { headers: { 'Accept': 'application/json', 'User-Agent': 'MotorLink/1.0 (motorlink.mw)' } }
-        );
-        const data = await resp.json();
-        if (data && data[0]) {
-            const location = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        await window.ensureGoogleMapsApi({ libraries: [] });
+        const geocoder = new google.maps.Geocoder();
+        const countryCode = (window.CONFIG && CONFIG.COUNTRY_CODE) ? String(CONFIG.COUNTRY_CODE).toLowerCase() : 'mw';
+        const result = await geocoder.geocode({
+            address: fullAddress,
+            componentRestrictions: countryCode ? { country: countryCode } : undefined
+        });
+        const point = result.results?.[0]?.geometry?.location;
+        if (point) {
+            const location = { lat: point.lat(), lng: point.lng() };
             geocodedGarages.set(fullAddress, location);
             return location;
         }

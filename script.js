@@ -2733,20 +2733,17 @@ class DealersManager {
 
         if (this.geocodedDealers.has(fullAddress)) return this.geocodedDealers.get(fullAddress);
 
-        // Respect Nominatim 1 req/s usage policy
-        const now = Date.now();
-        const elapsed = now - (window._nominatimDealerLastCall || 0);
-        if (elapsed < 1100) await new Promise(r => setTimeout(r, 1100 - elapsed));
-        window._nominatimDealerLastCall = Date.now();
-
         try {
-            const resp = await fetch(
-                'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q: fullAddress, format: 'json', limit: '1' }),
-                { headers: { 'Accept': 'application/json', 'User-Agent': 'MotorLink/1.0 (motorlink.mw)' } }
-            );
-            const data = await resp.json();
-            if (data && data[0]) {
-                const location = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+            await window.ensureGoogleMapsApi({ libraries: [] });
+            const geocoder = new google.maps.Geocoder();
+            const countryCode = (window.CONFIG && CONFIG.COUNTRY_CODE) ? String(CONFIG.COUNTRY_CODE).toLowerCase() : 'mw';
+            const result = await geocoder.geocode({
+                address: fullAddress,
+                componentRestrictions: countryCode ? { country: countryCode } : undefined
+            });
+            const point = result.results?.[0]?.geometry?.location;
+            if (point) {
+                const location = { lat: point.lat(), lng: point.lng() };
                 this.geocodedDealers.set(fullAddress, location);
                 return location;
             }
@@ -3843,7 +3840,8 @@ class ShowroomManager {
         }
     }
 
-    // Initialize dealer map using Google Maps Embed (free, no API key, never billed)
+    // Initialize a keyless Google Maps embed for simple dealer location display.
+    // Paid Google APIs are reserved for routing, autocomplete, and geocoding.
     initializeDealerMap(dealer) {
         const mapContainer = document.getElementById('dealerMapContainer');
         const mapDiv = document.getElementById('map');

@@ -1,0 +1,1086 @@
+{
+    "dealer": [],
+    "garage": [
+        {
+            "pid": "ChIJgSt7qOjTIRkRE3Edk6pxeQg",
+            "name": "Lilongwe Car Diagnostics",
+            "addr": "All over, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJvT7Yz6TTIRkRn3ZLmU9Lzv8",
+            "name": "Carbon Car Care & Dunlop Tyres",
+            "addr": "2PGR+3FV, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJlX30fyfTIRkRRD4_Z-G4tHc",
+            "name": "Carbon Car Care & Dunlop Tyres",
+            "addr": "NEAR KAMUZU CENTRAL HOSPITAL ROUNDABOUT, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJK0OcEDAUEKsRkLNBR6ueVTs",
+            "name": "CM Recovery",
+            "addr": "Area 49, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJze3vYbPTIRkRkHQEb7U6lxI",
+            "name": "Lahore Motors",
+            "addr": "Next to Meru Filling Station, Nchesi Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJT5BEFFHTIRkRxMsPUQY43fA",
+            "name": "Auto Repair Garage",
+            "addr": "Area 4, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJj8Y_uk_TIRkR6goBfDYMqAE",
+            "name": "Carrecon",
+            "addr": "Off Paul Kagame road Next to, apex rent a car, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ27KpR_XTIRkRt-7imec_LFU",
+            "name": "Car Care",
+            "addr": "2QF5+QCW, M1 Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJeZxhVvLTIRkRneiF4I9ytbg",
+            "name": "RLA Motors",
+            "addr": "Area 47 sector 3, Ring Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJiQh6dCvTIRkRGUJsLQ-m8Gs",
+            "name": "Chibiso Motors",
+            "addr": "XQRQ+8C8, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJh1ZO_-_VIRkRVlzxNJOaff8",
+            "name": "Car key programming Malawi",
+            "addr": "new shire, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJXaOZigLTIRkRPUnaInkDxEY",
+            "name": "General Motors Garage",
+            "addr": "2Q3F+78X, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ5yv-f04tIBkRDdu0vlgueQA",
+            "name": "Maziko garage mechanic",
+            "addr": "2Q6X+FR4, Unnamed Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ03tt_tXTIRkRd8ZcBQBgDuU",
+            "name": "Autolube Service Centre",
+            "addr": "Marshall Road, Triangle, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJT55Giy3TIRkRlmZ8XA-Ahuc",
+            "name": "Total Care Motors",
+            "addr": "XQRQ+P22, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJIY6UDgDRIRkRTnT-MCcoojk",
+            "name": "Master plan garage",
+            "addr": "2M4H+M7H, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJrX6nxhzTIRkRHPqCF8w8guQ",
+            "name": "AA Motors",
+            "addr": "XQQC+MG8, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ5SC3VtzTIRkR4ObwV-juw90",
+            "name": "Jilani Motors",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJBTXtkBjTIRkRqCDAEqHKfmM",
+            "name": "Silver Garage and Tyre Centre",
+            "addr": "2QW9+5MF, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ1ToXSbDTIRkRWz3Mn7AgzWM",
+            "name": "Tyre Trove",
+            "addr": "2QGC+VVC, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJFe50BkzVIRkRwjxzxFiGIG4",
+            "name": "German Tech Cars, Lilongwe.",
+            "addr": "Lusa Street, Nsungwi Crescent, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ01ILI9rTIRkRf32Gc8N-7gw",
+            "name": "AUTOTEC",
+            "addr": "PO BOX 911, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ3S6EDh7TIRkRKLG6rIbuuTs",
+            "name": "Costantini Automotive and Engineering",
+            "addr": "Armitage, Area 4, Malawi, P.O.Box 1058, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJW-l4jCHTIRkRV4VnRHlfINY",
+            "name": "Fleet Tech Services Limited",
+            "addr": "Area 4, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJg7ueIlYtIBkRtBnKhLlgTss",
+            "name": "Chagwira Mechanica Service",
+            "addr": "Chitedze Research station 158 Lilongwe 10KM from Old Town along Mchinji Road M12, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJd6ej09fTIRkR-rJxV_kbV30",
+            "name": "S.M. Motors",
+            "addr": "2PHQ+QPX, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJxylPCADTIRkReyPUDDKSs6A",
+            "name": "Mc motors malawi",
+            "addr": "2Q29+FQJ, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ37cmfQDNIRkRka9jlP6EgtU",
+            "name": "Stomrm Auto Mechanic workshop",
+            "addr": "Kaphiri by Simso fuel \u26fd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJWZGfPffTIRkR9kAyp2mg4xU",
+            "name": "Malangalanga Workshop",
+            "addr": "2Q2F+JXG, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJw9Aai-jSIRkRwgN2UejMyXQ",
+            "name": "I.A.M. Motors",
+            "addr": "2Q4C+7C2, Unnamed Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJr8rgdgDTIRkR9QbVghIOwjk",
+            "name": "Motor Service Centre",
+            "addr": "2Q99+H4X, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJu7reKUXTIRkRpj0c8jiPkNI",
+            "name": "COF Centre-Vehicle Inspection Centre",
+            "addr": "2Q5R+98P, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJK4BGPoXTIRkRBFKFJ0pf1Iw",
+            "name": "Motor Vehicle Diagnostic Center",
+            "addr": "XQVR+J65, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ_ezQVtjTIRkRcSOAo9_K_Bo",
+            "name": "Kate Motor vehicle services",
+            "addr": "Lilongwe,2123, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJfWYQjBstIBkR-bam2lJ99d0",
+            "name": "Arise and Shine Service Center",
+            "addr": "2R95+2FP, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJm7NgHmTTIRkRxM7cZQf841U",
+            "name": "Touchline Services",
+            "addr": "Area 4, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJefTW2sTTIRkRDiyqEdx-ams",
+            "name": "Andrews Panel Beaters and Car Breaking",
+            "addr": "2Q3F+539, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJp3wqph_TIRkRbWJJ1b6tPEw",
+            "name": "Bulirani Panel Beaters",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJo_SH8s_TIRkR_0PFBQM7VHg",
+            "name": "Autoboyz Panel beaterz",
+            "addr": "3Q37+6R5, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJg1X3SHktIBkR7aMs51DNAqI",
+            "name": "LIMPOPO PANEL BEATERS",
+            "addr": "Kawale 2, Along, Chidzanja Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJv3IQDgDTIRkRbhY3YUwfHzU",
+            "name": "fortune panel beaters",
+            "addr": "2Q79+96M, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ0csCo-XVIRkRHieHPj4wBuA",
+            "name": "J&F Motors",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJzcs7kqs7HRkREysnxINk6q4",
+            "name": "Mzuzu Panel Beaters Workshop",
+            "addr": "Kanjedza Drive, Mzuzu, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJS-O5q1jTIRkRxUZU94babLk",
+            "name": "Kalie Service Shop",
+            "addr": "Malangalanga Near Andrews Panel Beaters, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ7Rk6hubVIRkRObMDwKsEXI4",
+            "name": "Wheel masters",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJEaqusZfTIRkRVfRWiXPGJ2E",
+            "name": "Associated Suppliers Lilongwe",
+            "addr": "Queensdrive Plot 47\/2\/441, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ2aD2bgDTIRkRfIYTpj80Hss",
+            "name": "Mapeto Tyres",
+            "addr": "2Q89+55W, Kirk, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJM-QQEQDTIRkRER9I6GjcOqI",
+            "name": "TITAZITYRES",
+            "addr": "WRQ2+MGG, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJL-CKR-otIBkRyDo5_zorN-Q",
+            "name": "KINGWELL TYRE CENTRE TRADING AS KWIK FIT",
+            "addr": "Chidzanja Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ6ySgXTfTIRkRffjO2m2XJ-I",
+            "name": "Kwik-Fit KTC",
+            "addr": "Area 40, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJOV8X1xjTIRkRtfrTD3fpeI0",
+            "name": "BTW - Battery Tyre World",
+            "addr": "Area 4, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJUbNLVI_TIRkRzc85uhfG4zw",
+            "name": "Baro Traders",
+            "addr": "M1 Road, opposite Energem Filling Ststion, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ6bwzPQDTIRkRc2eT7ssZ6Sg",
+            "name": "Wheels & Exhaust Centre",
+            "addr": "2Q99+XR7, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ6U7c6ZBP2BgRt6kajWKN_2g",
+            "name": "Carbon Car Care & Dunlop Tyres",
+            "addr": "53V5+Q2M, Raynor Avenue, Blantyre, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJezWxEIHTIRkR4z4J6hspemg",
+            "name": "Tyra's Conquest Dealership",
+            "addr": "Olympic Mall(EKHAYA),shop, Behind ShopRite and Game, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJxcjpfyTTIRkRsWVQbYUOaaE",
+            "name": "Fast wheels",
+            "addr": "2QG4+3PM, Selous Raod, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJu4-UJQDTIRkRsH1O1nHqrPE",
+            "name": "Treadmasters",
+            "addr": "off paul kagame road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJi4BJFd7TIRkRBlpYWiz4Z4c",
+            "name": "Kwik Fit Biwi",
+            "addr": "XQRQ+3F2, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ2UNF7XjTIRkRmcS1k7-8VBo",
+            "name": "Tyre City",
+            "addr": "Unnamed Road, 2Q5G+VJ6, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJq2RLeh7TIRkR7CMtyxAo8M4",
+            "name": "Nu-Tread Limited",
+            "addr": "2Q99+CH5, Chilambula Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJc9whEp_TIRkRDFv_9y8qtoU",
+            "name": "Mpezeni Spare Parts",
+            "addr": "Kawale Road, 662, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJszuaIMnTIRkRXT-7q3SbugY",
+            "name": "Multi Auto Parts Company",
+            "addr": "Paul Kagame Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJy5i-HufVIRkRGXGVtV0XQHs",
+            "name": "Kan Autoparts",
+            "addr": "Gulliver, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ5RWXrTrTIRkRuVRRJb2TmCw",
+            "name": "Authentic Automobile Services Spare Parts Shop",
+            "addr": "2QW9+937, Msokera Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJyf8q-TzNIRkRxO_esGEo2V8",
+            "name": "Yattsman & Boltsman Auto Parts",
+            "addr": "Shop no1 Grace House Kaphiri, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJieF4Wx_TIRkRYtFMLNS7WHg",
+            "name": "Car Truck And Trailer Auto Spares",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJoVf0XQDTIRkRshMNpuWNtq8",
+            "name": "CFAO MOBILITY-Queens mall parts outlet",
+            "addr": "47\/2\/444 Mchinji Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJOw2x4gktIBkR7SmiOWXHEhk",
+            "name": "CRUISE AUTOMOTIVE SOLUTIONS",
+            "addr": "AREA 13 NEXT TO CAPITAL CITY MOTEL RIGHT AT, SIMSO OIL FILLING STATION, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ0_Ozlx3TIRkRAP2o3xUNyoM",
+            "name": "Sahara Parts Centre",
+            "addr": "Area 4, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJo-eR8gnTIRkR9iVj0ttHPRk",
+            "name": "Mascon",
+            "addr": "Biwi Triangle, m, Opposite Lilongwe Technical College in Chakanga House, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJObJQEQDTIRkRiav1gQA-Ev4",
+            "name": "universal car parts",
+            "addr": "XQV9+Q4P, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ21Y-mhnTIRkR-LbBlGpAYbI",
+            "name": "VISCOCITY MOTOR PARTS",
+            "addr": "PAUL KAGAME ROAD, Chilambula Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJNQCp9qTTIRkRpMC79giz5B4",
+            "name": "Automotive Products Limited - Lilongwe",
+            "addr": "2PGV+968, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJf26xbCrVIRkRTjLkpCMfDAQ",
+            "name": "Xtreme Auto Parts",
+            "addr": "Area 49 New Shire Lilongwe, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJzyY0IYXNIRkRHYDL9nWcGEQ",
+            "name": "M1 Road",
+            "addr": "XQ5R+R58, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJHWNkIfPNIRkRZBR7ERE6s5I",
+            "name": "Blessed Offsprings GD Auto Spare Shop",
+            "addr": "XQ5R+R58, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJp5OuCePSIRkRV2KNLl_50pI",
+            "name": "Top Gear Motors",
+            "addr": "4\/379 Colby Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJUbcPQr8zIBkRZgj0Yb2nH20",
+            "name": "Watie Auto services",
+            "addr": "near Market, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJcyYnhkHTIRkRvtezlUfPA-U",
+            "name": "Auto electrics and diesel supply",
+            "addr": "2Q9C+597, Murry Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJhSMGdw_TIRkRRu4-cRSHicI",
+            "name": "blessings auto electrical parts",
+            "addr": "75 Biwi Street, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJT_lhBgDTIRkRIdqfc0Y6yZI",
+            "name": "Kho auto electrics",
+            "addr": "XPQ7+89R, Likuni, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJaS0aZCHTIRkRMcxTXKOy3UU",
+            "name": "Imani Auto Giant",
+            "addr": "Kawale, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJj4cfu6XTIRkRQ1jAJwK7fgk",
+            "name": "McDaff Gaffar",
+            "addr": "2QPF+WJ5, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJnzCEiG7TIRkRYxyhMylCsRs",
+            "name": "Hassan Automotive",
+            "addr": "njewa, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJOYlK6bDSIRkRvsa-3qn-PrM",
+            "name": "North End Motors Ltd.",
+            "addr": "Biwi Triangle, Box 30213, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ6T-C1MrTIRkRT2uAtcVxgQI",
+            "name": "victors carcare",
+            "addr": "univesal street, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ9znr9vbTIRkR4kh_WyW_XAA",
+            "name": "SRS Carbon Cleaning Service",
+            "addr": "Helios plot: 99, Opposite Road Traffic Regional Office, Off Paul Kagame Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJh-LBn1AtIBkRn9_C4yJ5rV8",
+            "name": "Mzama General Engineers",
+            "addr": "2R64+6RV Matchansi, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJV7wSaADTIRkRN9cIsDPgaQg",
+            "name": "MPS HQ",
+            "addr": "2Q79+96M, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ3wSadAAtIBkRd4tkGLetJuQ",
+            "name": "Kally B Motors",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJKSB-juvTIRkRj-DsYuAEZo8",
+            "name": "Fit N Fix",
+            "addr": "2Q2G+V3J, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJSbiShmXTIRkR0OFDhqlRAuc",
+            "name": "Top Gear",
+            "addr": "2Q37+M82, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJMbB4nejTIRkRQCWDmv7Tpjw",
+            "name": "Emmy prime author spare parts",
+            "addr": "Bottom, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJr7cQ6xzTIRkRwD_RM4V_YQk",
+            "name": "MC CAR & TRUCKS BREAKERS",
+            "addr": "Machenga, Njewa Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJIatVbgDTIRkR9MVp2WAC0Ng",
+            "name": "Auto King",
+            "addr": "Chilambula Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJZ-G-RgLTIRkRv_AbABqhgUo",
+            "name": "JCM automatic gearbox repair & services",
+            "addr": "Biwi, triagle, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJn3huKwDTIRkRqce8smiXHXk",
+            "name": "Lsmart motors",
+            "addr": "XQQM+M67, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJAaIRdUzTIRkRTgJJhzH06VY",
+            "name": "GOOD DEEDS CAR BODY DOCTORS",
+            "addr": "Upper, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJC7aRDgDTIRkRWnwxZ-tV61A",
+            "name": "Paramount Auto Paints",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJFVKzOADTIRkRY20MrQeF0i4",
+            "name": "JU LEE CARZ",
+            "addr": "XQVQ+GXF, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJrSsbOwDTIRkRVxOMOigk4dc",
+            "name": "Sundy windscreen crack repairs",
+            "addr": "2Q8C+VCH, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ-eOW8vXTIRkRjDoL6sF9o98",
+            "name": "PG Glass Lilongwe",
+            "addr": "Bwaila 4 \/ 188 Off Paul Kagame Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJbWhbK9bTIRkR0yyp061M3nE",
+            "name": "Hartford",
+            "addr": "Unnamed Road, 2Q3F+R63, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ72DQn4zTIRkRccGOli2CRYE",
+            "name": "Glass fit",
+            "addr": "2Q89+VRR, Armitage, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJN3utSUrTIRkRoEPy88EGndg",
+            "name": "iFix",
+            "addr": "Centre House Arcade, Next to Lifestyle Pharmacy, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJQcY08qzTIRkRENii7UFwdA0",
+            "name": "Ora Glass And Aluminium",
+            "addr": "Area 3, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ5X5wwKjVIRkRX9qbMyxjnJQ",
+            "name": "GC Glass and Aluminium",
+            "addr": "Masaf road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJVYFq-VLTIRkRicjcTVOZ1q4",
+            "name": "Battery Specialist - Hifase Batteries - JP Autotronix",
+            "addr": "Battery Specialist - JP Autotronix Off Paul Kagame Highway, Area 4 Opposite Park View Centre, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJPRYHRRzTIRkRoqGach4EotM",
+            "name": "GLASSCO Malawi",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJReYYssDTIRkRD9GZ9LRNFN0",
+            "name": "EXIDE BATTERY FIT CENTRE",
+            "addr": "NEXT trucks and car breaker, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJAaUMXETTIRkR6zYVabgIeNc",
+            "name": "Powertex Limited, Area4 & Area 13",
+            "addr": "2QPG+P39, Chilambula Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJhdEH9ITTIRkRFq5Y-SaI_Z0",
+            "name": "Willard battery centre-Veracity Autotronix, Malawi",
+            "addr": "Off Paul kagame, near park view centre, Chilambula Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ94WlVxvTIRkRFC0DFijOhfU",
+            "name": "Powertex Limited, Area4",
+            "addr": "Murry Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ_4plXADTIRkRAIcHfv1qYFU",
+            "name": "Taurus Battery Centre",
+            "addr": "2QGF+M79, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ8VMdo-PSIRkRZiDumX2bynE",
+            "name": "Electronics 4U",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJu-HceeHSIRkRZ_QVjmciRkY",
+            "name": "Sky Electronics",
+            "addr": "Area 4, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ7dGByhnTIRkRhXrdvlMSyiE",
+            "name": "HELIOS",
+            "addr": "099, OPPOSITE REGIONAL ROAD TRAFFIC OFFICE, AREA 4 OFF, Paul Kagame Road, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJlblKU-rTIRkRsN8gP5-FBVY",
+            "name": "A2Z Electronics",
+            "addr": "Sana Cash & Carry Complex, Queens Drive, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJzV2ClfbTIRkR9z47fmUrkuk",
+            "name": "Ben\u2019s battery",
+            "addr": "2QPF+XJ9, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJb4kJ8wXTIRkR6fpTEVkPh_Q",
+            "name": "M1 Electronics (Branch 2)",
+            "addr": "2QF5+Q9H, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJF7Ql4c3VIRkRTN0Jx-GbTJk",
+            "name": "BLUE AIR ENGINEERING",
+            "addr": "Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJpWYZpePSIRkRSLmaQx0RQFU",
+            "name": "Proair Engineering",
+            "addr": "Area 3, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJbRvkyB_TIRkRwe5gSy31R-M",
+            "name": "BICCO International",
+            "addr": "2Q9C+6Q9, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJVx7X6RXTIRkRMWVUfCEh6kQ",
+            "name": "Commercial refrigeration and engineering services",
+            "addr": "Area 3, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJiy9QOgDVIRkRJGNBYVNTWNg",
+            "name": "Kwik-Fit",
+            "addr": "Kaulila Cl, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJ1ynpbbHUIRkR8516TCH3798",
+            "name": "Cartrack Malawi Lilongwe office",
+            "addr": "Ufulu Rd, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJDZLUBwDTIRkRfqJhed-4xqk",
+            "name": "Wayne Plug",
+            "addr": "chinsapo road, XQW3+232 near waterboard, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJV80ZJgDTIRkREYXbKL8Blvk",
+            "name": "Maranet Trading",
+            "addr": "XQJQ+XG7, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJE8vE-T_TIRkRw49Fltuj82Y",
+            "name": "PERFECT AUTO ENGINEERING LTD",
+            "addr": "near LMD TRADING next to good fellows, Armitage, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJo9dSRQDTIRkR7aLsvh6ONKc",
+            "name": "WAYNE PLUG",
+            "addr": "14.0006703, 33 7581455, Lilongwe, Malawi",
+            "city_hint": "Lilongwe"
+        },
+        {
+            "pid": "ChIJof7eWgBF2BgR0AjnpzIKEX4",
+            "name": "Grootman Motors",
+            "addr": "62HP+C3R, Ndirande Ring Rd, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ9XP-LvZH2BgRiwxpW6rDd8k",
+            "name": "S MOTORS",
+            "addr": "Soche, near Blantyre Teachers Training College, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJpeSKppdF2BgRdl9CnOHdOMw",
+            "name": "City Motors Ltd",
+            "addr": "Petrolium Services Limited, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJNQsvr_NF2BgRcfgwpCLjoWU",
+            "name": "Fernando Motors",
+            "addr": "52VJ+4FC, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJt4t7vYRb2BgR96YCODmz0Lo",
+            "name": "Sam motors",
+            "addr": "72C9+947, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJd9T6Ap9P2BgRCLYiLIFa7nc",
+            "name": "Moks Auto",
+            "addr": "West Street, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJFxTxm5hF2BgRv6O2Va2CUo8",
+            "name": "WES Motors mw",
+            "addr": "behind kudya filling station, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJDxqv35ZF2BgRkEcQbTXOYB4",
+            "name": "Chirimba Garage",
+            "addr": "622C+FCF, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJs_nNm39F2BgR1glkiDIxfGU",
+            "name": "Maunde Carbreakers and Mechanic",
+            "addr": "629P+3M7, Domwe Street, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJUbGUCwBP2BgRqj70lSWrWsA",
+            "name": "SMD Car Breakers and Garage",
+            "addr": "53J3+R9Q, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJJYIiarxF2BgRXC_V5Dqzqmo",
+            "name": "V-Tec Automotive Services",
+            "addr": "52X7+G24, Matecheta Cl, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJg-dvmc1F2BgR4Ws3mT6TwUI",
+            "name": "Pluto Motors",
+            "addr": "52VF+7JF, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJs0SQ5y1F2BgRY2uVlUkSt5s",
+            "name": "Stecelia Motors",
+            "addr": "62W3+MRR, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJSx_JPpFF2BgRj0R7diTgtFs",
+            "name": "Fastwheels Blantyre",
+            "addr": "622F+78Q, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJg-oqlglF2BgRFDyTU6upOOQ",
+            "name": "AutoGyr Solutions, Blantyre",
+            "addr": "Next to NICO House, CLAIM Building, Stewart Street, Off, Glynn Jones Rd, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ0V_iC7NF2BgRjYK9XziE4ts",
+            "name": "Kalimbuka Garage",
+            "addr": "Manase, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJqRsh6c9F2BgRjjktuZ1AU1w",
+            "name": "Auto Doc Mw",
+            "addr": "Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ12CuWQBJ2BgR6zRegpPQN30",
+            "name": "ZOOM-Tech Motors",
+            "addr": "537Q+G4F, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJD7MEa2BP2BgRmkWm2G4IxbY",
+            "name": "Autolube Service Centre",
+            "addr": "Hynde Road, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJG3xmqbpF2BgRO6nrhv_DIYY",
+            "name": "Kwik-Fit Malawi",
+            "addr": "6273+XQH, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJGyX8mb5P2BgRryz5NNDfk7o",
+            "name": "One Stop Automotive",
+            "addr": "Old Hwy, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJyY9rOgBP2BgRGDBzu5_F72A",
+            "name": "Humble Accessories and Auto Parts Shop",
+            "addr": "53J3+W9J, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJq3MwOQBP2BgRWBmkrnVpKHY",
+            "name": "Manchester motor mechanical centre",
+            "addr": "53Q6+F7G, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJAzhKLgBb2BgRK0yKwL3P-Qk",
+            "name": "Martins car breaking masters",
+            "addr": "72WG+X86, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJkSufCwBF2BgRgsUpLcqHMgg",
+            "name": "Blantyre Mechanical Services",
+            "addr": "62HH+HHR, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJmX0fQR5F2BgRagq5iMr1XCI",
+            "name": "AFRICA AUTOMOBILES",
+            "addr": "Johnstone street opposite PG glass Blantyre ,Ginnery corner MW, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJCaLTImNF2BgRzisQ-SUjN1E",
+            "name": "MOTOR POINT",
+            "addr": "Kapeni Rd, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJu_PTUQBP2BgRQmowSpcIyDM",
+            "name": "Evergreen Auto Parts and Windscreen Service",
+            "addr": "53M3+7CG, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ2xr6KgBF2BgREqNnlmJf8X4",
+            "name": "Blantyre",
+            "addr": "6XCJ+7WC, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJO100wWZF2BgRpXSJRidIBn0",
+            "name": "Automobile Services Centre",
+            "addr": "Chinyonga St, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJGTgETjdP2BgRaLwcJKffEsk",
+            "name": "Agason Motors",
+            "addr": "Milward Road Box 51293 Limbe, Malawi, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJz_cC-wtP2BgR__3Kz-2_ig4",
+            "name": "Service Center & Auto Glass Suppliers",
+            "addr": "53R6+297, Livingstone Ave, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ__rDtY5a2BgRLDmzD0QB87o",
+            "name": "BLANTYRE MOTOR VEHICLE INSPECTORATE CENTRE (BMVIC)",
+            "addr": "M1 Road, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJZ65DMShF2BgR30Oseihgyek",
+            "name": "Motor Service Centre",
+            "addr": "52XJ+8PW, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ1bghBQBF2BgRAToy7rW0634",
+            "name": "Speed fitment and service center",
+            "addr": "623C+XW2 Simms Electrical & Diesel Services, Johnstone Rd, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJyXy5QQ5F2BgRCZ7gVShVbxs",
+            "name": "CSL PANEL BEATERS LTD",
+            "addr": "OPPOSITE TRUST AUCTIONEERS, Ali Hassan Mwinyi, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ7wKWrYhF2BgRjNALgBBh62w",
+            "name": "The panel shop",
+            "addr": "20 Kidney Crescent, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ6RKhGZZF2BgR8WIVEnybozM",
+            "name": "STAR PANEL BEATERS LTD",
+            "addr": "Chichiri Shopping Mall, more next, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ6wp1U0ZP2BgRG8U6lPytIOQ",
+            "name": "Progressive Panel Beaters & Transport Contractors Limited",
+            "addr": "53V5+25M, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ39LJu-VP2BgRXBlun7rN81k",
+            "name": "O Jussab tyre ftment centre",
+            "addr": "Agriculture & Auto Supplier Limited, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJxYfg1JBF2BgRDSpOit-McNM",
+            "name": "Entyre Marathon Tyres Factory",
+            "addr": "622C+MXC, Johnstone, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJy7_pP7JP2BgR3WnUln6scHo",
+            "name": "Tyre Zone Warehouse",
+            "addr": "On Bakhresa road, behind Agasaon Motors\/radio Islam, Milward Road, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJjRmgqFFF2BgRc83it3eF91M",
+            "name": "A1 Tyre Centre",
+            "addr": "624C+5G3, Salim Armour, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJoReqEwBP2BgRefXQVx1JKfI",
+            "name": "Sparesrite",
+            "addr": "53R5+9QX, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJCfK3AkdP2BgRVaXLltfPGxI",
+            "name": "Entyre Limited Limbe- Head Office",
+            "addr": "53V5+C7P, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJneLmOzZP2BgRlSsuR3nkkos",
+            "name": "Motor Care",
+            "addr": "Dalton Road, Limbe, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJFY04Y95F2BgR541lzZF2Iac",
+            "name": "Supa Fit Limited",
+            "addr": "6283+J3V, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJybrNUoRF2BgRiBLl_LmFu1M",
+            "name": "Mapeto Tyres",
+            "addr": "Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJ-Q0GvIpR2BgRvgpPAQr3a4I",
+            "name": "The Traction Vault",
+            "addr": "Nthawira, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        },
+        {
+            "pid": "ChIJaSyp9e1F2BgR0jLZQCf-wwU",
+            "name": "Savanna tyres &,Autoparts",
+            "addr": "kristwick, 14 Kidney Crescent, Blantyre, Malawi",
+            "city_hint": "Blantyre"
+        }
+    ],
+    "car_hire": []
+}

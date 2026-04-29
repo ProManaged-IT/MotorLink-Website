@@ -823,7 +823,8 @@ function copyAddress() {
     }
 }
 
-// Initialize Google Maps embed iframe — completely free, no API key, never billed
+// Initialize a keyless Google Maps embed for simple location display.
+// Paid Google APIs are reserved for routing, autocomplete, and geocoding.
 function initMap(address) {
     if (mapInitialized) return;
     const mapElement = document.getElementById('companyMap');

@@ -972,7 +972,7 @@ function showCarHireStatusHint(html, isError) {
     hint.innerHTML = html;
 }
 
-// Geocode a company address using Nominatim (OpenStreetMap, free, no API key)
+// Geocode a company address using Google Maps only when distance sorting needs it
 async function geocodeAddress(address, locationName) {
     if (!address || !address.trim()) return null;
 
@@ -981,20 +981,17 @@ async function geocodeAddress(address, locationName) {
 
     if (geocodedCompanies.has(fullAddress)) return geocodedCompanies.get(fullAddress);
 
-    // Throttle to 1 req/s per Nominatim usage policy
-    const now = Date.now();
-    const elapsed = now - (window._nominatimLastCall || 0);
-    if (elapsed < 1100) await new Promise(r => setTimeout(r, 1100 - elapsed));
-    window._nominatimLastCall = Date.now();
-
     try {
-        const resp = await fetch(
-            'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q: fullAddress, format: 'json', limit: '1' }),
-            { headers: { 'Accept': 'application/json', 'User-Agent': 'MotorLink/1.0 (motorlink.mw)' } }
-        );
-        const data = await resp.json();
-        if (data && data[0]) {
-            const location = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        await window.ensureGoogleMapsApi({ libraries: [] });
+        const geocoder = new google.maps.Geocoder();
+        const countryCode = (window.CONFIG && CONFIG.COUNTRY_CODE) ? String(CONFIG.COUNTRY_CODE).toLowerCase() : 'mw';
+        const result = await geocoder.geocode({
+            address: fullAddress,
+            componentRestrictions: countryCode ? { country: countryCode } : undefined
+        });
+        const point = result.results?.[0]?.geometry?.location;
+        if (point) {
+            const location = { lat: point.lat(), lng: point.lng() };
             geocodedCompanies.set(fullAddress, location);
             return location;
         }
