@@ -12,6 +12,19 @@ let journeyMap = null;
 let journeyRoutePolyline = null;
 let journeyAutocompleteBound = false;
 const journeyPlacesTimers = {};
+// Cached Maps classes from importLibrary — populated by initializeJourneyGoogleMap()
+let _gmapsCls = null;
+
+async function ensureGoogleMapsCls() {
+    if (_gmapsCls) return _gmapsCls;
+    await window.ensureGoogleMapsApi({ libraries: [] });
+    // The new loading=async API requires importLibrary to get Map, Polyline, etc.
+    const lib = (typeof google !== 'undefined' && google.maps && google.maps.importLibrary)
+        ? await google.maps.importLibrary('maps')
+        : google.maps;
+    _gmapsCls = lib;
+    return lib;
+}
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -221,7 +234,7 @@ async function initializeJourneyGoogleMap() {
     const mapElement = document.getElementById('journeyMap');
     if (!mapElement) return null;
 
-    await window.ensureGoogleMapsApi({ libraries: [] });
+    const mapsLib = await ensureGoogleMapsCls();
 
     if (!journeyMap) {
         mapElement.innerHTML = '';
@@ -239,7 +252,8 @@ async function initializeJourneyGoogleMap() {
             mapOptions.mapId = mapsConfig.mapId;
         }
 
-        journeyMap = new google.maps.Map(mapElement, mapOptions);
+        const MapClass = mapsLib.Map || google.maps.Map;
+        journeyMap = new MapClass(mapElement, mapOptions);
     }
 
     bindJourneyPlacesAutocomplete();
@@ -421,7 +435,8 @@ function renderJourneyRoutePath(points) {
         journeyRoutePolyline.setMap(null);
     }
 
-    journeyRoutePolyline = new google.maps.Polyline({
+    const mapsLib = _gmapsCls || google.maps;
+    journeyRoutePolyline = new (mapsLib.Polyline || google.maps.Polyline)({
         path: points,
         geodesic: false,
         strokeColor: '#ff6f00',
@@ -430,7 +445,7 @@ function renderJourneyRoutePath(points) {
         map: journeyMap
     });
 
-    const bounds = new google.maps.LatLngBounds();
+    const bounds = new (mapsLib.LatLngBounds || google.maps.LatLngBounds)();
     points.forEach(point => bounds.extend(point));
     journeyMap.fitBounds(bounds, 48);
 }
