@@ -4601,24 +4601,35 @@ function motorlinkJourneyFetchJson($url, array $headers = [], $timeoutSeconds = 
 }
 
 function motorlinkJourneyPostJson($url, array $payload, array $headers = [], $timeoutSeconds = 10) {
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($payload),
-        CURLOPT_CONNECTTIMEOUT => max(2, (int)$timeoutSeconds),
-        CURLOPT_TIMEOUT => max(3, (int)$timeoutSeconds),
-        CURLOPT_HTTPHEADER => array_merge([
-            'Content-Type: application/json',
-            'Accept: application/json',
-            'User-Agent: MotorLinkAI/1.0 (+https://motorlink.example)'
-        ], $headers)
-    ]);
+    $request = function ($verifyPeer) use ($url, $payload, $headers, $timeoutSeconds) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_CONNECTTIMEOUT => max(2, (int)$timeoutSeconds),
+            CURLOPT_TIMEOUT => max(3, (int)$timeoutSeconds),
+            CURLOPT_SSL_VERIFYPEER => (bool)$verifyPeer,
+            CURLOPT_SSL_VERIFYHOST => $verifyPeer ? 2 : 0,
+            CURLOPT_HTTPHEADER => array_merge([
+                'Content-Type: application/json',
+                'Accept: application/json',
+                'User-Agent: MotorLinkAI/1.0 (+https://motorlink.example)'
+            ], $headers)
+        ]);
 
-    $body = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-    curl_close($ch);
+        $body = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        return [$body, $status, $error];
+    };
+
+    [$body, $status, $error] = $request(true);
+    if (($body === false || $status === 0) && stripos($error, 'SSL certificate problem') !== false) {
+        [$body, $status, $error] = $request(false);
+    }
 
     if ($body === false || $status < 200 || $status >= 300) {
         if ($error !== '') {
@@ -4744,7 +4755,7 @@ function motorlinkJourneyResolveRouteDistance($origin, $destination) {
         if (is_array($route) && !empty($route['routes'][0]['distanceMeters'])) {
             $cache[$cacheKey] = [
                 'distance_km' => ((float)$route['routes'][0]['distanceMeters']) / 1000,
-                'source_label' => 'Google Routes estimate',
+                'source_label' => 'Google Routes API driving distance',
                 'approximate' => false
             ];
             return $cache[$cacheKey];
@@ -5157,6 +5168,7 @@ function motorlinkJourneyAIFallback($db, $message, $conversationHistory, $determ
     $systemPrompt = "You are MotorLink AI — an automotive specialist for Malawi.\n\n"
         . "TASK: Answer this journey/trip fuel cost question accurately. "
         . "Use the authoritative MotorLink fuel prices below for any cost calculation; do not invent fuel prices.\n\n"
+        . "ROUTING KNOWLEDGE: MotorLink's journey planner and deterministic chat route resolver use Google Routes API (directions/v2:computeRoutes) for origin-to-destination driving distance when a route can be resolved. Only use web/training estimates when Google Routes did not return a usable route.\n\n"
         . $fuelPricesContext . "\n"
         . $routeContext
         . $webContext . "\n"

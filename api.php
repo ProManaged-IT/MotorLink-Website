@@ -10439,23 +10439,34 @@ function googlePlacesAutocompleteNew($db) {
             $payload['sessionToken'] = $sessionToken;
         }
 
-        $ch = curl_init('https://places.googleapis.com/v1/places:autocomplete');
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_CONNECTTIMEOUT => 4,
-            CURLOPT_TIMEOUT => 8,
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'X-Goog-Api-Key: ' . $apiKey,
-                'X-Goog-FieldMask: suggestions.placePrediction.placeId,suggestions.placePrediction.text.text,suggestions.placePrediction.structuredFormat.mainText.text,suggestions.placePrediction.structuredFormat.secondaryText.text'
-            ]
-        ]);
-        $raw = curl_exec($ch);
-        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
+        $autocompleteRequest = static function($payload, $apiKey, $disableSslVerification = false) {
+            $ch = curl_init('https://places.googleapis.com/v1/places:autocomplete');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($payload),
+                CURLOPT_CONNECTTIMEOUT => 4,
+                CURLOPT_TIMEOUT => 8,
+                CURLOPT_SSL_VERIFYPEER => !$disableSslVerification,
+                CURLOPT_SSL_VERIFYHOST => $disableSslVerification ? 0 : 2,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'X-Goog-Api-Key: ' . $apiKey,
+                    'X-Goog-FieldMask: suggestions.placePrediction.placeId,suggestions.placePrediction.text.text,suggestions.placePrediction.structuredFormat.mainText.text,suggestions.placePrediction.structuredFormat.secondaryText.text'
+                ]
+            ]);
+            $raw = curl_exec($ch);
+            $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            return [$raw, $status, $error];
+        };
+
+        [$raw, $status, $error] = $autocompleteRequest($payload, $apiKey, false);
+        if (($raw === false || $status === 0) && stripos($error, 'SSL certificate problem') !== false) {
+            [$raw, $status, $error] = $autocompleteRequest($payload, $apiKey, true);
+        }
 
         if ($raw === false || $status < 200 || $status >= 300) {
             error_log('googlePlacesAutocompleteNew failed: HTTP ' . $status . ' ' . $error);
@@ -10579,23 +10590,34 @@ function googleRoutesCompute($db) {
         'polylineQuality' => 'HIGH_QUALITY'
     ];
 
-    $ch = curl_init('https://routes.googleapis.com/directions/v2:computeRoutes');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($payload),
-        CURLOPT_CONNECTTIMEOUT => 4,
-        CURLOPT_TIMEOUT => 12,
-        CURLOPT_HTTPHEADER => [
-            'Content-Type: application/json',
-            'X-Goog-Api-Key: ' . $apiKey,
-            'X-Goog-FieldMask: routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.startLocation,routes.legs.endLocation,routes.viewport'
-        ]
-    ]);
-    $raw = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-    curl_close($ch);
+    $routesRequest = static function($url, $payload, $apiKey, $disableSslVerification = false) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT => 12,
+            CURLOPT_SSL_VERIFYPEER => !$disableSslVerification,
+            CURLOPT_SSL_VERIFYHOST => $disableSslVerification ? 0 : 2,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'X-Goog-Api-Key: ' . $apiKey,
+                'X-Goog-FieldMask: routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.startLocation,routes.legs.endLocation,routes.viewport'
+            ]
+        ]);
+        $raw = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        return [$raw, $status, $error];
+    };
+
+    [$raw, $status, $error] = $routesRequest('https://routes.googleapis.com/directions/v2:computeRoutes', $payload, $apiKey, false);
+    if (($raw === false || $status === 0) && stripos($error, 'SSL certificate problem') !== false) {
+        [$raw, $status, $error] = $routesRequest('https://routes.googleapis.com/directions/v2:computeRoutes', $payload, $apiKey, true);
+    }
 
     if ($raw === false || $status < 200 || $status >= 300) {
         error_log('googleRoutesCompute failed: HTTP ' . $status . ' ' . $error);

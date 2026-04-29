@@ -123,8 +123,12 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initializeJourneyPlanner() {
+    // Bind origin/destination autocomplete immediately — it uses the server-side
+    // Places API only and must NOT wait for the Google Maps JS API to load.
+    bindJourneyPlacesAutocomplete();
+
     initMap();
-    
+
     // Setup event listeners (these can be set up immediately)
     const calculateBtn = document.getElementById('calculateJourneyBtn');
     if (calculateBtn && !calculateBtn.dataset.listenerBound) {
@@ -667,8 +671,6 @@ async function handleJourneyOnlineFuelEstimate() {
 }
 
 async function getRoute(origin, destination) {
-    await initializeJourneyGoogleMap();
-
     try {
         const originPayload = getJourneyRoutePayload('journeyOrigin', origin);
         const destinationPayload = getJourneyRoutePayload('journeyDestination', destination);
@@ -698,7 +700,15 @@ async function getRoute(origin, destination) {
             ? decodeGooglePolyline(data.route.encoded_polyline)
             : [];
         journeyRoutePoints = decodedPoints;
-        renderJourneyRoutePath(decodedPoints);
+        if (decodedPoints.length >= 2) {
+            try {
+                await initializeJourneyGoogleMap();
+                renderJourneyRoutePath(decodedPoints);
+            } catch (mapError) {
+                console.warn('Journey route calculated, but map rendering failed:', mapError);
+                renderJourneyMapEmbed({ origin, destination, title: `Route from ${origin} to ${destination}` });
+            }
+        }
 
         const originCoords = data.route.origin || decodedPoints[0] || await geocodeJourneyLocation(origin);
         const destinationCoords = data.route.destination || decodedPoints[decodedPoints.length - 1] || await geocodeJourneyLocation(destination);
